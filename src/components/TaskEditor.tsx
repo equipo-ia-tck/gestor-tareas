@@ -93,7 +93,7 @@ export function TaskEditor({ task, projects, onClose }: Props) {
           <button
             type="button"
             className="text-sm text-red-600 hover:underline"
-            onClick={() => { void remove(task); onClose(); }}
+            onClick={() => { void remove([task]); onClose(); }}
           >
             Eliminar
           </button>

@@ -23,24 +23,33 @@ export interface CommandEnv {
   today: ISODate;
   openCapture: () => void;
   openShortcuts: () => void;
+  /** Tareas seleccionadas (o la enfocada). */
+  selection: Task[];
+  selectAll: () => void;
   toast: (message: string, action?: { label: string; run: () => void | Promise<void> }) => void;
 }
 
-/** Cambia la fecha de varias tareas con un único "Deshacer". */
+/** Cambia la fecha de varias tareas como una sola entrada del historial. */
 async function moveTasks(env: CommandEnv, tasks: Task[], to: ISODate | null, label: string) {
   if (tasks.length === 0) return env.toast('No hay tareas atrasadas');
-  const previous = tasks.map((t) => [t.id, t.due_date] as const);
-  for (const t of tasks) await repo.updateTask(t.id, { due_date: to });
-  env.toast(`${tasks.length} ${tasks.length === 1 ? 'tarea movida' : 'tareas movidas'} a ${label}`, {
-    label: 'Deshacer',
-    run: async () => { for (const [id, due] of previous) await repo.updateTask(id, { due_date: due }); },
+  await repo.batch(`${tasks.length} ${tasks.length === 1 ? 'tarea movida' : 'tareas movidas'} a ${label}`, async () => {
+    for (const t of tasks) await repo.updateTask(t.id, { due_date: to });
   });
 }
 
 const go = (r: Route) => () => navigate(r);
 
+async function onSelection(env: CommandEnv, label: string, fn: (t: Task) => Promise<unknown>) {
+  if (!env.selection.length) return env.toast('No hay tareas seleccionadas');
+  const n = env.selection.length;
+  await repo.batch(n === 1 ? `Tarea: ${label}` : `${n} tareas: ${label}`, async () => {
+    for (const t of env.selection) await fn(t);
+  });
+}
+
 export function buildCommands(env: CommandEnv): Command[] {
   const overdue = overdueTasks(env.tasks, env.today);
+  const sel = env.selection.length ? ` (${env.selection.length})` : '';
   return [
     { id: 'new-task', section: 'Crear', title: 'Nueva tarea', shortcut: '⌘K', keywords: 'añadir capturar', run: env.openCapture },
     {
@@ -58,6 +67,15 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'move-overdue-tomorrow', section: 'Tareas', title: 'Mover vencidas a mañana', keywords: 'atrasadas', run: () => moveTasks(env, overdue, addDays(env.today, 1), 'mañana') },
     { id: 'move-overdue-none', section: 'Tareas', title: 'Quitar fecha a las vencidas', keywords: 'atrasadas sin fecha', run: () => moveTasks(env, overdue, null, 'sin fecha') },
 
+    { id: 'sel-complete', section: 'Selección', title: `Completar seleccionadas${sel}`, shortcut: 'C', run: () => onSelection(env, 'completada', (t) => repo.setCompleted(t.id, true)) },
+    { id: 'sel-today', section: 'Selección', title: `Mover seleccionadas a hoy${sel}`, shortcut: 'T', run: () => onSelection(env, 'a hoy', (t) => repo.updateTask(t.id, { due_date: env.today })) },
+    { id: 'sel-tomorrow', section: 'Selección', title: `Mover seleccionadas a mañana${sel}`, shortcut: '⇧T', run: () => onSelection(env, 'a mañana', (t) => repo.updateTask(t.id, { due_date: addDays(env.today, 1) })) },
+    { id: 'sel-nodate', section: 'Selección', title: `Quitar fecha a las seleccionadas${sel}`, run: () => onSelection(env, 'sin fecha', (t) => repo.updateTask(t.id, { due_date: null })) },
+    { id: 'sel-delete', section: 'Selección', title: `Eliminar seleccionadas${sel}`, shortcut: 'Supr', keywords: 'borrar', run: () => onSelection(env, 'eliminada', (t) => repo.deleteTask(t.id)) },
+    { id: 'sel-all', section: 'Selección', title: 'Seleccionar todas las visibles', shortcut: '⌘A', run: env.selectAll },
+    { id: 'undo', section: 'Editar', title: 'Deshacer', shortcut: '⌘Z', run: () => void repo.undo() },
+    { id: 'redo', section: 'Editar', title: 'Rehacer', shortcut: '⌘⇧Z', run: () => void repo.redo() },
+    { id: 'search', section: 'Ir a', title: 'Buscar tareas', shortcut: '/', keywords: 'encontrar filtrar', run: () => { setTimeout(() => document.getElementById('global-search')?.focus(), 0); } },
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Próximos 7 días', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },

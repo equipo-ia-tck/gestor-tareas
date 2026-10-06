@@ -89,3 +89,64 @@ describe('DexieRepository', () => {
     expect(await other.listProjects()).toHaveLength(1);
   });
 });
+
+describe('historial (deshacer / rehacer)', () => {
+  it('deshace y rehace una creación', async () => {
+    const t = await repo.createTask({ title: 'a' });
+    expect((await repo.undo())?.label).toBe('Tarea creada');
+    expect(await repo.getTask(t.id)).toBeUndefined();
+    await repo.redo();
+    expect((await repo.getTask(t.id))?.title).toBe('a');
+  });
+
+  it('deshace ediciones, completados y borrados en orden', async () => {
+    const t = await repo.createTask({ title: 'a' });
+    await repo.updateTask(t.id, { title: 'b' });
+    await repo.setCompleted(t.id, true);
+    await repo.deleteTask(t.id);
+    expect(await repo.listTasks()).toHaveLength(0);
+    await repo.undo();
+    expect((await repo.getTask(t.id))?.status).toBe('done');
+    await repo.undo();
+    expect((await repo.getTask(t.id))?.status).toBe('todo');
+    await repo.undo();
+    expect((await repo.getTask(t.id))?.title).toBe('a');
+  });
+
+  it('agrupa un lote en una sola entrada, incluidos los proyectos creados', async () => {
+    await repo.batch('Captura', async () => {
+      const p = await repo.createProject('nuevo');
+      await repo.createTask({ title: 'x', project_id: p.id });
+      await repo.createTask({ title: 'y' });
+    });
+    expect(await repo.listTasks()).toHaveLength(2);
+    expect((await repo.undo())?.label).toBe('Captura');
+    expect(await repo.listTasks()).toHaveLength(0);
+    expect(await repo.listProjects()).toHaveLength(0);
+    expect(await repo.undo()).toBeNull();
+  });
+
+  it('un cambio nuevo vacía la pila de rehacer', async () => {
+    const t = await repo.createTask({ title: 'a' });
+    await repo.updateTask(t.id, { title: 'b' });
+    await repo.undo();
+    await repo.updateTask(t.id, { title: 'c' });
+    expect(await repo.redo()).toBeNull();
+  });
+
+  it('notifica cada entrada nueva y cada deshacer', async () => {
+    const events: string[] = [];
+    repo.onHistory((e) => events.push(`${e.type}:${e.entry.label}`));
+    const t = await repo.createTask({ title: 'a' });
+    await repo.batch('Mover', () => repo.updateTask(t.id, { due_date: '2026-10-06' }));
+    await repo.undo();
+    await repo.redo();
+    expect(events).toEqual(['push:Tarea creada', 'push:Mover', 'undo:Mover', 'redo:Mover']);
+  });
+
+  it('importar vacía el historial', async () => {
+    await repo.createTask({ title: 'a' });
+    await repo.replaceAll(await repo.exportSnapshot());
+    expect(await repo.undo()).toBeNull();
+  });
+});

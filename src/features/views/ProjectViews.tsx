@@ -4,10 +4,10 @@ import { navigate, routeHref } from '../../app/router';
 import { QuickAdd } from '../../components/QuickAdd';
 import { Section, SmallButton, TaskList } from '../../components/TaskList';
 import { inputClass } from '../../components/TaskEditor';
-import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
 import { isActive, sortTasks } from '../../domain/selectors';
 import { PROJECT_COLORS } from '../../domain/types';
+import { useTaskActions } from '../../hooks/useTaskActions';
 import { ViewHeader } from './ViewHeader';
 
 export function ProjectsView() {
@@ -53,8 +53,8 @@ export function ProjectsView() {
 
 export function ProjectView({ id }: { id: string }) {
   const { tasks, projectMap, today, editTask } = useApp();
-  const toast = useToast();
   const project = projectMap.get(id);
+  const { moveIds } = useTaskActions();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
 
@@ -69,14 +69,13 @@ export function ProjectView({ id }: { id: string }) {
 
   async function rename(e: FormEvent) {
     e.preventDefault();
-    if (name.trim()) await repo.updateProject(id, { name: name.trim() });
+    if (name.trim() && name.trim() !== project!.name) await repo.batch('Proyecto renombrado', () => repo.updateProject(id, { name: name.trim() }));
     setRenaming(false);
   }
 
   async function toggleArchive() {
     const archived = !project!.archived;
-    await repo.updateProject(id, { archived });
-    if (archived) toast('Proyecto archivado', { label: 'Deshacer', run: () => repo.updateProject(id, { archived: false }) });
+    await repo.batch(archived ? 'Proyecto archivado' : 'Proyecto desarchivado', () => repo.updateProject(id, { archived }));
   }
 
   async function cycleColor() {
@@ -108,7 +107,7 @@ export function ProjectView({ id }: { id: string }) {
         }
       />
       <QuickAdd defaults={{ project_id: id }} placeholder={`Añadir tarea a ${project.name}`} />
-      <Section title={`Sin fecha · ${undated.length}`}>
+      <Section title={`Sin fecha · ${undated.length}`} onDropTasks={(ids) => void moveIds(ids, { project_id: id, due_date: null }, `Movida a ${project.name} sin fecha`)}>
         <TaskList {...list} tasks={undated} empty="—" />
       </Section>
       {dated.length > 0 && (

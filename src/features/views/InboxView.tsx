@@ -23,8 +23,8 @@ export function InboxView() {
         empty="La bandeja está vacía."
         extra={(t) => (
           <>
-            <SmallButton onClick={() => void reschedule(t, today)}>Hoy</SmallButton>
-            <SmallButton onClick={() => void reschedule(t, addDays(today, 1))}>Mañana</SmallButton>
+            <SmallButton onClick={() => void reschedule([t], today)}>Hoy</SmallButton>
+            <SmallButton onClick={() => void reschedule([t], addDays(today, 1))}>Mañana</SmallButton>
           </>
         )}
       />

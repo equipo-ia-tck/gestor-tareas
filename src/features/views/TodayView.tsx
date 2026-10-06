@@ -9,7 +9,7 @@ import { ViewHeader } from './ViewHeader';
 
 export function TodayView() {
   const { tasks, today, projectMap, settings, editTask } = useApp();
-  const { reschedule } = useTaskActions();
+  const { reschedule, moveIds } = useTaskActions();
   const overdue = overdueTasks(tasks, today);
   const dueToday = tasksDueOn(tasks, today);
   const done = completedOn(tasks, today);
@@ -32,8 +32,8 @@ export function TodayView() {
             tasks={overdue}
             extra={(t) => (
               <>
-                <SmallButton onClick={() => void reschedule(t, today)}>Hoy</SmallButton>
-                <SmallButton onClick={() => void reschedule(t, addDays(today, 1))}>Mañana</SmallButton>
+                <SmallButton onClick={() => void reschedule([t], today)}>Hoy</SmallButton>
+                <SmallButton onClick={() => void reschedule([t], addDays(today, 1))}>Mañana</SmallButton>
               </>
             )}
           />
@@ -43,6 +43,7 @@ export function TodayView() {
       <Section
         title={`Para hoy · ${dueToday.length}`}
         aside={<LoadBar load={load} capacity={settings.capacity_minutes} />}
+        onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}
       >
         <TaskList {...list} tasks={dueToday} hideDate empty="Nada previsto para hoy." />
       </Section>

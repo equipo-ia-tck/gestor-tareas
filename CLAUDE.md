@@ -23,7 +23,8 @@ src/
   components/ UI reutilizable: TaskRow, TaskList/Section, TaskEditor, QuickAdd, Modal, Toast
   features/   views/ (Hoy, 7 días, Bandeja, Proyectos, Personas), backup/ (Copias y ajustes, recordatorio),
               capture/ (CaptureInput: resaltado, autocompletado, chips; submitCapture), command/ (modal Cmd+K,
-              paleta, comandos, atajos globales, chuleta)
+              paleta, comandos, atajos globales, chuleta), selection/ (selección, teclado, barra en bloque),
+              history/ (avisos de deshacer y Ctrl/Cmd+Z)
   app/        App, Sidebar, router por hash, AppContext (datos compartidos y editor)
 tests/        Vitest: dominio, copias y repositorio
 ```
@@ -43,7 +44,14 @@ tests/        Vitest: dominio, copias y repositorio
 - **Copia automática en archivo.** El `FileSystemFileHandle` se guarda en `meta`. Tras recargar, Chrome exige un gesto del usuario para reconceder el permiso, y el aviso "Reactivar copia automática" aparece en `BackupReminder`. Escribe con un debounce de 2 s y actualiza `last_backup_at`.
 - **Router por hash** (`#/today`, `#/project/:id`…). No necesita configuración de servidor y funciona en GitHub Pages y sin conexión.
 - **Alta rápida.** `QuickAdd` (en cada vista) y el modal Cmd+K usan el mismo `CaptureInput`.
-- **Avisos de deshacer.** Por ahora `useTaskActions` deshace acciones concretas (completar, eliminar, reprogramar). En la fase 3 se sustituirá por un historial global de comandos.
+- **Deshacer global (fase 3).** El repositorio guarda en el historial el estado anterior y posterior de cada registro que cambia
+  (tareas y proyectos). `repo.batch(label, fn)` agrupa varias mutaciones en una sola entrada; los lotes anidados se suman
+  al exterior. `undo`/`redo` reaplican los estados en una transacción. `HistoryBridge` muestra el aviso "Deshacer" de cada
+  entrada nueva y gestiona Ctrl/Cmd+Z y Ctrl/Cmd+Shift+Z (fuera de campos de texto, donde manda el deshacer nativo).
+  No entran en el historial los ajustes, `markBackup` ni la purga. Importar vacía el historial. Límite: 100 entradas, solo
+  en memoria (se pierde al recargar).
+- **Etiquetas de acción.** Las acciones de UI van por `useTaskActions` (o `repo.batch`) con una etiqueta legible:
+  es lo que se ve en el aviso. No hace falta mostrar avisos a mano.
 
 ## Parser de captura (fase 2)
 
@@ -65,6 +73,23 @@ tests/        Vitest: dominio, copias y repositorio
 - **Captura**: lo detectado manda sobre los valores por defecto de la vista (fecha de Hoy, proyecto actual…). Los proyectos
   nuevos se crean al enviar, una vez por lote. Las tareas sin título no se crean.
 
+## Interacción (fase 3)
+
+- **Selección** en `SelectionProvider`: `selected` (conjunto), `focused` (cursor) y `editing` (tarea y campo en edición).
+  Clic = seleccionar solo esa, Cmd/Ctrl+clic = añadir o quitar, Shift+clic = rango desde el ancla. El orden para rangos
+  y para J/K sale del DOM (`[data-task-id]` dentro de `main`), así funciona igual en todas las vistas y secciones.
+- **`targetsFor(id)`**: si la tarea forma parte de la selección, la acción se aplica a toda la selección; si no, solo a ella.
+  Lo usan el teclado, la barra en bloque, el editor de campos y el arrastre.
+- **Edición en línea**: doble clic sobre un campo (`data-field`) o tecla (Enter = título, D = fecha, M = proyecto).
+  `FieldEditor` interpreta texto libre con `parser/fields.ts` ("vie", "15 oct", "1h30") y muestra una vista previa.
+- **Arrastrar y soltar**: HTML5 nativo con el tipo MIME propio `application/x-gestor-task-ids` (lista de ids). Destinos:
+  secciones de día (7 días, Para hoy), "Sin fecha" de un proyecto y, en la barra lateral, Hoy, Bandeja y cada proyecto.
+- **Búsqueda**: ruta `#/search/<consulta>` y buscador en la barra lateral (`/`). `domain/search.ts`: palabras sin tildes
+  en título, notas, proyecto, personas y etiquetas. Filtros `#`, `@` y `+` por prefijo; `todas:` incluye completadas.
+- **Orden de los listeners de teclado**: `SelectionProvider` envuelve a `CommandCenterProvider`. Los efectos hijos se
+  registran antes, así que el centro de comandos (N, G+letra, ?, /) procesa la tecla primero y marca `preventDefault`;
+  la selección ignora los eventos ya gestionados.
+
 ## Atajos (fase 2)
 
 Atajos globales en `CommandCenterProvider`: Cmd/Ctrl+K captura, Cmd/Ctrl+Shift+P paleta, `>` al principio de la captura
@@ -75,7 +100,7 @@ en un campo editable o hay un diálogo abierto.
 
 - [x] Fase 1: base, IndexedDB, modelo, CRUD, vistas básicas y copias de seguridad
 - [x] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
-- [ ] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
+- [x] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
 - [ ] Fase 4: recurrentes, mantenimiento automático y resumen del día
 - [ ] Fase 5: dictado y PWA offline
 

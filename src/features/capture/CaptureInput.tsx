@@ -1,6 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
-import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
 import { formatDay, formatMinutes } from '../../domain/dates';
 import { describeRule } from '../../domain/recurrence';
@@ -41,7 +40,6 @@ interface Suggestion {
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
 export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large }: Props) {
   const { tasks, projects, today } = useApp();
-  const toast = useToast();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [ignore, setIgnore] = useState<string[]>([]);
@@ -111,14 +109,11 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   async function submit() {
     const valid = parsed.filter((p) => p.title);
     if (valid.length === 0) return;
-    const created = await submitCapture(valid, defaults);
+    const where = destination(valid[0], defaults);
+    const label = valid.length === 1 ? `Tarea creada${where ? ` en ${where}` : ''}` : `${valid.length} tareas creadas`;
+    await repo.batch(label, () => submitCapture(valid, defaults));
     setText('');
     setIgnore([]);
-    const where = destination(valid[0], defaults);
-    toast(
-      created.length === 1 ? `Tarea creada${where ? ` en ${where}` : ''}` : `${created.length} tareas creadas`,
-      { label: 'Deshacer', run: async () => { for (const t of created) await repo.deleteTask(t.id); } },
-    );
     onDone?.();
   }
 

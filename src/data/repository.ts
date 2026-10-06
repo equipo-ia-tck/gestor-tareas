@@ -8,7 +8,25 @@ import {
   type TaskPatch,
 } from '../domain/types';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
+import type { Table } from 'dexie';
 import { SCHEMA_VERSION, TasksDB } from './db';
+
+type TableName = 'tasks' | 'projects';
+
+/** Estado de un registro antes y después de un cambio (undefined = no existía). */
+export interface Change {
+  table: TableName;
+  key: string;
+  before: Task | Project | undefined;
+  after: Task | Project | undefined;
+}
+
+export interface HistoryEntry {
+  label: string;
+  changes: Change[];
+}
+
+export type HistoryEvent = { type: 'push' | 'undo' | 'redo'; entry: HistoryEntry };
 
 /**
  * Único punto de acceso a los datos. Los componentes no tocan Dexie directamente,
@@ -40,6 +58,12 @@ export interface Repository {
   getMeta<T>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
 
+  /** Agrupa varias mutaciones en una sola entrada del historial (un solo "Deshacer"). */
+  batch<T>(label: string, fn: () => Promise<T>): Promise<T>;
+  undo(): Promise<HistoryEntry | null>;
+  redo(): Promise<HistoryEntry | null>;
+  onHistory(listener: (e: HistoryEvent) => void): () => void;
+
   /** Se llama tras cada cambio en los datos que deben respaldarse. */
   onChange(listener: () => void): () => void;
 }
@@ -48,9 +72,14 @@ const now = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID();
 
 const SETTINGS_KEY = 'settings';
+const HISTORY_LIMIT = 100;
 
 export class DexieRepository implements Repository {
   private listeners = new Set<() => void>();
+  private historyListeners = new Set<(e: HistoryEvent) => void>();
+  private undoStack: HistoryEntry[] = [];
+  private redoStack: HistoryEntry[] = [];
+  private group: HistoryEntry | null = null;
   readonly db: TasksDB;
 
   constructor(db: TasksDB = new TasksDB()) {
@@ -64,6 +93,75 @@ export class DexieRepository implements Repository {
   onChange(listener: () => void) {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
+  }
+
+  // ---------- Historial (deshacer / rehacer) ----------
+
+  onHistory(listener: (e: HistoryEvent) => void) {
+    this.historyListeners.add(listener);
+    return () => void this.historyListeners.delete(listener);
+  }
+
+  private notify(e: HistoryEvent) {
+    for (const l of this.historyListeners) l(e);
+  }
+
+  private record(change: Change, defaultLabel: string) {
+    if (this.group) {
+      this.group.changes.push(change);
+      return;
+    }
+    this.push({ label: defaultLabel, changes: [change] });
+  }
+
+  private push(entry: HistoryEntry) {
+    this.undoStack.push(entry);
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    this.redoStack = [];
+    this.notify({ type: 'push', entry });
+  }
+
+  async batch<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    if (this.group) return fn(); // anidado: se suma al grupo exterior
+    const group: HistoryEntry = { label, changes: [] };
+    this.group = group;
+    try {
+      return await fn();
+    } finally {
+      this.group = null;
+      if (group.changes.length) this.push(group);
+    }
+  }
+
+  private async apply(entry: HistoryEntry, side: 'before' | 'after') {
+    const changes = side === 'before' ? [...entry.changes].reverse() : entry.changes;
+    await this.db.transaction('rw', this.db.tasks, this.db.projects, async () => {
+      for (const c of changes) {
+        const table = this.db[c.table] as unknown as Table<Task | Project, string>;
+        const value = c[side];
+        if (value === undefined) await table.delete(c.key);
+        else await table.put(value);
+      }
+    });
+    this.emit();
+  }
+
+  async undo() {
+    const entry = this.undoStack.pop();
+    if (!entry) return null;
+    await this.apply(entry, 'before');
+    this.redoStack.push(entry);
+    this.notify({ type: 'undo', entry });
+    return entry;
+  }
+
+  async redo() {
+    const entry = this.redoStack.pop();
+    if (!entry) return null;
+    await this.apply(entry, 'after');
+    this.undoStack.push(entry);
+    this.notify({ type: 'redo', entry });
+    return entry;
   }
 
   // ---------- Tareas ----------
@@ -101,33 +199,44 @@ export class DexieRepository implements Repository {
       last_touched_at: ts,
     };
     await this.db.tasks.add(task);
+    this.record({ table: 'tasks', key: task.id, before: undefined, after: task }, 'Tarea creada');
     this.emit();
     return task;
   }
 
-  async updateTask(id: string, patch: TaskPatch) {
+  /** Actualiza una tarea y registra el cambio. `touch` = cuenta como "tocada" (por defecto sí). */
+  private async patchTask(id: string, patch: TaskPatch, label: string, touch = true) {
+    const before = await this.db.tasks.get(id);
+    if (!before) return undefined;
     const ts = now();
-    await this.db.tasks.update(id, { ...patch, updated_at: ts, last_touched_at: ts });
+    await this.db.tasks.update(id, touch ? { ...patch, updated_at: ts, last_touched_at: ts } : patch);
+    const after = await this.db.tasks.get(id);
+    this.record({ table: 'tasks', key: id, before, after }, label);
     this.emit();
-    return this.db.tasks.get(id);
+    return after;
+  }
+
+  updateTask(id: string, patch: TaskPatch) {
+    return this.patchTask(id, patch, 'Tarea actualizada');
   }
 
   async setCompleted(id: string, done: boolean) {
-    await this.updateTask(id, done
-      ? { status: 'done', completed_at: now() }
-      : { status: 'todo', completed_at: null });
+    await this.patchTask(
+      id,
+      done ? { status: 'done', completed_at: now() } : { status: 'todo', completed_at: null },
+      done ? 'Tarea completada' : 'Tarea marcada como pendiente',
+    );
   }
 
   async deleteTask(id: string) {
-    await this.db.tasks.update(id, { deleted_at: now() });
-    this.emit();
+    await this.patchTask(id, { deleted_at: now() }, 'Tarea eliminada', false);
   }
 
   async restoreTask(id: string) {
-    await this.db.tasks.update(id, { deleted_at: null });
-    this.emit();
+    await this.patchTask(id, { deleted_at: null }, 'Tarea restaurada', false);
   }
 
+  /** Borrado definitivo de lo eliminado hace tiempo. No pasa por el historial. */
   async purgeDeleted(olderThanDays: number) {
     const limit = new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
     const n = await this.db.tasks.where('deleted_at').below(limit).delete();
@@ -158,16 +267,21 @@ export class DexieRepository implements Repository {
       created_at: now(),
     };
     await this.db.projects.add(project);
+    this.record({ table: 'projects', key: project.id, before: undefined, after: project }, 'Proyecto creado');
     this.emit();
     return project;
   }
 
   async updateProject(id: string, patch: Partial<Omit<Project, 'id'>>) {
+    const before = await this.db.projects.get(id);
+    if (!before) return;
     await this.db.projects.update(id, patch);
+    const after = await this.db.projects.get(id);
+    this.record({ table: 'projects', key: id, before, after }, 'Proyecto actualizado');
     this.emit();
   }
 
-  // ---------- Ajustes ----------
+  // ---------- Ajustes (fuera del historial: no son acciones sobre tareas) ----------
 
   async getSettings(): Promise<Settings> {
     const row = await this.db.settings.get(SETTINGS_KEY);
@@ -205,6 +319,7 @@ export class DexieRepository implements Repository {
     };
   }
 
+  /** Sustituye todos los datos. Vacía el historial: deshacer no puede cruzar una importación. */
   async replaceAll(backup: Backup) {
     await this.db.transaction('rw', this.db.projects, this.db.tasks, this.db.settings, async () => {
       await Promise.all([this.db.projects.clear(), this.db.tasks.clear(), this.db.settings.clear()]);
@@ -212,6 +327,8 @@ export class DexieRepository implements Repository {
       await this.db.tasks.bulkAdd(backup.tasks);
       await this.db.settings.put({ key: SETTINGS_KEY, value: backup.settings });
     });
+    this.undoStack = [];
+    this.redoStack = [];
     this.emit();
   }
 

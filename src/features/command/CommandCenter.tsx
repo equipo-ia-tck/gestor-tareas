@@ -5,6 +5,7 @@ import { useToast } from '../../components/Toast';
 import { fuzzyScore } from '../../domain/text';
 import type { NewTask } from '../../domain/types';
 import { CaptureInput } from '../capture/CaptureInput';
+import { useSelection } from '../selection/SelectionContext';
 import { buildCommands, type Command } from './commands';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
@@ -53,6 +54,7 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
       pendingG.current = 0;
       if (key === 'g') { pendingG.current = Date.now(); return; }
       if (e.key === '?') { e.preventDefault(); setMode({ kind: 'shortcuts' }); return; }
+      if (e.key === '/') { e.preventDefault(); document.getElementById('global-search')?.focus(); return; }
       if (key === 'n' || key === 'q') { e.preventDefault(); setMode({ kind: 'capture' }); }
     };
     window.addEventListener('keydown', onKey);
@@ -122,14 +124,16 @@ function Palette({ initialQuery, onClose, onBackToCapture, openCapture, openShor
 }) {
   const { tasks, projects, today } = useApp();
   const toast = useToast();
+  const { targetsFor, selectAll } = useSelection();
+  const selection = targetsFor(null);
   const [query, setQuery] = useState(initialQuery);
   const [selected, setSelected] = useState(0);
   const [pendingInput, setPendingInput] = useState<Command | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const commands = useMemo(
-    () => buildCommands({ tasks, projects, today, openCapture, openShortcuts, toast }),
-    [tasks, projects, today, openCapture, openShortcuts, toast],
+    () => buildCommands({ tasks, projects, today, openCapture, openShortcuts, toast, selection, selectAll }),
+    [tasks, projects, today, openCapture, openShortcuts, toast, selection, selectAll],
   );
 
   const results = useMemo(() => {
