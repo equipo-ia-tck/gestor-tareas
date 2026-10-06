@@ -2,6 +2,7 @@ import { AppProvider } from './AppContext';
 import { useRoute, type Route } from './router';
 import { Sidebar } from './Sidebar';
 import { ToastProvider } from '../components/Toast';
+import { CommandCenterProvider } from '../features/command/CommandCenter';
 import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
@@ -28,6 +29,7 @@ export function App() {
   return (
     <ToastProvider>
       <AppProvider>
+        <CommandCenterProvider>
         <div className="grid h-dvh grid-cols-[220px_1fr] max-sm:grid-cols-1">
           <div className="max-sm:hidden"><Sidebar route={route} /></div>
           <main className="overflow-y-auto">
@@ -37,6 +39,7 @@ export function App() {
             </div>
           </main>
         </div>
+        </CommandCenterProvider>
       </AppProvider>
     </ToastProvider>
   );

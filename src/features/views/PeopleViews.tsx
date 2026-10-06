@@ -22,7 +22,7 @@ export function PeopleView() {
         ))}
       </ul>
       {people.length === 0 && (
-        <p className="px-2 text-sm text-zinc-400">Aún no hay personas. Añádelas al editar una tarea (en la fase 2, escribiendo @nombre).</p>
+        <p className="px-2 text-sm text-zinc-400">Aún no hay personas. Escribe @nombre al capturar una tarea.</p>
       )}
     </>
   );

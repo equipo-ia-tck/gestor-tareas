@@ -71,3 +71,10 @@ export function peopleIndex(tasks: Task[]): { name: string; count: number }[] {
 
 export const samePerson = (a: string, b: string) =>
   a.localeCompare(b, 'es', { sensitivity: 'base' }) === 0;
+
+/** Todas las personas usadas alguna vez (también en tareas completadas), para autocompletar. */
+export function knownPeople(tasks: Task[]): string[] {
+  const counts = new Map<string, number>();
+  for (const t of tasks) for (const p of t.people) counts.set(p, (counts.get(p) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+}

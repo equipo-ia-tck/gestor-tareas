@@ -14,12 +14,16 @@ Vite 8, React 19, TypeScript 7, Tailwind 4 (plugin `@tailwindcss/vite`, modo osc
 
 ```
 src/
-  domain/     tipos, esquemas zod, fechas y selectores. Funciones puras y testeadas, sin React ni Dexie.
+  domain/     tipos, esquemas zod, fechas, selectores, recurrencia (nextOccurrence) y texto (fold, búsqueda difusa).
+              Funciones puras y testeadas, sin React ni Dexie.
+  parser/     parseCapture(texto, ctx) => ParsedTask[]: patterns.ts (expresiones regulares en español + respaldo chrono)
   data/       db.ts (Dexie y migraciones), repository.ts (interfaz Repository + DexieRepository),
               backup.ts (validar, exportar, recordatorio), fsAutosave.ts (File System Access), services.ts (instancias únicas)
   hooks/      useData (useLiveQuery sobre el repositorio), useTaskActions (acciones con aviso "Deshacer")
   components/ UI reutilizable: TaskRow, TaskList/Section, TaskEditor, QuickAdd, Modal, Toast
-  features/   views/ (Hoy, 7 días, Bandeja, Proyectos, Personas), backup/ (Copias y ajustes, recordatorio)
+  features/   views/ (Hoy, 7 días, Bandeja, Proyectos, Personas), backup/ (Copias y ajustes, recordatorio),
+              capture/ (CaptureInput: resaltado, autocompletado, chips; submitCapture), command/ (modal Cmd+K,
+              paleta, comandos, atajos globales, chuleta)
   app/        App, Sidebar, router por hash, AppContext (datos compartidos y editor)
 tests/        Vitest: dominio, copias y repositorio
 ```
@@ -38,12 +42,39 @@ tests/        Vitest: dominio, copias y repositorio
 - **Importar.** Primero se valida con zod (incluida la integridad entre tareas y proyectos), después se muestra un resumen y solo entonces se sobrescribe. Antes de sobrescribir se guarda una instantánea en memoria para poder deshacer.
 - **Copia automática en archivo.** El `FileSystemFileHandle` se guarda en `meta`. Tras recargar, Chrome exige un gesto del usuario para reconceder el permiso, y el aviso "Reactivar copia automática" aparece en `BackupReminder`. Escribe con un debounce de 2 s y actualiza `last_backup_at`.
 - **Router por hash** (`#/today`, `#/project/:id`…). No necesita configuración de servidor y funciona en GitHub Pages y sin conexión.
+- **Alta rápida.** `QuickAdd` (en cada vista) y el modal Cmd+K usan el mismo `CaptureInput`.
 - **Avisos de deshacer.** Por ahora `useTaskActions` deshace acciones concretas (completar, eliminar, reprogramar). En la fase 3 se sustituirá por un historial global de comandos.
+
+## Parser de captura (fase 2)
+
+- **Interfaz estable** `ParseCapture` en `parser/types.ts`: se podrá sustituir por IA sin tocar la UI.
+- **Orden de extracción**: tokens con símbolo (`#` `@` `!` `~` `+`) → recurrencia → fecha. Cada token reserva su rango,
+  así "cada lunes" no se lee también como "el lunes" y "#mañana" no es una fecha.
+- **Fechas propias antes que chrono**: chrono-es falla en "pasado mañana", "el lunes" dicho en lunes y "a las 5".
+  chrono solo se usa de respaldo y únicamente si el resultado tiene día y mes seguros y contiene un número.
+- **Reglas de fechas**: "el X" dicho en día X → la semana siguiente ("este X" → hoy). Fecha sin año ya pasada → año
+  siguiente. "fin de mes" → último día del mes. "la semana que viene" → próximo lunes. "por la mañana" no es fecha.
+  "los lunes" (sin "cada"/"todos") no es fecha ni recurrencia.
+- **Recurrencia sin fecha** → `due_date` = primera ocurrencia desde hoy (incluido). Con fecha, "cada mes/semana" se ancla
+  en ella.
+- **Títulos**: se eliminan los tokens salvo `@persona`, que se queda como nombre ("a @Diana" → "a Diana").
+- **Descartar chips**: la UI pasa `ctx.ignore` con claves `tipo:texto` (ver `tokenKey`); el fragmento se trata como
+  texto y se reserva para que ningún otro extractor lo use. Clave por texto, no por posición, para sobrevivir a ediciones.
+- **Nombres**: `nameKey` ignora mayúsculas, tildes y separadores; `#fundacion-cadete` = "Fundación Cadete". El
+  autocompletado inserta nombres con espacios convertidos en guiones.
+- **Captura**: lo detectado manda sobre los valores por defecto de la vista (fecha de Hoy, proyecto actual…). Los proyectos
+  nuevos se crean al enviar, una vez por lote. Las tareas sin título no se crean.
+
+## Atajos (fase 2)
+
+Atajos globales en `CommandCenterProvider`: Cmd/Ctrl+K captura, Cmd/Ctrl+Shift+P paleta, `>` al principio de la captura
+pasa a la paleta, `N`/`Q` captura, `G`+letra navega, `?` chuleta. Los atajos de una tecla se ignoran si el foco está
+en un campo editable o hay un diálogo abierto.
 
 ## Fases
 
 - [x] Fase 1: base, IndexedDB, modelo, CRUD, vistas básicas y copias de seguridad
-- [ ] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
+- [x] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
 - [ ] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
 - [ ] Fase 4: recurrentes, mantenimiento automático y resumen del día
 - [ ] Fase 5: dictado y PWA offline

@@ -23,7 +23,7 @@ export function TodayView() {
         title="Hoy"
         subtitle={`${weekdayName(today, true)} ${d.getDate()} de ${d.toLocaleDateString('es-ES', { month: 'long' })}`}
       />
-      <QuickAdd defaults={{ due_date: today }} placeholder="Añadir tarea para hoy y pulsar Enter" />
+      <QuickAdd defaults={{ due_date: today }} placeholder="Añadir para hoy… (#proyecto @persona !1 ~30m)" />
 
       {overdue.length > 0 && (
         <Section title={`Se te quedaron atrás · ${overdue.length}`}>

@@ -19,7 +19,7 @@ export function WeekView() {
         title="Próximos 7 días"
         subtitle={`${formatMinutes(totalLoad)} estimados de ${formatMinutes(totalCap)} disponibles${overdue ? ` · ${overdue} atrasadas en Hoy` : ''}`}
       />
-      <QuickAdd placeholder="Añadir tarea (sin fecha va a la bandeja)" />
+      <QuickAdd placeholder="Añadir tarea: el jueves preparar demo ~2h" />
       {plan.map((day) => (
         <Section
           key={day.date}
