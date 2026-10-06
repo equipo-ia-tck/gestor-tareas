@@ -7,12 +7,14 @@ import type { NewTask } from '../../domain/types';
 import { CaptureInput } from '../capture/CaptureInput';
 import { useSelection } from '../selection/SelectionContext';
 import { buildCommands, type Command } from './commands';
+import { DistributePreview } from '../maintenance/DistributePreview';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
 type Mode =
   | { kind: 'capture'; defaults?: Partial<NewTask> }
   | { kind: 'palette'; query?: string }
-  | { kind: 'shortcuts' };
+  | { kind: 'shortcuts' }
+  | { kind: 'distribute' };
 
 interface CommandCenterApi {
   open: (mode: Mode) => void;
@@ -88,9 +90,11 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
               onBackToCapture={() => setMode({ kind: 'capture' })}
               openCapture={() => setMode({ kind: 'capture' })}
               openShortcuts={() => setMode({ kind: 'shortcuts' })}
+              openDistribute={() => setMode({ kind: 'distribute' })}
             />
           )}
           {mode.kind === 'shortcuts' && <ShortcutsHelp onClose={close} />}
+          {mode.kind === 'distribute' && <DistributePreview onClose={close} />}
         </Overlay>
       )}
     </Ctx.Provider>
@@ -115,14 +119,15 @@ function Overlay({ onClose, wide, children }: { onClose: () => void; wide?: bool
   );
 }
 
-function Palette({ initialQuery, onClose, onBackToCapture, openCapture, openShortcuts }: {
+function Palette({ initialQuery, onClose, onBackToCapture, openCapture, openShortcuts, openDistribute }: {
   initialQuery: string;
   onClose: () => void;
   onBackToCapture: () => void;
   openCapture: () => void;
   openShortcuts: () => void;
+  openDistribute: () => void;
 }) {
-  const { tasks, projects, today } = useApp();
+  const { tasks, projects, today, settings } = useApp();
   const toast = useToast();
   const { targetsFor, selectAll } = useSelection();
   const selection = targetsFor(null);
@@ -132,8 +137,8 @@ function Palette({ initialQuery, onClose, onBackToCapture, openCapture, openShor
   const listRef = useRef<HTMLUListElement>(null);
 
   const commands = useMemo(
-    () => buildCommands({ tasks, projects, today, openCapture, openShortcuts, toast, selection, selectAll }),
-    [tasks, projects, today, openCapture, openShortcuts, toast, selection, selectAll],
+    () => buildCommands({ tasks, projects, today, settings, openCapture, openShortcuts, openDistribute, toast, selection, selectAll }),
+    [tasks, projects, today, settings, openCapture, openShortcuts, openDistribute, toast, selection, selectAll],
   );
 
   const results = useMemo(() => {
@@ -152,7 +157,7 @@ function Palette({ initialQuery, onClose, onBackToCapture, openCapture, openShor
   async function execute(c: Command | undefined) {
     if (!c) return;
     if (c.input) { setPendingInput(c); setQuery(''); return; }
-    const keepsOpen = c.id === 'new-task' || c.id === 'shortcuts';
+    const keepsOpen = c.id === 'new-task' || c.id === 'shortcuts' || c.id === 'distribute';
     if (!keepsOpen) onClose();
     await c.run?.();
   }

@@ -10,6 +10,8 @@ export function useTaskActions() {
     async toggleDone(tasks: Task[]) {
       if (!tasks.length) return;
       const done = tasks.some((t) => t.status !== 'done');
+      // Una sola: el repositorio pone la etiqueta (incluye "se repite…" en las recurrentes).
+      if (tasks.length === 1) return repo.setCompleted(tasks[0].id, done);
       await repo.batch(
         done ? n(tasks.length, 'Tarea completada', 'tareas completadas') : n(tasks.length, 'Tarea pendiente', 'tareas pendientes'),
         async () => { for (const t of tasks) await repo.setCompleted(t.id, done); },

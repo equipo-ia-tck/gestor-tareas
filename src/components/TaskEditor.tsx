@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { repo } from '../data/services';
-import type { Priority, Project, Task, TaskStatus } from '../domain/types';
+import { describeRule } from '../domain/recurrence';
+import type { Priority, Project, RecurrenceRule, Task, TaskStatus } from '../domain/types';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { Modal } from './Modal';
 
@@ -27,6 +28,7 @@ export function TaskEditor({ task, projects, onClose }: Props) {
   const [people, setPeople] = useState(task.people.join(', '));
   const [tags, setTags] = useState(task.tags.join(', '));
   const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(task.recurrence_rule);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -41,6 +43,7 @@ export function TaskEditor({ task, projects, onClose }: Props) {
       people: splitList(people),
       tags: splitList(tags),
       status,
+      recurrence_rule: recurrence,
       completed_at: status === 'done' ? (task.completed_at ?? new Date().toISOString()) : null,
     });
     onClose();
@@ -86,6 +89,14 @@ export function TaskEditor({ task, projects, onClose }: Props) {
             </select>
           </Field>
         </div>
+        {recurrence && (
+          <p className="flex items-center gap-2 text-sm">
+            <span>↻ Se repite {describeRule(recurrence)}</span>
+            <button type="button" className="text-xs text-zinc-500 underline-offset-2 hover:underline" onClick={() => setRecurrence(null)}>
+              Quitar recurrencia
+            </button>
+          </p>
+        )}
         {task.raw_input && task.raw_input.trim() !== task.title && (
           <p className="text-xs text-zinc-500">Texto original: <span className="font-mono">{task.raw_input}</span></p>
         )}

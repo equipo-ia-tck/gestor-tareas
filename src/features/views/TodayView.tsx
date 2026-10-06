@@ -1,19 +1,21 @@
 import { useApp } from '../../app/AppContext';
 import { QuickAdd } from '../../components/QuickAdd';
-import { Section, SmallButton, TaskList } from '../../components/TaskList';
-import { addDays, formatMinutes, parseISODate, weekdayName } from '../../domain/dates';
-import { completedOn, overdueTasks, tasksDueOn, totalMinutes } from '../../domain/selectors';
+import { Section, TaskList } from '../../components/TaskList';
+import { formatMinutes, isWorkday, parseISODate, weekdayName } from '../../domain/dates';
+import { completedOn, tasksDueOn, totalMinutes } from '../../domain/selectors';
 import { useTaskActions } from '../../hooks/useTaskActions';
+import { OverdueBlock } from '../maintenance/OverdueBlock';
+import { StaleBlock } from '../maintenance/StaleBlock';
 import { LoadBar } from './LoadBar';
 import { ViewHeader } from './ViewHeader';
 
 export function TodayView() {
   const { tasks, today, projectMap, settings, editTask } = useApp();
-  const { reschedule, moveIds } = useTaskActions();
-  const overdue = overdueTasks(tasks, today);
+  const { moveIds } = useTaskActions();
   const dueToday = tasksDueOn(tasks, today);
   const done = completedOn(tasks, today);
   const load = totalMinutes(dueToday);
+  const capacity = isWorkday(today, settings.workdays) ? settings.capacity_minutes : 0;
   const d = parseISODate(today);
   const list = { today, projects: projectMap, onEdit: editTask };
 
@@ -25,27 +27,19 @@ export function TodayView() {
       />
       <QuickAdd defaults={{ due_date: today }} placeholder="Añadir para hoy… (#proyecto @persona !1 ~30m)" />
 
-      {overdue.length > 0 && (
-        <Section title={`Se te quedaron atrás · ${overdue.length}`}>
-          <TaskList
-            {...list}
-            tasks={overdue}
-            extra={(t) => (
-              <>
-                <SmallButton onClick={() => void reschedule([t], today)}>Hoy</SmallButton>
-                <SmallButton onClick={() => void reschedule([t], addDays(today, 1))}>Mañana</SmallButton>
-              </>
-            )}
-          />
-        </Section>
-      )}
+      <OverdueBlock />
 
       <Section
         title={`Para hoy · ${dueToday.length}`}
-        aside={<LoadBar load={load} capacity={settings.capacity_minutes} />}
+        aside={<LoadBar load={load} capacity={capacity} />}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}
       >
         <TaskList {...list} tasks={dueToday} hideDate empty="Nada previsto para hoy." />
+        {capacity > 0 && load > capacity && (
+          <p className="px-2 pt-1 text-xs text-amber-600 dark:text-amber-400">
+            Hoy tienes {formatMinutes(load)} estimados y tu capacidad es de {formatMinutes(capacity)}.
+          </p>
+        )}
       </Section>
 
       {done.length > 0 && (
@@ -53,11 +47,8 @@ export function TodayView() {
           <TaskList {...list} tasks={done} hideDate />
         </Section>
       )}
-      {load > settings.capacity_minutes && (
-        <p className="px-2 text-xs text-amber-600 dark:text-amber-400">
-          Hoy tienes {formatMinutes(load)} estimados y tu capacidad es de {formatMinutes(settings.capacity_minutes)}.
-        </p>
-      )}
+
+      <StaleBlock />
     </>
   );
 }

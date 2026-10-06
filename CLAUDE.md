@@ -14,7 +14,8 @@ Vite 8, React 19, TypeScript 7, Tailwind 4 (plugin `@tailwindcss/vite`, modo osc
 
 ```
 src/
-  domain/     tipos, esquemas zod, fechas, selectores, recurrencia (nextOccurrence) y texto (fold, búsqueda difusa).
+  domain/     tipos, esquemas zod, fechas, selectores, recurrencia (nextOccurrence) y texto (fold, búsqueda difusa),
+              maintenance.ts (repartir, obsoletas, resumen del día, siguiente ocurrencia), search.ts.
               Funciones puras y testeadas, sin React ni Dexie.
   parser/     parseCapture(texto, ctx) => ParsedTask[]: patterns.ts (expresiones regulares en español + respaldo chrono)
   data/       db.ts (Dexie y migraciones), repository.ts (interfaz Repository + DexieRepository),
@@ -24,7 +25,8 @@ src/
   features/   views/ (Hoy, 7 días, Bandeja, Proyectos, Personas), backup/ (Copias y ajustes, recordatorio),
               capture/ (CaptureInput: resaltado, autocompletado, chips; submitCapture), command/ (modal Cmd+K,
               paleta, comandos, atajos globales, chuleta), selection/ (selección, teclado, barra en bloque),
-              history/ (avisos de deshacer y Ctrl/Cmd+Z)
+              history/ (avisos de deshacer y Ctrl/Cmd+Z), maintenance/ (atrasadas, repartir, obsoletas),
+              summary/ (resumen del día)
   app/        App, Sidebar, router por hash, AppContext (datos compartidos y editor)
 tests/        Vitest: dominio, copias y repositorio
 ```
@@ -90,6 +92,27 @@ tests/        Vitest: dominio, copias y repositorio
   registran antes, así que el centro de comandos (N, G+letra, ?, /) procesa la tecla primero y marca `preventDefault`;
   la selección ignora los eventos ya gestionados.
 
+## Reglas automáticas (fase 4)
+
+Todo en `domain/maintenance.ts`, con funciones puras y tests (`tests/maintenance.test.ts`).
+
+- **Recurrentes**: `repo.setCompleted` crea la siguiente ocurrencia dentro del mismo lote, así un solo "Deshacer" lo
+  revierte todo. Fecha = `nextDueAfterCompletion`: parte de la fecha de la tarea y salta las ocurrencias pasadas sin ir
+  más allá de hoy (completar tarde una diaria no deja cola de atrasadas, pero la de hoy sigue pendiente). No se crea
+  ocurrencia si la serie (`series_id`) ya tiene una pendiente: desmarcar y volver a completar no duplica.
+- **Atrasadas** (`OverdueBlock`): hoy, mañana, la semana que viene (próximo lunes), sin fecha o eliminar, y para todas,
+  "Todas a hoy" y "Repartir…".
+- **Repartir** (`distributeOverdue`): orden por prioridad, después fecha más antigua y antigüedad. Reparte en los
+  próximos días laborables (desde hoy si lo es, hasta 30) restando lo ya previsto cada día. Sin estimación = 30 min
+  (`DEFAULT_ESTIMATE_MINUTES`). Si una tarea no cabe en ningún día, va al que tiene más hueco. Antes de aplicar se ve una
+  vista previa (`DistributePreview`, modo `distribute` del centro de comandos).
+- **Obsoletas** (`staleTasks`): activas con `last_touched_at` de hace más de 30 días, excluidas las atrasadas (ya tienen
+  su bloque). Nunca se archivan solas: "Archivar" pone `status: 'archived'` y "Mantener" solo renueva `last_touched_at`.
+- **Resumen del día** (`dailySummary`): las 3 más importantes entre las de hoy y las atrasadas (prioridad, vencimiento,
+  antigüedad); si faltan, se completa con las de prioridad 1-2 de los próximos 7 días o sin fecha. Muestra atrasadas,
+  carga frente a capacidad y aviso de sobrecarga. Al cerrarlo se guarda `settings.ui.summary_dismissed_on`, así que no
+  vuelve ese día. El comando "Ver resumen del día" lo reabre.
+
 ## Atajos (fase 2)
 
 Atajos globales en `CommandCenterProvider`: Cmd/Ctrl+K captura, Cmd/Ctrl+Shift+P paleta, `>` al principio de la captura
@@ -101,7 +124,7 @@ en un campo editable o hay un diálogo abierto.
 - [x] Fase 1: base, IndexedDB, modelo, CRUD, vistas básicas y copias de seguridad
 - [x] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
 - [x] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
-- [ ] Fase 4: recurrentes, mantenimiento automático y resumen del día
+- [x] Fase 4: recurrentes, mantenimiento automático y resumen del día
 - [ ] Fase 5: dictado y PWA offline
 
 ## Comprobaciones antes de cada commit

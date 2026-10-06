@@ -7,6 +7,7 @@ import { HistoryBridge } from '../features/history/HistoryBridge';
 import { BulkBar } from '../features/selection/BulkBar';
 import { SelectionProvider, useSelection } from '../features/selection/SelectionContext';
 import { SearchView } from '../features/views/SearchView';
+import { DailySummary } from '../features/summary/DailySummary';
 import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
@@ -39,6 +40,7 @@ function Main({ route }: { route: Route }) {
     >
       <div className="mx-auto max-w-3xl px-6 py-6 pb-28 max-sm:px-4">
         <BackupReminder />
+        <DailySummary />
         <View route={route} />
       </div>
     </main>

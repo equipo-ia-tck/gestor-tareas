@@ -9,6 +9,8 @@ import {
 } from '../domain/types';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
+import { formatDay, todayISO } from '../domain/dates';
+import { nextOccurrenceTask } from '../domain/maintenance';
 import { SCHEMA_VERSION, TasksDB } from './db';
 
 type TableName = 'tasks' | 'projects';
@@ -220,12 +222,24 @@ export class DexieRepository implements Repository {
     return this.patchTask(id, patch, 'Tarea actualizada');
   }
 
+  /** Completar una recurrente crea su siguiente ocurrencia (misma entrada del historial). */
   async setCompleted(id: string, done: boolean) {
-    await this.patchTask(
-      id,
-      done ? { status: 'done', completed_at: now() } : { status: 'todo', completed_at: null },
-      done ? 'Tarea completada' : 'Tarea marcada como pendiente',
-    );
+    const task = await this.db.tasks.get(id);
+    if (!task) return;
+    const today = todayISO();
+    let next = done && task.status !== 'done' ? nextOccurrenceTask(task, today) : null;
+    // Si la serie ya tiene una ocurrencia pendiente (p. ej. se desmarcó y se vuelve a completar), no se duplica.
+    if (next?.series_id) {
+      const pending = await this.db.tasks.where('series_id').equals(next.series_id)
+        .filter((t) => t.id !== id && t.status === 'todo' && !t.deleted_at).count();
+      if (pending) next = null;
+    }
+    const label = !done ? 'Tarea marcada como pendiente'
+      : next ? `Tarea completada · se repite ${formatDay(next.due_date!, today).toLowerCase()}` : 'Tarea completada';
+    await this.batch(label, async () => {
+      await this.patchTask(id, done ? { status: 'done', completed_at: now() } : { status: 'todo', completed_at: null }, label);
+      if (next) await this.createTask(next);
+    });
   }
 
   async deleteTask(id: string) {

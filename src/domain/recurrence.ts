@@ -73,3 +73,14 @@ export function describeRule(rule: RecurrenceRule): string {
       return `${every('mes', 'meses')}, día ${rule.monthDay}`;
   }
 }
+
+/**
+ * Fecha de la siguiente ocurrencia al completar una recurrente.
+ * Se calcula desde su fecha, saltando las ocurrencias que ya han pasado: completar tarde una
+ * diaria no deja una cola de días atrasados, pero la de hoy sigue pendiente.
+ */
+export function nextDueAfterCompletion(rule: RecurrenceRule, due: ISODate | null, today: ISODate): ISODate {
+  let next = nextOccurrence(rule, due ?? today);
+  while (next < today) next = nextOccurrence(rule, next);
+  return next;
+}

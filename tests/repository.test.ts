@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TasksDB } from '../src/data/db';
 import { DexieRepository } from '../src/data/repository';
 import { parseBackup } from '../src/data/backup';
+import { todayISO } from '../src/domain/dates';
 
 let repo: DexieRepository;
 
@@ -148,5 +149,30 @@ describe('historial (deshacer / rehacer)', () => {
     await repo.createTask({ title: 'a' });
     await repo.replaceAll(await repo.exportSnapshot());
     expect(await repo.undo()).toBeNull();
+  });
+});
+
+describe('recurrentes', () => {
+  it('completar una recurrente crea la siguiente y deshacer lo revierte todo', async () => {
+    const t = await repo.createTask({
+      title: 'regar', due_date: '2020-01-01', recurrence_rule: { freq: 'daily', interval: 1 }, series_id: 's1',
+    });
+    await repo.setCompleted(t.id, true);
+    const all = await repo.listTasks();
+    expect(all).toHaveLength(2);
+    const next = all.find((x) => x.id !== t.id)!;
+    expect(next).toMatchObject({ title: 'regar', status: 'todo', series_id: 's1' });
+    expect(next.due_date! >= todayISO()).toBe(true);
+    await repo.undo();
+    expect(await repo.listTasks()).toHaveLength(1);
+    expect((await repo.getTask(t.id))?.status).toBe('todo');
+  });
+
+  it('volver a marcar como pendiente no crea otra ocurrencia', async () => {
+    const t = await repo.createTask({ title: 'x', recurrence_rule: { freq: 'daily', interval: 1 } });
+    await repo.setCompleted(t.id, true);
+    await repo.setCompleted(t.id, false);
+    await repo.setCompleted(t.id, true);
+    expect(await repo.listTasks()).toHaveLength(2);
   });
 });

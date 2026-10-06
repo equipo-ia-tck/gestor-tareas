@@ -3,7 +3,8 @@ import { downloadBackup } from '../../data/backup';
 import { repo } from '../../data/services';
 import { addDays } from '../../domain/dates';
 import { overdueTasks, peopleIndex } from '../../domain/selectors';
-import type { ISODate, Project, Task } from '../../domain/types';
+import type { ISODate, Project, Settings, Task } from '../../domain/types';
+import { staleTasks } from '../../domain/maintenance';
 
 export interface Command {
   id: string;
@@ -21,7 +22,9 @@ export interface CommandEnv {
   tasks: Task[];
   projects: Project[];
   today: ISODate;
+  settings: Settings;
   openCapture: () => void;
+  openDistribute: () => void;
   openShortcuts: () => void;
   /** Tareas seleccionadas (o la enfocada). */
   selection: Task[];
@@ -65,6 +68,24 @@ export function buildCommands(env: CommandEnv): Command[] {
     },
     { id: 'move-overdue-today', section: 'Tareas', title: 'Mover vencidas a hoy', keywords: 'atrasadas', run: () => moveTasks(env, overdue, env.today, 'hoy') },
     { id: 'move-overdue-tomorrow', section: 'Tareas', title: 'Mover vencidas a mañana', keywords: 'atrasadas', run: () => moveTasks(env, overdue, addDays(env.today, 1), 'mañana') },
+    { id: 'distribute', section: 'Tareas', title: 'Repartir atrasadas', keywords: 'vencidas distribuir capacidad', run: env.openDistribute },
+    {
+      id: 'archive-stale', section: 'Tareas', title: 'Archivar tareas sin tocar (+30 días)', keywords: 'obsoletas viejas',
+      run: async () => {
+        const stale = staleTasks(env.tasks, env.today);
+        if (!stale.length) return env.toast('No hay tareas sin tocar desde hace más de 30 días');
+        await repo.batch(`${stale.length} tareas archivadas`, async () => {
+          for (const t of stale) await repo.updateTask(t.id, { status: 'archived' });
+        });
+      },
+    },
+    {
+      id: 'summary', section: 'Ayuda', title: 'Ver resumen del día', keywords: 'hoy importante',
+      run: async () => {
+        await repo.updateSettings({ ui: { ...env.settings.ui, summary_dismissed_on: null } });
+        navigate({ view: 'today' });
+      },
+    },
     { id: 'move-overdue-none', section: 'Tareas', title: 'Quitar fecha a las vencidas', keywords: 'atrasadas sin fecha', run: () => moveTasks(env, overdue, null, 'sin fecha') },
 
     { id: 'sel-complete', section: 'Selección', title: `Completar seleccionadas${sel}`, shortcut: 'C', run: () => onSelection(env, 'completada', (t) => repo.setCompleted(t.id, true)) },
