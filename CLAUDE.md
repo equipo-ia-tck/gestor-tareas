@@ -17,7 +17,8 @@ src/
   domain/     tipos, esquemas zod, fechas, selectores, recurrencia (nextOccurrence) y texto (fold, búsqueda difusa),
               maintenance.ts (repartir, obsoletas, resumen del día, siguiente ocurrencia), search.ts.
               Funciones puras y testeadas, sin React ni Dexie.
-  parser/     parseCapture(texto, ctx) => ParsedTask[]: patterns.ts (expresiones regulares en español + respaldo chrono)
+  parser/     parseCapture(texto, ctx) => ParsedTask[]: patterns.ts (expresiones regulares en español + respaldo chrono),
+              fields.ts (campos editables), spoken.ts (dictado → sintaxis)
   data/       db.ts (Dexie y migraciones), repository.ts (interfaz Repository + DexieRepository),
               backup.ts (validar, exportar, recordatorio), fsAutosave.ts (File System Access), services.ts (instancias únicas)
   hooks/      useData (useLiveQuery sobre el repositorio), useTaskActions (acciones con aviso "Deshacer")
@@ -26,7 +27,7 @@ src/
               capture/ (CaptureInput: resaltado, autocompletado, chips; submitCapture), command/ (modal Cmd+K,
               paleta, comandos, atajos globales, chuleta), selection/ (selección, teclado, barra en bloque),
               history/ (avisos de deshacer y Ctrl/Cmd+Z), maintenance/ (atrasadas, repartir, obsoletas),
-              summary/ (resumen del día)
+              summary/ (resumen del día), dictation/ (Web Speech API)
   app/        App, Sidebar, router por hash, AppContext (datos compartidos y editor)
 tests/        Vitest: dominio, copias y repositorio
 ```
@@ -113,6 +114,23 @@ Todo en `domain/maintenance.ts`, con funciones puras y tests (`tests/maintenance
   carga frente a capacidad y aviso de sobrecarga. Al cerrarlo se guarda `settings.ui.summary_dismissed_on`, así que no
   vuelve ese día. El comando "Ver resumen del día" lo reabre.
 
+## Dictado y PWA (fase 5)
+
+- **Dictado** (`features/dictation/`): Web Speech API en `es-ES`, sin escucha continua (se para tras una pausa) y con
+  resultados provisionales visibles. Desactivado por defecto (`settings.ui.dictation_enabled`); para activarlo hay que
+  confirmar un aviso de privacidad. Si el navegador no lo soporta, ni el botón ni Alt+M aparecen.
+- El texto dictado se **añade** a la barra de captura (no crea la tarea directamente): pasa por el mismo `parseCapture`
+  y se revisa con los chips. Antes, `parser/spoken.ts` traduce lo hablado a la sintaxis de captura ("prioridad uno" → !1,
+  "proyecto X" → #X, "media hora" → ~30m; "dentro de dos horas" se deja como plazo).
+- **Alt+M** (`e.code === 'KeyM'`, para que funcione aunque Option+M escriba "µ" en Mac): desde fuera abre la captura y
+  empieza a dictar; dentro de la barra, activa o para el dictado. Se descartaron Cmd/Ctrl+Shift+D/M/J porque son atajos
+  del navegador.
+- **PWA** con `vite-plugin-pwa` (`generateSW`, `registerType: 'autoUpdate'`): precachea todo el bundle e iconos, con
+  `navigateFallback: index.html` (las rutas van por hash). Los iconos PNG (192, 512 y maskable) salen de `public/icon.svg`.
+  En desarrollo no se registra el service worker: para probar sin conexión, `npm run build && npm run preview`.
+- **Instalación**: `app/install.ts` guarda `beforeinstallprompt` al arrancar y la tarjeta de ajustes ofrece "Instalar app".
+- **Ojo**: IndexedDB va por origen. Desarrollo (5173), preview (4173) y producción tienen datos separados.
+
 ## Atajos (fase 2)
 
 Atajos globales en `CommandCenterProvider`: Cmd/Ctrl+K captura, Cmd/Ctrl+Shift+P paleta, `>` al principio de la captura
@@ -125,7 +143,7 @@ en un campo editable o hay un diálogo abierto.
 - [x] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
 - [x] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
 - [x] Fase 4: recurrentes, mantenimiento automático y resumen del día
-- [ ] Fase 5: dictado y PWA offline
+- [x] Fase 5: dictado y PWA offline
 
 ## Comprobaciones antes de cada commit
 

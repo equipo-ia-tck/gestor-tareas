@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { formatDay, formatMinutes } from '../../domain/dates';
@@ -8,6 +8,7 @@ import { fuzzyScore, nameKey, tokenName } from '../../domain/text';
 import type { NewTask } from '../../domain/types';
 import { parseCapture } from '../../parser/parseCapture';
 import { tokenKey, type ParsedTask, type Token, type TokenKind } from '../../parser/types';
+import { useDictation } from '../dictation/useDictation';
 import { submitCapture } from './submitCapture';
 
 export const TOKEN_STYLE: Record<TokenKind, string> = {
@@ -30,6 +31,8 @@ interface Props {
   /** El texto empieza por ">": pasar a la paleta de comandos. */
   onCommandMode?: (query: string) => void;
   large?: boolean;
+  /** Empezar a dictar nada más abrir (atajo Alt+M). */
+  autoDictate?: boolean;
 }
 
 interface Suggestion {
@@ -38,7 +41,7 @@ interface Suggestion {
 }
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
-export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large }: Props) {
+export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large, autoDictate }: Props) {
   const { tasks, projects, today } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -46,6 +49,22 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   const [selected, setSelected] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // El dictado añade el texto reconocido a la barra: pasa por el mismo parser y se revisa antes de crear.
+  const textRef = useRef(text);
+  textRef.current = text;
+  const dictation = useDictation((spoken) => {
+    const prev = textRef.current;
+    const next = prev && !/\s$/.test(prev) ? `${prev} ${spoken}` : prev + spoken;
+    textRef.current = next;
+    setText(next);
+    setCaret(next.length);
+    requestAnimationFrame(() => ref.current?.setSelectionRange(next.length, next.length));
+  });
+  const { start: startDictation } = dictation;
+  useEffect(() => {
+    if (autoDictate) startDictation();
+  }, [autoDictate, startDictation]);
 
   const people = useMemo(() => knownPeople(tasks), [tasks]);
   const parsed = useMemo(
@@ -118,6 +137,12 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.altKey && e.code === 'KeyM' && dictation.available) {
+      e.preventDefault();
+      e.stopPropagation();
+      dictation.toggle();
+      return;
+    }
     if (showSuggestions) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -148,7 +173,7 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   }
 
   const textSize = large ? 'text-base' : 'text-sm';
-  const box = `${textSize} px-3 py-2 leading-6 whitespace-pre-wrap break-words`;
+  const box = `${textSize} py-2 pl-3 ${dictation.available ? 'pr-10' : 'pr-3'} leading-6 whitespace-pre-wrap break-words`;
 
   return (
     <div className="relative">
@@ -169,7 +194,26 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
           onKeyDown={onKeyDown}
           className={`${box} relative block w-full resize-none overflow-hidden bg-transparent text-transparent caret-zinc-900 outline-none placeholder:text-zinc-400 dark:caret-zinc-100`}
         />
+        {dictation.available && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={dictation.toggle}
+            aria-label={dictation.listening ? 'Parar dictado' : 'Dictar tarea'}
+            aria-pressed={dictation.listening}
+            title={dictation.listening ? 'Parar dictado (Alt+M)' : 'Dictar (Alt+M)'}
+            className={`absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-md ${dictation.listening ? 'bg-red-500 text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'}`}
+          >
+            <MicIcon />
+          </button>
+        )}
       </div>
+      {dictation.listening && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+          ● Escuchando…{dictation.interim && <span className="ml-1 text-zinc-500 italic">{dictation.interim}</span>}
+        </p>
+      )}
+      {dictation.error && !dictation.listening && <p className="mt-1 text-xs text-amber-600">{dictation.error}</p>}
 
       {showSuggestions && (
         <ul role="listbox" className="absolute z-20 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
@@ -268,5 +312,14 @@ function Chip({ kind, children, onRemove }: { kind: TokenKind; children: ReactNo
         ×
       </button>
     </span>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </svg>
   );
 }

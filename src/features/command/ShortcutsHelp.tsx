@@ -8,6 +8,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       [`${MOD} K`, 'Capturar tarea (desde cualquier vista)'],
       [`${MOD} ⇧ P`, 'Paleta de comandos (o escribe > en la captura)'],
       ['N', 'Capturar tarea'],
+      [isMac ? '⌥ M' : 'Alt M', 'Dictar (si está activado en ajustes)'],
       ['/', 'Buscar'],
       [`${MOD} Z`, 'Deshacer'],
       [`${MOD} ⇧ Z`, 'Rehacer'],
@@ -64,6 +65,8 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['cada lunes, cada mes', 'Recurrencia'],
       ['; o salto de línea', 'Varias tareas a la vez'],
       ['Tab / ↑ ↓', 'Elegir sugerencia de # o @'],
+      ['«prioridad uno», «proyecto X»', 'Al dictar: !1, #X'],
+      ['«media hora», «dos horas»', 'Al dictar: ~30m, ~2h'],
     ],
   },
 ];

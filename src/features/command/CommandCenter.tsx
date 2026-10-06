@@ -8,10 +8,11 @@ import { CaptureInput } from '../capture/CaptureInput';
 import { useSelection } from '../selection/SelectionContext';
 import { buildCommands, type Command } from './commands';
 import { DistributePreview } from '../maintenance/DistributePreview';
+import { isDictationSupported } from '../dictation/speech';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
 type Mode =
-  | { kind: 'capture'; defaults?: Partial<NewTask> }
+  | { kind: 'capture'; defaults?: Partial<NewTask>; dictate?: boolean }
   | { kind: 'palette'; query?: string }
   | { kind: 'shortcuts' }
   | { kind: 'distribute' };
@@ -38,6 +39,9 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => setMode(null), []);
   const api = useMemo(() => ({ open, close }), [open, close]);
   const pendingG = useRef(0);
+  const { settings } = useApp();
+  const dictationOn = useRef(false);
+  dictationOn.current = settings.ui.dictation_enabled && isDictationSupported();
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -45,6 +49,12 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
       const key = e.key.toLowerCase();
       if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); setMode({ kind: 'capture' }); return; }
       if (mod && e.shiftKey && key === 'p') { e.preventDefault(); setMode({ kind: 'palette' }); return; }
+      // Alt+M: dictar (si está activado). Dentro de la barra de captura lo gestiona la propia barra.
+      if (e.altKey && !mod && e.code === 'KeyM' && !isEditable(e.target) && dictationOn.current) {
+        e.preventDefault();
+        setMode({ kind: 'capture', dictate: true });
+        return;
+      }
       if (mod || e.altKey || isEditable(e.target) || document.querySelector('[role="dialog"]')) return;
 
       if (Date.now() - pendingG.current < 1200 && GOTO[key]) {
@@ -74,6 +84,7 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
                 large
                 autoFocus
                 defaults={mode.defaults}
+                autoDictate={mode.dictate}
                 onDone={close}
                 onCancel={close}
                 onCommandMode={(query) => setMode({ kind: 'palette', query })}
