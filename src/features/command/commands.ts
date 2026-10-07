@@ -102,6 +102,7 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Próximos 7 días', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas', run: go({ view: 'board' }) },
+    { id: 'go-all', section: 'Ir a', title: 'Ir a Todo (filtros)', shortcut: 'G O', keywords: 'todas filtrar us ts temas vista', run: go({ view: 'all' }) },
     { id: 'go-notes', section: 'Ir a', title: 'Ir a Notas', shortcut: 'G N', keywords: 'actas reuniones apuntes', run: go({ view: 'notes' }) },
     { id: 'new-meeting', section: 'Crear', title: 'Nueva acta de reunión', keywords: 'nota reunión daily', run: () => newNote('meeting', env.today).then(() => undefined) },
     { id: 'new-note', section: 'Crear', title: 'Nueva nota', keywords: 'apunte', run: () => newNote('note', env.today).then(() => undefined) },

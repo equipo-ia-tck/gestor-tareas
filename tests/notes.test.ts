@@ -13,7 +13,7 @@ beforeEach(() => { repo = new DexieRepository(new TasksDB(`v4-${crypto.randomUUI
 
 const note = (body: string, extra: Partial<Note> = {}): Note => ({
   id: crypto.randomUUID(), title: 'Daily', body, kind: 'meeting', date: '2026-10-07', project_id: null,
-  people: extractMentions(body), pinned: false, created_at: '', updated_at: '', deleted_at: null, ...extra,
+  people: extractMentions(body), pinned: false, task_id: null, meeting_url: null, created_at: '', updated_at: '', deleted_at: null, ...extra,
 });
 
 describe('markdown', () => {
@@ -90,9 +90,9 @@ describe('notas', () => {
   });
 
   it('fichas de persona', async () => {
-    await repo.savePerson({ name: 'Diana', role: 'PO', notes: '' });
-    await repo.savePerson({ name: 'diana', role: 'Product Owner', notes: 'Prefiere Teams' });
-    expect(await repo.listPeople()).toEqual([{ name: 'Diana', role: 'Product Owner', notes: 'Prefiere Teams' }]);
+    await repo.savePerson({ name: 'Diana', role: 'PO', notes: '', email: '' });
+    await repo.savePerson({ name: 'diana', role: 'Product Owner', notes: 'Prefiere Teams', email: 'diana@empresa.com' });
+    expect(await repo.listPeople()).toEqual([{ name: 'Diana', role: 'Product Owner', notes: 'Prefiere Teams', email: 'diana@empresa.com' }]);
   });
 
   it('migración v3 → v4 añade el tipo Tema', async () => {

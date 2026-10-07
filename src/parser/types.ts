@@ -16,7 +16,8 @@ export interface ParsedTask {
   raw_input: string;
   due_date: ISODate | null;
   /** id null = proyecto nuevo que habrá que crear. */
-  project: { id: string | null; name: string } | null;
+  /** id null = proyecto nuevo que habrá que crear (dentro de `parent_id` si se escribió "#padre/nuevo"). */
+  project: { id: string | null; name: string; parent_id?: string | null } | null;
   people: string[];
   tags: string[];
   priority: Priority | null;
@@ -35,7 +36,7 @@ export interface ParsedTask {
 
 export interface CaptureContext {
   today: ISODate;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; parent_id?: string | null }[];
   people: string[];
   /** Tipos con abreviatura, para deducir el tipo de "US-123". */
   types?: { id: string; short: string }[];

@@ -6,6 +6,7 @@ import { BoardView } from '../features/board/BoardView';
 import { CalendarView } from '../features/calendar/CalendarView';
 import { ReleasesView } from '../features/releases/ReleasesView';
 import { NotesView } from '../features/notes/NotesView';
+import { AllView } from '../features/all/AllView';
 import { LogView } from '../features/log/LogView';
 import { ReminderCenter } from '../features/reminders/ReminderCenter';
 import { routeHref, useRoute, type Route } from './router';
@@ -30,6 +31,7 @@ function View({ route }: { route: Route }) {
     case 'today': return <TodayView />;
     case 'week': return <WeekView />;
     case 'board': return <BoardView />;
+    case 'all': return <AllView />;
     case 'releases': return <ReleasesView />;
     case 'notes': return <NotesView id={route.id} />;
     case 'log': return <LogView />;

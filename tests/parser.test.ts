@@ -59,7 +59,7 @@ describe('ejemplos de la especificación', () => {
   it('pasado mañana revisar informe #trabajo ~45m', () => {
     const t = one('pasado mañana revisar informe #trabajo ~45m');
     expect(t.due_date).toBe('2026-10-07');
-    expect(t.project).toEqual({ id: null, name: 'trabajo' }); // proyecto nuevo
+    expect(t.project).toEqual({ id: null, name: 'trabajo', parent_id: null }); // proyecto nuevo
     expect(t.estimated_minutes).toBe(45);
     expect(t.title).toBe('revisar informe');
   });
@@ -318,5 +318,26 @@ describe('recordatorios (fase 9)', () => {
 
   it('horas imposibles se quedan como texto', () => {
     expect(r('recuérdame a las 27 algo').remind_at).toBeNull();
+  });
+});
+
+describe('subproyectos en la captura (fase 10)', () => {
+  const ctx10: CaptureContext = {
+    ...ctx,
+    projects: [
+      { id: 'c', name: 'caixa', parent_id: null },
+      { id: 's14', name: 'Sprint 14', parent_id: 'c' },
+    ],
+  };
+  const p10 = (text: string) => parseCapture(text, ctx10)[0].project;
+
+  it('#padre/hijo resuelve el subproyecto', () => {
+    expect(p10('revisar #caixa/sprint-14')).toEqual({ id: 's14', name: 'Sprint 14' });
+    expect(p10('revisar #sprint-14')).toEqual({ id: 's14', name: 'Sprint 14' });
+  });
+
+  it('#padre/nuevo propone un subproyecto nuevo', () => {
+    expect(p10('revisar #caixa/sprint-15')).toEqual({ id: null, name: 'sprint 15', parent_id: 'c' });
+    expect(p10('revisar #otro')).toEqual({ id: null, name: 'otro', parent_id: null });
   });
 });

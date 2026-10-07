@@ -16,6 +16,7 @@ export const projectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   color: z.string(),
+  parent_id: z.string().nullable().default(null),
   archived: z.boolean(),
   created_at: isoDateTime,
 });
@@ -55,6 +56,19 @@ export const taskSchema = z.object({
   state_id: t.state_id ?? (t.status === 'done' ? 'task-done' : 'task-todo'),
 }));
 
+export const taskFilterSchema = z.object({
+  text: z.string().default(''),
+  types: z.array(z.string()).default([]),
+  categories: z.array(z.enum(['todo', 'doing', 'blocked', 'done'])).default([]),
+  projects: z.array(z.string()).default([]),
+  people: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
+  releases: z.array(z.string()).default([]),
+  due: z.enum(['any', 'overdue', 'today', 'week', 'has', 'none']).default('any'),
+  includeDone: z.boolean().default(false),
+  groupBy: z.enum(['none', 'type', 'state', 'project', 'person', 'due']).default('type'),
+});
+
 export const settingsSchema = z.object({
   capacity_minutes: z.number().int().min(0).max(1440).default(DEFAULT_SETTINGS.capacity_minutes),
   workdays: z.array(z.number().int().min(0).max(6)).default(DEFAULT_SETTINGS.workdays),
@@ -65,6 +79,7 @@ export const settingsSchema = z.object({
       dictation_enabled: z.boolean().default(false),
     })
     .default(DEFAULT_SETTINGS.ui),
+  saved_views: z.array(z.object({ id: z.string(), name: z.string(), filter: taskFilterSchema })).default([]),
 });
 
 const stateSchema = z.object({
@@ -105,12 +120,14 @@ export const noteSchema = z.object({
   project_id: z.string().nullable(),
   people: z.array(z.string()).default([]),
   pinned: z.boolean().default(false),
+  task_id: z.string().nullable().default(null),
+  meeting_url: z.string().nullable().default(null),
   created_at: isoDateTime,
   updated_at: isoDateTime,
   deleted_at: isoDateTime.nullable().default(null),
 });
 
-export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default('') });
+export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default(''), email: z.string().default('') });
 
 export const activitySchema = z.object({
   id: z.string().min(1),

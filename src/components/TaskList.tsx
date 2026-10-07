@@ -11,6 +11,8 @@ interface Props {
   empty?: ReactNode;
   hideDate?: boolean;
   hideProject?: boolean;
+  /** Proyecto de la vista: su chip no se muestra en las filas (sí el de los subproyectos). */
+  contextProjectId?: string;
   extra?: (task: Task) => ReactNode;
 }
 

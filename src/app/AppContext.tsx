@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { labelColorMap } from '../domain/colors';
 import { postponeCounts } from '../domain/activity';
+import { isEffectivelyArchived } from '../domain/projects';
 import type { ActivityEntry, ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
 import { useActivity, useItemTypes, useLabels, useNotes, usePeople, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
 
@@ -56,7 +57,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppData>(() => ({
     tasks,
     allProjects,
-    projects: allProjects.filter((p) => !p.archived),
+    // Activos: ni el proyecto ni ninguno de sus antepasados está archivado.
+    projects: allProjects.filter((p) => !isEffectivelyArchived(p.id, new Map(allProjects.map((x) => [x.id, x])))),
     projectMap: new Map(allProjects.map((p) => [p.id, p])),
     itemTypes,
     releases,

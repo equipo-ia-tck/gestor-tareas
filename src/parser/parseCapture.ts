@@ -1,5 +1,6 @@
 import { firstOccurrence } from '../domain/recurrence';
 import { nameKey } from '../domain/text';
+import { resolveProjectToken } from '../domain/projects';
 import type { ISODate, Priority, RecurrenceRule } from '../domain/types';
 import { estimateMinutes, findDate, findRecurrence, findReminder, SYMBOL_PATTERNS, type Match } from './patterns';
 import { addDays } from '../domain/dates';
@@ -64,8 +65,15 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
       if (!addToken(kind, start, end)) continue;
       const value = m[1];
       if (kind === 'project') {
-        const found = ctx.projects.find((p) => nameKey(p.name) === nameKey(value));
-        project = found ? { id: found.id, name: found.name } : { id: null, name: value };
+        const all = ctx.projects.map((p) => ({ ...p, parent_id: p.parent_id ?? null, color: '', archived: false, created_at: '' }));
+        const found = resolveProjectToken(value, all);
+        if (found) project = { id: found.id, name: found.name };
+        else {
+          // "#padre/nuevo": se creará como subproyecto si el padre existe.
+          const slash = value.lastIndexOf('/');
+          const parent = slash > 0 ? resolveProjectToken(value.slice(0, slash), all) : undefined;
+          project = { id: null, name: (slash > 0 ? value.slice(slash + 1) : value).replace(/-/g, ' '), parent_id: parent?.id ?? null };
+        }
       } else if (kind === 'person') {
         const known = ctx.people.find((p) => nameKey(p) === nameKey(value)) ?? value.replace(/-/g, ' ');
         personNames.set(start, known);

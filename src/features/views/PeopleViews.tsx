@@ -66,7 +66,7 @@ export function PersonView({ name }: { name: string }) {
         <Avatar name={name} size={56} />
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">{name}</h1>
-          <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} />
+          <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
         <button type="button" onClick={() => void newNote('meeting', today, { people: [name], title: `Reunión con ${name}` })}
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
@@ -130,11 +130,11 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   );
 }
 
-function RoleField({ name, value, notes }: { name: string; value: string; notes: string }) {
+function RoleField({ name, value, notes, email }: { name: string; value: string; notes: string; email?: string }) {
   const [role, setRole] = useState(value);
   const [text, setText] = useState(notes);
   useEffect(() => { setRole(value); setText(notes); }, [value, notes]);
-  const save = () => { if (role !== value || text !== notes) void repo.savePerson({ name, role: role.trim(), notes: text }); };
+  const save = () => { if (role !== value || text !== notes) void repo.savePerson({ name, role: role.trim(), notes: text, email: email ?? '' }); };
   return (
     <div className="mt-0.5 space-y-1">
       <input value={role} onChange={(e) => setRole(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}

@@ -22,7 +22,8 @@ src/
   data/       db.ts (Dexie y migraciones), repository.ts (interfaz Repository + DexieRepository),
               backup.ts (validar, exportar, recordatorio), fsAutosave.ts (File System Access), services.ts (instancias únicas)
   hooks/      useData (useLiveQuery sobre el repositorio), useTaskActions (acciones con aviso "Deshacer")
-  components/ UI reutilizable: TaskRow, TaskList/Section, TaskEditor, QuickAdd, Modal, Toast
+  components/ UI reutilizable: TaskRow, TaskList/Section, TaskDetailPanel, FieldEditor, QuickAdd, Modal, Toast;
+              ui/ (Badges, Popover, DatePicker, ProjectOptions, ViewSwitcher)
   features/   views/ (Hoy, 7 días, Bandeja, Proyectos, Personas), backup/ (Copias y ajustes, recordatorio),
               capture/ (CaptureInput: resaltado, autocompletado, chips; submitCapture), command/ (modal Cmd+K,
               paleta, comandos, atajos globales, chuleta), selection/ (selección, teclado, barra en bloque),
@@ -228,6 +229,27 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   en el título de la pestaña. El permiso se pide al poner el primer recordatorio (con un clic) o desde Ajustes.
 - **Sintaxis**: "recuérdame / avísame (a las) HH[:MM]" pone el aviso el día de la tarea o hoy (mañana si ya pasó y no hay
   fecha). Va antes que la fecha en el orden de extracción. "a las 5" sin "recuérdame" sigue sin significar nada.
+
+## Fase 10: subproyectos, vista "Todo" y calendario de fechas
+
+- **Esquema v6**: `projects.parent_id`; en las notas, `task_id` y `meeting_url`; en las personas, `email`; en los ajustes,
+  `saved_views`. La migración rellena los valores por defecto y las copias antiguas siguen importándose.
+- **Subproyectos** (`domain/projects.ts`): árbol de hasta `MAX_PROJECT_DEPTH = 3` niveles. `canMoveUnder` impide ciclos y
+  pasar del máximo; `withDescendants` y `ancestry` dan descendientes y ruta. Un proyecto con un antepasado archivado cuenta
+  como archivado (`isEffectivelyArchived`, aplicado en `AppContext.projects`). Un subproyecto nuevo hereda el color del padre.
+  Barra lateral en árbol plegable (estado en localStorage); el recuento incluye a los descendientes. El proyecto muestra migas
+  de pan, tarjetas de subproyectos (con alta), "Mover…" (dentro de otro o al nivel superior) y, con "Ver también sus tareas
+  aquí", las tareas de los descendientes (`contextProjectId` oculta el chip del propio proyecto en las filas).
+- **Captura**: `#padre/hijo` (el token de proyecto admite `/`). `resolveProjectToken` acepta la ruta completa o su final;
+  sin ruta, gana el de menos profundidad. `#padre/nuevo` crea el subproyecto dentro del padre. El autocompletado muestra la
+  ruta e inserta `caixa/Sprint-14`. Los selectores usan `useProjectOptions` (árbol con sangría y ruta al buscar).
+- **Vista Todo** (`#/all`, `G O`; `features/all`, `domain/filters.ts`): `applyFilter` combina tipo (interruptores por
+  tipo), categoría de estado, proyecto (con subproyectos), persona, etiqueta, release, fecha (atrasadas, hoy, 7 días, con o
+  sin fecha), texto y "completadas"; `groupTasks` agrupa por tipo, estado, proyecto, persona o fecha. El filtro actual se
+  recuerda en localStorage. Las **vistas guardadas** van en `settings.saved_views`, así que entran en las copias.
+- **Selector de fecha** (`components/ui/DatePicker.tsx`): mes con número de semana ISO (`isoWeek`), hoy resaltado, días no
+  laborables atenuados, un punto en los días con tareas, opciones rápidas y texto libre (`parseDateText`, Enter aplica).
+  `DateButton` lo abre en un desplegable (panel, releases, notas); con la tecla D se abre dentro de la fila (`InlineDatePicker`).
 
 ### Hoja de ruta v2
 

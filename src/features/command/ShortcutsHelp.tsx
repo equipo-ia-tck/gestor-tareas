@@ -48,6 +48,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['G  H', 'Hoy'],
       ['G  S', 'Próximos 7 días'],
       ['G  B', 'Bandeja'],
+      ['G  O', 'Todo (con filtros)'],
       ['G  T', 'Tablero'],
       ['G  N', 'Notas'],
       ['G  C', 'Calendario'],
@@ -63,6 +64,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ['mañana, el viernes, 15 oct', 'Fecha'],
       ['#proyecto', 'Proyecto (se crea si no existe)'],
+      ['#proyecto/sub', 'Subproyecto'],
       ['@persona', 'Persona'],
       ['!1 … !4', 'Prioridad'],
       ['~30m, ~2h, ~1h30', 'Estimación'],

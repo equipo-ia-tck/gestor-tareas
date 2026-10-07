@@ -29,7 +29,7 @@ export const isEditable = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
 const GOTO: Record<string, Parameters<typeof navigate>[0]> = {
-  h: { view: 'today' }, s: { view: 'week' }, b: { view: 'inbox' }, t: { view: 'board' }, c: { view: 'calendar' }, r: { view: 'releases' }, n: { view: 'notes' }, l: { view: 'log' },
+  h: { view: 'today' }, s: { view: 'week' }, b: { view: 'inbox' }, t: { view: 'board' }, c: { view: 'calendar' }, r: { view: 'releases' }, n: { view: 'notes' }, l: { view: 'log' }, o: { view: 'all' },
   p: { view: 'projects' }, e: { view: 'people' }, a: { view: 'settings' },
 };
 

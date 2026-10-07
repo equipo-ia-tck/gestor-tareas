@@ -15,8 +15,8 @@ export async function submitCapture(parsed: ParsedTask[], defaults: Partial<NewT
     if (!p.title) continue;
     let projectId = p.project?.id ?? null;
     if (p.project && !projectId) {
-      const key = nameKey(p.project.name);
-      projectId = newProjects.get(key) ?? (await repo.createProject(p.project.name)).id;
+      const key = `${p.project.parent_id ?? ''}/${nameKey(p.project.name)}`;
+      projectId = newProjects.get(key) ?? (await repo.createProject(p.project.name, { parent_id: p.project.parent_id ?? null })).id;
       newProjects.set(key, projectId);
     }
     let releaseId = p.release?.id ?? null;

@@ -207,7 +207,8 @@ export function findReminder(text: string, blocked: (s: number, e: number) => bo
 // ---------------------------------------------------------------- Tokens con símbolo
 
 export const SYMBOL_PATTERNS = {
-  project: /(?<![\p{L}\p{N}_&/])#([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu,
+  // "#caixa" o, con subproyectos, "#caixa/sprint-14".
+  project: /(?<![\p{L}\p{N}_&/])#([\p{L}\p{N}_\-./]*[\p{L}\p{N}_])/gu,
   person: /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu,
   priority: /(?<!\S)!([1-4])(?![\p{L}\p{N}_])/gu,
   estimate: /(?<!\S)~(\d+(?:[.,]\d+)?)(h|m|min)?(?:(\d{1,2})(?:m|min)?)?(?![\p{L}\p{N}_])/gu,

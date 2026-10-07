@@ -19,6 +19,7 @@ interface Props {
   onEdit: (task: Task) => void;
   hideDate?: boolean;
   hideProject?: boolean;
+  contextProjectId?: string;
   /** Botones extra a la derecha (p. ej. "Hoy" en atrasadas). */
   extra?: ReactNode;
 }
@@ -29,7 +30,8 @@ const INTERACTIVE = 'button, input, select, textarea, a, [role="listbox"]';
  * Fila de tarea. Clic selecciona (Shift: rango, Cmd/Ctrl: añadir), doble clic edita el campo
  * bajo el ratón, se puede arrastrar (con toda la selección) a días, proyectos o la bandeja.
  */
-export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject, extra }: Props) {
+export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: hideAll, contextProjectId, extra }: Props) {
+  const hideProject = hideAll || (contextProjectId !== undefined && task.project_id === contextProjectId);
   const { selected, focused, editing, click, startEdit, stopEdit, targetsFor } = useSelection();
   const { toggleDone, remove, update } = useTaskActions();
   const { itemTypes, labelColors, detailId } = useApp();

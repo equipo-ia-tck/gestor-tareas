@@ -97,6 +97,10 @@ export interface Note {
   /** Personas mencionadas con @ en el cuerpo (se recalcula al guardar; sirve de índice). */
   people: string[];
   pinned: boolean;
+  /** Nota de un elemento (US, TS, tarea…): aparece en su panel, en su proyecto y en Notas. */
+  task_id: string | null;
+  /** Enlace de la reunión (Teams, Meet…). */
+  meeting_url: string | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;
@@ -107,6 +111,8 @@ export interface Person {
   name: string;
   role: string;
   notes: string;
+  /** Para abrir un chat de Teams con la persona. */
+  email: string;
 }
 
 export interface Project {
@@ -115,6 +121,8 @@ export interface Project {
   color: string;
   archived: boolean;
   created_at: ISODateTime;
+  /** Proyecto padre (subproyectos, hasta 3 niveles). */
+  parent_id: string | null;
 }
 
 export interface Task {
@@ -162,6 +170,32 @@ export interface Settings {
     summary_dismissed_on: ISODate | null;
     dictation_enabled: boolean;
   };
+  /** Vistas guardadas de "Todo" (filtros con nombre). */
+  saved_views: SavedView[];
+}
+
+export type DueFilter = 'any' | 'overdue' | 'today' | 'week' | 'has' | 'none';
+export type GroupBy = 'none' | 'type' | 'state' | 'project' | 'person' | 'due';
+
+/** Filtro de la vista "Todo". Listas vacías = sin filtrar por ese campo. */
+export interface TaskFilter {
+  text: string;
+  types: string[];
+  categories: StateCategory[];
+  /** Incluye los subproyectos de cada proyecto elegido. */
+  projects: string[];
+  people: string[];
+  tags: string[];
+  releases: string[];
+  due: DueFilter;
+  includeDone: boolean;
+  groupBy: GroupBy;
+}
+
+export interface SavedView {
+  id: string;
+  name: string;
+  filter: TaskFilter;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -169,6 +203,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workdays: [1, 2, 3, 4, 5],
   last_backup_at: null,
   ui: { summary_dismissed_on: null, dictation_enabled: false },
+  saved_views: [],
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

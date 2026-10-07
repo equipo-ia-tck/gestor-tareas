@@ -64,7 +64,7 @@ export interface Repository {
 
   listProjects(includeArchived?: boolean): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
-  createProject(name: string, color?: string): Promise<Project>;
+  createProject(name: string, opts?: { color?: string; parent_id?: string | null }): Promise<Project>;
   updateProject(id: string, patch: Partial<Omit<Project, 'id'>>): Promise<void>;
 
   listItemTypes(): Promise<ItemType[]>;
@@ -381,14 +381,16 @@ export class DexieRepository implements Repository {
     return this.db.projects.get(id);
   }
 
-  async createProject(name: string, color?: string) {
+  async createProject(name: string, opts: { color?: string; parent_id?: string | null } = {}) {
     const count = await this.db.projects.count();
     const project: Project = {
       id: uuid(),
       name: name.trim(),
-      color: color ?? PROJECT_COLORS[count % PROJECT_COLORS.length],
+      // Un subproyecto hereda el color de su padre (se puede cambiar).
+      color: opts.color ?? (opts.parent_id ? (await this.db.projects.get(opts.parent_id))?.color : undefined) ?? PROJECT_COLORS[count % PROJECT_COLORS.length],
       archived: false,
       created_at: now(),
+      parent_id: opts.parent_id ?? null,
     };
     await this.db.projects.add(project);
     this.record({ table: 'projects', key: project.id, before: undefined, after: project }, 'Proyecto creado');
@@ -512,7 +514,7 @@ export class DexieRepository implements Repository {
     const ts = now();
     const body = fields.body ?? '';
     const note: Note = {
-      title: '', kind: 'note', project_id: null, pinned: false, deleted_at: null,
+      title: '', kind: 'note', project_id: null, pinned: false, deleted_at: null, task_id: null, meeting_url: null,
       ...fields, body, people: extractMentions(body), id: uuid(), created_at: ts, updated_at: ts,
     };
     await this.db.notes.add(note);

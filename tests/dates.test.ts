@@ -61,3 +61,12 @@ describe('calendario', () => {
     expect(addMonths('2026-12-15', 1)).toBe('2027-01-15');
   });
 });
+
+describe('semana ISO', () => {
+  it.each([
+    ['2026-10-07', 41], ['2026-01-01', 1], ['2027-01-01', 53], ['2026-12-28', 53], ['2027-01-04', 1], ['2024-12-30', 1],
+  ])('%s → semana %i', async (iso, week) => {
+    const { isoWeek } = await import('../src/domain/dates');
+    expect(isoWeek(iso)).toBe(week);
+  });
+});

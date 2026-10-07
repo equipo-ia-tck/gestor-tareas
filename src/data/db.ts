@@ -8,7 +8,7 @@ export interface KeyValue {
 }
 
 /** Versión lógica del esquema; se incluye en las copias de seguridad. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export class TasksDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
@@ -77,6 +77,17 @@ export class TasksDB extends Dexie {
       })
       .upgrade(async (tx) => {
         await tx.table('tasks').toCollection().modify((t: Task) => { t.remind_at ??= null; });
+      });
+    // v6: subproyectos, notas de elementos y de reunión, email en las fichas.
+    this.version(6)
+      .stores({
+        projects: 'id, name, archived, parent_id',
+        notes: 'id, date, project_id, kind, *people, deleted_at, task_id',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('projects').toCollection().modify((p: Project) => { p.parent_id ??= null; });
+        await tx.table('notes').toCollection().modify((n: Note) => { n.task_id ??= null; n.meeting_url ??= null; });
+        await tx.table('people').toCollection().modify((p: Person) => { p.email ??= ''; });
       });
     // Base de datos nueva: se crea directamente en la última versión y no pasa por upgrade.
     this.on('populate', (tx) => {

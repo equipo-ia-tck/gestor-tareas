@@ -1,3 +1,4 @@
+import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { useState, type FormEvent } from 'react';
 import { ChevronDown, ChevronRight, Rocket, Trash2 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
@@ -6,6 +7,7 @@ import { Section, TaskList } from '../../components/TaskList';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { TypeBadge } from '../../components/ui/Badges';
 import { inputClass } from '../../components/ui/styles';
+import { DateButton } from '../../components/ui/DatePicker';
 import { repo } from '../../data/services';
 import { formatDay } from '../../domain/dates';
 import { groupReleases, releaseCountdown, releaseProgress } from '../../domain/releases';
@@ -21,7 +23,7 @@ const STATUS: Record<ReleaseStatus, { label: string; cls: string }> = {
 
 /** "Cuándo sale todo": entregas con fecha y el estado de sus US/TS. */
 export function ReleasesView() {
-  const { releases, projects, today } = useApp();
+  const { releases, today } = useApp();
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -40,10 +42,10 @@ export function ReleasesView() {
       <ViewHeader title="Releases" subtitle="Qué sale, cuándo y en qué estado está cada US y TS" />
       <form onSubmit={create} className="mb-6 flex flex-wrap gap-2">
         <input className={`${inputClass} w-48 flex-1`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nueva release (p. ej. R2.3)" />
-        <input type="date" className={`${inputClass} w-40`} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Fecha" />
+        <DateButton value={date || null} onChange={(d) => setDate(d ?? '')} placeholder="Fecha" className={`${inputClass} w-40 text-left`} />
         <select className={`${inputClass} w-44`} value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Proyecto">
           <option value="">Sin proyecto</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <ProjectOptions />
         </select>
         <button className="rounded-md bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-500">Crear</button>
       </form>
@@ -102,8 +104,8 @@ function ReleaseCard({ release, late }: { release: Release; late?: boolean }) {
         </Popover>
         {project && <span className="inline-flex items-center gap-1 text-xs text-zinc-500"><span className="size-2 rounded-sm" style={{ background: project.color }} />{project.name}</span>}
         <span className="flex-1" />
-        <input type="date" value={release.date ?? ''} onChange={(e) => void repo.updateRelease(release.id, { date: e.target.value || null })}
-          className="rounded-md border border-transparent bg-transparent px-1 text-sm text-zinc-600 hover:border-zinc-200 dark:text-zinc-300 dark:hover:border-zinc-700" aria-label="Fecha de la release" />
+        <DateButton value={release.date} align="right" onChange={(d) => void repo.updateRelease(release.id, { date: d })}
+          className="rounded-md border border-transparent px-1.5 py-0.5 text-sm text-zinc-600 hover:border-zinc-200 dark:text-zinc-300 dark:hover:border-zinc-700" />
         <span className={`text-xs font-medium ${late ? 'text-amber-600' : 'text-zinc-500'}`}>{release.status === 'planned' ? releaseCountdown(release, today) : release.date ? formatDay(release.date, today) : ''}</span>
         <button type="button" title="Eliminar release" onClick={() => void repo.deleteRelease(release.id)}
           className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"><Trash2 className="size-4" /></button>

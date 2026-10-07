@@ -1,3 +1,5 @@
+import { ProjectOptions } from '../../components/ui/ProjectOptions';
+import { DateButton } from '../../components/ui/DatePicker';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CheckSquare, FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
@@ -29,7 +31,7 @@ export async function newNote(kind: NoteKind, today: string, fields: Partial<Not
 /** Notas y actas: lista a la izquierda, nota abierta a la derecha. */
 export function NotesView({ id }: { id?: string }) {
   useWideLayout(true);
-  const { notes, projects, today } = useApp();
+  const { notes, today } = useApp();
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<NoteKind | ''>('');
   const [projectId, setProjectId] = useState('');
@@ -67,7 +69,7 @@ export function NotesView({ id }: { id?: string }) {
           ))}
           <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="ml-auto rounded-md border border-zinc-200 bg-white px-1 dark:border-zinc-700 dark:bg-zinc-900" aria-label="Proyecto">
             <option value="">Todos los proyectos</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <ProjectOptions />
           </select>
         </div>
         <ul className="space-y-1">
@@ -130,12 +132,12 @@ function NotePage({ note }: { note: Note }) {
               className={`rounded px-2 py-0.5 text-xs ${note.kind === k ? 'bg-white font-medium shadow-sm dark:bg-zinc-900' : 'text-zinc-500'}`}>{k === 'meeting' ? 'Acta' : 'Nota'}</button>
           ))}
         </div>
-        <input type="date" value={note.date} onChange={(e) => e.target.value && void repo.updateNote(note.id, { date: e.target.value })}
-          className="rounded-md border border-transparent bg-transparent px-1 text-zinc-600 hover:border-zinc-200 dark:text-zinc-300 dark:hover:border-zinc-700" aria-label="Fecha" />
+        <DateButton value={note.date} clearable={false} onChange={(d) => d && void repo.updateNote(note.id, { date: d })}
+          className="rounded-md border border-transparent px-1.5 py-0.5 text-zinc-600 hover:border-zinc-200 dark:text-zinc-300 dark:hover:border-zinc-700" />
         <select value={note.project_id ?? ''} onChange={(e) => void repo.updateNote(note.id, { project_id: e.target.value || null })}
           className="rounded-md border border-transparent bg-transparent px-1 text-zinc-600 hover:border-zinc-200 dark:text-zinc-300 dark:hover:border-zinc-700" aria-label="Proyecto">
           <option value="">Sin proyecto</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <ProjectOptions />
         </select>
         {note.people.length > 0 && <span className="flex items-center gap-1.5 text-xs text-zinc-500"><AvatarStack names={note.people} max={6} size={20} /></span>}
         <span className="flex-1" />

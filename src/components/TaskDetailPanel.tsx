@@ -4,6 +4,8 @@ import {
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesLinkingTask } from '../domain/notes';
+import { projectPath } from '../domain/projects';
+import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
 import { ensureNotificationPermission } from '../features/reminders/notifications';
 import type { ActivityEntry } from '../domain/types';
@@ -16,10 +18,11 @@ import { knownPeople } from '../domain/selectors';
 import { fuzzyScore, nameKey } from '../domain/text';
 import type { ChecklistItem, Priority, Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
-import { parseDateText, parseEstimateText } from '../parser/fields';
+import { parseEstimateText } from '../parser/fields';
 import { isEditable } from '../features/command/CommandCenter';
 import { Avatar, LabelChip, PRIORITY_COLOR, PRIORITY_LABEL, StatePill } from './ui/Badges';
 import { MenuItem, Popover } from './ui/Popover';
+import { DateButton } from './ui/DatePicker';
 
 const fieldBox = 'rounded-md px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800';
 const inputBox = 'w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-900';
@@ -225,21 +228,12 @@ function DateField({ task }: { task: Task }) {
   const { today } = useApp();
   const late = task.status === 'todo' && task.due_date && task.due_date < today;
   return (
-    <InlineText
-      initial=""
-      placeholder="mañana, vie, 15 oct, sin fecha…"
-      display={task.due_date
-        ? <span className={late ? 'text-amber-600' : ''}>{formatDay(task.due_date, today)}</span>
-        : <span className="text-zinc-400">Sin fecha</span>}
-      parse={(t) => {
-        const r = parseDateText(t, today);
-        return { ok: r.ok, preview: r.ok ? `→ ${r.value ? formatDay(r.value, today) : 'sin fecha'}` : 'No entiendo la fecha' };
-      }}
-      onSave={(t) => {
-        if (!t.trim()) return;
-        const r = parseDateText(t, today);
-        if (r.ok) void repo.batch(r.value ? 'Fecha cambiada' : 'Fecha quitada', () => repo.updateTask(task.id, { due_date: r.value }));
-      }}
+    <DateButton
+      value={task.due_date}
+      align="right"
+      className={`${fieldBox} w-full text-left`}
+      render={(v) => (v ? <span className={late ? 'text-amber-600' : ''}>{formatDay(v, today)}</span> : <span className="text-zinc-400">Sin fecha</span>)}
+      onChange={(d) => { if (d !== task.due_date) void repo.batch(d ? 'Fecha cambiada' : 'Fecha quitada', () => repo.updateTask(task.id, { due_date: d })); }}
     />
   );
 }
@@ -356,16 +350,13 @@ function ProjectField({ task }: { task: Task }) {
   const { projects, projectMap } = useApp();
   const current = task.project_id ? projectMap.get(task.project_id) : undefined;
   const [query, setQuery] = useState('');
-  const list = projects
-    .map((p) => ({ p, s: fuzzyScore(query, p.name) }))
-    .filter((x) => x.s !== null)
-    .sort((a, b) => b.s! - a.s!)
-    .map((x) => x.p);
+  const options = useProjectOptions(query);
+  const list = options.map((o) => o.project);
   const move = (id: string | null, name: string) => repo.batch(id ? `Movida a ${name}` : 'Proyecto quitado', () => repo.updateTask(task.id, { project_id: id }));
   return (
     <Popover width="w-64" trigger={(toggle) => (
       <button type="button" className={`${fieldBox} flex w-full items-center gap-2 text-left`} onClick={toggle}>
-        {current ? <><span className="size-2.5 rounded-sm" style={{ background: current.color }} />{current.name}</> : <span className="text-zinc-400">Sin proyecto</span>}
+        {current ? <><span className="size-2.5 shrink-0 rounded-sm" style={{ background: current.color }} /><span className="truncate">{projectPath(current.id, projectMap)}</span></> : <span className="text-zinc-400">Sin proyecto</span>}
       </button>
     )}>
       {(close) => (
@@ -385,9 +376,11 @@ function ProjectField({ task }: { task: Task }) {
             }} />
           <div className="max-h-56 overflow-y-auto">
             {!query && <MenuItem onClick={() => { close(); void move(null, ''); }}><span className="text-zinc-400">Sin proyecto</span></MenuItem>}
-            {list.map((p) => (
+            {options.map(({ project: p, depth, path }) => (
               <MenuItem key={p.id} active={p.id === task.project_id} onClick={() => { close(); void move(p.id, p.name); }}>
-                <span className="size-2.5 rounded-sm" style={{ background: p.color }} />{p.name}
+                <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: `${depth * 0.8}rem` }}>
+                  <span className="size-2.5 shrink-0 rounded-sm" style={{ background: p.color }} /><span className="truncate">{query ? path : p.name}</span>
+                </span>
               </MenuItem>
             ))}
             {query.trim() && !projects.some((p) => nameKey(p.name) === nameKey(query)) && (

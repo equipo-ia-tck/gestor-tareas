@@ -1,12 +1,14 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useMemo, useState, type KeyboardEvent } from 'react';
 import { useApp } from '../app/AppContext';
 import { repo } from '../data/services';
-import { formatDay, formatMinutes } from '../domain/dates';
-import { fuzzyScore, nameKey } from '../domain/text';
+import { formatMinutes } from '../domain/dates';
+import { nameKey } from '../domain/text';
 import type { Task, TaskPatch } from '../domain/types';
 import type { EditableField } from '../features/selection/SelectionContext';
 import { useTaskActions } from '../hooks/useTaskActions';
-import { parseDateText, parseEstimateText, parseList } from '../parser/fields';
+import { DatePicker } from './ui/DatePicker';
+import { useProjectOptions } from '../hooks/useProjectOptions';
+import { parseEstimateText, parseList } from '../parser/fields';
 
 const fieldInput =
   'w-full rounded border border-indigo-400 bg-white px-1.5 py-0.5 text-sm outline-none ring-1 ring-indigo-400 dark:bg-zinc-900';
@@ -38,53 +40,63 @@ export function FieldEditor({ task, field, targets, onClose }: Props) {
       <div className="mb-0.5 text-[11px] text-zinc-500">{LABELS[field]}{count}</div>
       {field === 'project'
         ? <ProjectPicker current={task.project_id} onPick={(id, name) => apply({ project_id: id }, id ? `Movida a ${name}` : 'Proyecto quitado')} onClose={onClose} />
-        : <TextField task={task} field={field} apply={apply} onClose={onClose} />}
+        : field === 'date'
+          ? <InlineDatePicker value={task.due_date} onPick={(d) => apply({ due_date: d }, d ? 'Fecha cambiada' : 'Fecha quitada')} onClose={onClose} />
+          : <TextField task={task} field={field} apply={apply} onClose={onClose} />}
+    </div>
+  );
+}
+
+/** Calendario dentro de la fila (tecla D o doble clic en la fecha). Se cierra con Esc o clic fuera. */
+function InlineDatePicker({ value, onPick, onClose }: { value: string | null; onPick: (d: string | null) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey, true); };
+  }, [onClose]);
+  return (
+    <div ref={ref} className="inline-block rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+      <DatePicker value={value} onChange={onPick} />
     </div>
   );
 }
 
 function TextField({ task, field, apply, onClose }: {
   task: Task;
-  field: 'date' | 'estimate' | 'people' | 'tags';
+  field: 'estimate' | 'people' | 'tags';
   apply: (patch: TaskPatch, label: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const { today } = useApp();
   const initial = {
-    date: task.due_date ? formatDay(task.due_date, today).toLowerCase() : '',
     estimate: task.estimated_minutes ? `${task.estimated_minutes}m` : '',
     people: task.people.join(', '),
     tags: task.tags.join(', '),
   }[field];
-  const [text, setText] = useState(field === 'date' ? '' : initial);
+  const [text, setText] = useState(initial);
 
   const preview = useMemo(() => {
-    if (field === 'date') {
-      const r = parseDateText(text, today);
-      return r.ok ? { ok: true, label: r.value ? formatDay(r.value, today) : 'sin fecha', patch: { due_date: r.value } } : { ok: false, label: 'No entiendo esa fecha' };
-    }
     if (field === 'estimate') {
       const r = parseEstimateText(text);
       return r.ok ? { ok: true, label: r.value ? formatMinutes(r.value) : 'sin estimación', patch: { estimated_minutes: r.value } } : { ok: false, label: 'Usa 30m, 2h o 1h30' };
     }
     return { ok: true, label: '', patch: { [field]: parseList(text) } };
-  }, [field, text, today]);
+  }, [field, text]);
 
-  const labels = { date: 'Fecha cambiada', estimate: 'Estimación cambiada', people: 'Personas cambiadas', tags: 'Etiquetas cambiadas' };
+  const labels = { estimate: 'Estimación cambiada', people: 'Personas cambiadas', tags: 'Etiquetas cambiadas' };
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     e.stopPropagation();
     if (e.key === 'Escape') { e.preventDefault(); onClose(); }
     if (e.key === 'Enter') {
       e.preventDefault();
-      // En fecha, Enter sin escribir nada cierra sin cambiar.
-      if (field === 'date' && !text.trim()) return onClose();
       if (preview.ok && preview.patch) void apply(preview.patch, labels[field]);
     }
   }
 
   const placeholders = {
-    date: `${initial ? `Ahora: ${initial}. ` : ''}mañana, vie, 15 oct, sin fecha…`,
     estimate: '30m, 2h, 1h30…',
     people: 'Diana, Luis…',
     tags: 'urgente, casa…',
@@ -109,20 +121,17 @@ function ProjectPicker({ current, onPick, onClose }: {
   const { projects } = useApp();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
+  const tree = useProjectOptions(query);
 
   const options = useMemo(() => {
-    const list: { id: string | null; name: string; create?: boolean }[] = [];
-    if (!query) list.push({ id: null, name: 'Sin proyecto' });
-    projects
-      .map((p) => ({ p, s: fuzzyScore(query, p.name) }))
-      .filter((x) => x.s !== null)
-      .sort((a, b) => b.s! - a.s!)
-      .forEach(({ p }) => list.push({ id: p.id, name: p.name }));
+    const list: { id: string | null; name: string; label: string; depth: number; create?: boolean }[] = [];
+    if (!query) list.push({ id: null, name: 'Sin proyecto', label: 'Sin proyecto', depth: 0 });
+    for (const o of tree) list.push({ id: o.project.id, name: o.project.name, label: query ? o.path : o.project.name, depth: o.depth });
     if (query.trim() && !projects.some((p) => nameKey(p.name) === nameKey(query))) {
-      list.push({ id: null, name: query.trim(), create: true });
+      list.push({ id: null, name: query.trim(), label: query.trim(), depth: 0, create: true });
     }
     return list;
-  }, [projects, query]);
+  }, [projects, query, tree]);
 
   async function pick(i: number) {
     const o = options[i];
@@ -158,7 +167,7 @@ function ProjectPicker({ current, onPick, onClose }: {
             onMouseDown={(e) => { e.preventDefault(); void pick(i); }}
             onMouseEnter={() => setSelected(i)}
             className={`cursor-pointer px-2 py-1 ${i === selected ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''} ${o.id === current && !o.create ? 'font-medium' : ''}`}>
-            {o.create ? <>Crear proyecto <strong>{o.name}</strong></> : o.name}
+            <span style={{ paddingLeft: `${o.depth * 0.8}rem` }}>{o.create ? <>Crear proyecto <strong>{o.name}</strong></> : o.label}</span>
           </li>
         ))}
       </ul>

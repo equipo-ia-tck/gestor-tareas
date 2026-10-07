@@ -4,7 +4,7 @@ import type { Project } from '../src/domain/types';
 import { makeTask } from './factories';
 
 const projects = new Map<string, Project>([
-  ['p1', { id: 'p1', name: 'Caixa', color: '#000', archived: false, created_at: '' }],
+  ['p1', { id: 'p1', name: 'Caixa', color: '#000', archived: false, created_at: '', parent_id: null }],
 ]);
 
 const t1 = makeTask({ title: 'Revisar informe trimestral', project_id: 'p1', people: ['Diana'], tags: ['urgente'] });

@@ -10,6 +10,7 @@ import { parseCapture } from '../../parser/parseCapture';
 import { tokenKey, type ParsedTask, type Token, type TokenKind } from '../../parser/types';
 import { useDictation } from '../dictation/useDictation';
 import { submitCapture } from './submitCapture';
+import { ancestry } from '../../domain/projects';
 import { formatReminder } from '../../domain/reminders';
 
 export const TOKEN_STYLE: Record<TokenKind, string> = {
@@ -46,7 +47,7 @@ interface Suggestion {
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
 export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large, autoDictate }: Props) {
-  const { tasks, projects, today, itemTypes, releases } = useApp();
+  const { tasks, projects, projectMap, today, itemTypes, releases } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [ignore, setIgnore] = useState<string[]>([]);
@@ -79,21 +80,28 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
 
   // ---- Autocompletado de #proyecto y @persona
   const trigger = useMemo(() => {
-    const m = /(?:^|[\s(])([#@^])([\p{L}\p{N}_\-.]*)$/u.exec(text.slice(0, caret));
+    const m = /(?:^|[\s(])([#@^])([\p{L}\p{N}_\-./]*)$/u.exec(text.slice(0, caret));
     return m ? { symbol: m[1], query: m[2], start: caret - m[2].length - 1 } : null;
   }, [text, caret]);
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (!trigger || dismissedAt === trigger.start) return [];
-    const pool = trigger.symbol === '#' ? projects.map((p) => p.name)
-      : trigger.symbol === '^' ? releases.filter((r) => r.status === 'planned').map((r) => r.name) : people;
-    const ranked = pool
-      .map((name) => ({ name, score: fuzzyScore(trigger.query, name) }))
+    // Proyectos con su ruta: los subproyectos se insertan como "#caixa/Sprint-14".
+    const entries = trigger.symbol === '#'
+      ? projects.map((p) => {
+        const chain = ancestry(p.id, projectMap);
+        return { name: p.name, label: chain.map((a) => a.name).join(' / '), insert: chain.map((a) => tokenName(a.name)).join('/') };
+      })
+      : (trigger.symbol === '^' ? releases.filter((r) => r.status === 'planned').map((r) => r.name) : people)
+        .map((name) => ({ name, label: name, insert: tokenName(name) }));
+    const ranked = entries
+      .map((e) => ({ e, score: fuzzyScore(trigger.query.replace(/\//g, ' '), e.label) }))
       .filter((x) => x.score !== null)
       .sort((a, b) => b.score! - a.score!)
       .slice(0, 6);
-    const items: Suggestion[] = ranked.map(({ name }) => ({ label: `${trigger.symbol}${name}`, insert: tokenName(name) }));
-    const exact = pool.some((n) => nameKey(n) === nameKey(trigger.query));
+    const items: Suggestion[] = ranked.map(({ e }) => ({ label: `${trigger.symbol}${e.label}`, insert: e.insert }));
+    const pool = entries.map((e) => e.name);
+    const exact = pool.some((n) => nameKey(n) === nameKey(trigger.query.split('/').at(-1) ?? ''));
     if (trigger.symbol === '#' && trigger.query && !exact) {
       items.push({ label: <>Crear proyecto <strong>#{trigger.query}</strong></>, insert: trigger.query });
     }
@@ -101,7 +109,7 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
       items.push({ label: <>Crear release <strong>^{trigger.query}</strong></>, insert: trigger.query });
     }
     return items;
-  }, [trigger, dismissedAt, projects, people, releases]);
+  }, [trigger, dismissedAt, projects, projectMap, people, releases]);
 
   const showSuggestions = suggestions.length > 0;
 

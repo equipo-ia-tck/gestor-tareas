@@ -96,3 +96,11 @@ export function addMonths(iso: ISODate, n: number): ISODate {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
   return toISODate(new Date(target.getFullYear(), target.getMonth(), Math.min(d.getDate(), lastDay)));
 }
+
+/** Número de semana ISO 8601 (la semana 1 es la que contiene el primer jueves del año). */
+export function isoWeek(iso: ISODate): number {
+  const d = parseISODate(iso);
+  const thursday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+  return 1 + Math.round(((thursday.getTime() - firstThursday.getTime()) / 86_400_000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
+}
