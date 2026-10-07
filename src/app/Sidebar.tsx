@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, CalendarDays, FolderOpen, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, CalendarDays, FolderOpen, History, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { useTaskActions } from '../hooks/useTaskActions';
@@ -81,6 +81,7 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar')}>Calendario</NavItem>
       <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={is('releases')}
         count={releases.filter((r) => r.status === 'planned').length}>Releases</NavItem>
+      <NavItem icon={History} href={routeHref({ view: 'log' })} active={is('log')}>Registro</NavItem>
 
       <Heading href={routeHref({ view: 'projects' })}><FolderOpen className="mr-1.5 inline size-3.5" />Proyectos</Heading>
       {projects.map((p) => (

@@ -5,7 +5,7 @@ import { useApp } from '../app/AppContext';
 import { describeRule } from '../domain/recurrence';
 import type { ISODate, Project, Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
-import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PRIORITY_COLOR, PriorityFlag, ReleaseChip, StatePill, TypeBadge } from './ui/Badges';
+import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PRIORITY_COLOR, PriorityFlag, ReleaseChip, ReminderChip, StatePill, TypeBadge } from './ui/Badges';
 import { useSelection, type EditableField } from '../features/selection/SelectionContext';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { setDraggedTasks } from '../hooks/useTaskDrop';
@@ -97,6 +97,8 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject, 
           {showState && <StatePill state={state} />}
           <ExternalChip task={task} type={type} />
           <ReleaseChip releaseId={task.release_id} />
+          {!done && <ReminderChip at={task.remind_at} />}
+          {!done && <PostponedChip taskId={task.id} />}
           {!hideDate && task.due_date && chip('date', formatDay(task.due_date, today), late ? 'font-medium text-amber-600 dark:text-amber-400' : '')}
           {!hideProject && project && chip('project', <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm" style={{ background: project.color }} />{project.name}</span>)}
           {task.tags.length > 0 && chip('tags', <span className="inline-flex flex-wrap gap-1">{task.tags.map((t) => <LabelChip key={t} name={t} colors={labelColors} small />)}</span>)}

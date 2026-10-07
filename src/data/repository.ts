@@ -1,4 +1,5 @@
 import {
+  type ActivityEntry,
   DEFAULT_SETTINGS,
   DEFAULT_TYPE_ID,
   PROJECT_COLORS,
@@ -16,14 +17,15 @@ import {
 import { doneState, equivalentState, findType, initialState, patchForState, stateOf } from '../domain/workflows';
 import { nameKey } from '../domain/text';
 import { extractMentions } from '../domain/markdown';
+import { activityFor } from '../domain/activity';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
 import { formatDay, todayISO } from '../domain/dates';
 import { nextOccurrenceTask } from '../domain/maintenance';
 import { SCHEMA_VERSION, TasksDB } from './db';
 
-type TableName = 'tasks' | 'projects' | 'labels' | 'item_types' | 'releases' | 'notes' | 'people';
-type Row = Task | Project | Label | ItemType | Release | Note | Person;
+type TableName = 'tasks' | 'projects' | 'labels' | 'item_types' | 'releases' | 'notes' | 'people' | 'activity';
+type Row = Task | Project | Label | ItemType | Release | Note | Person | ActivityEntry;
 
 /** Estado de un registro antes y después de un cambio (undefined = no existía). */
 export interface Change {
@@ -91,6 +93,9 @@ export interface Repository {
   updateNote(id: string, patch: Partial<Omit<Note, 'id' | 'created_at'>>, opts?: { silent?: boolean }): Promise<void>;
   deleteNote(id: string): Promise<void>;
 
+  /** Registro de actividad (todo, o desde una fecha). */
+  listActivity(fromDate?: string): Promise<ActivityEntry[]>;
+
   listPeople(): Promise<Person[]>;
   savePerson(person: Person): Promise<void>;
 
@@ -154,11 +159,28 @@ export class DexieRepository implements Repository {
   }
 
   private record(change: Change, defaultLabel: string) {
+    this.recordMany([change], defaultLabel);
+  }
+
+  /** Varios cambios en una sola entrada (p. ej. una tarea y sus apuntes del registro). */
+  private recordMany(changes: Change[], defaultLabel: string) {
     if (this.group) {
-      this.group.changes.push(change);
+      this.group.changes.push(...changes);
       return;
     }
-    this.push({ label: defaultLabel, changes: [change] });
+    this.push({ label: defaultLabel, changes });
+  }
+
+  /** Escribe los apuntes del registro que genera un cambio de tarea y devuelve sus cambios para el historial. */
+  private async logActivity(before: Task | undefined, after: Task | undefined): Promise<Change[]> {
+    if (!after) return [];
+    const at = now();
+    const date = todayISO();
+    const entries: ActivityEntry[] = activityFor(before, after).map((e) => ({
+      id: uuid(), at, date, kind: e.kind, task_id: after.id, title: after.title, project_id: after.project_id, from: e.from, to: e.to,
+    }));
+    if (entries.length) await this.db.activity.bulkAdd(entries);
+    return entries.map((e) => ({ table: 'activity' as const, key: e.id, before: undefined, after: e }));
   }
 
   private push(entry: HistoryEntry) {
@@ -182,7 +204,7 @@ export class DexieRepository implements Repository {
 
   private async apply(entry: HistoryEntry, side: 'before' | 'after') {
     const changes = side === 'before' ? [...entry.changes].reverse() : entry.changes;
-    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people], async () => {
+    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people, this.db.activity], async () => {
       for (const c of changes) {
         const table = this.db[c.table] as unknown as Table<Row, string>;
         const value = c[side];
@@ -245,6 +267,7 @@ export class DexieRepository implements Repository {
       external_id: null,
       url: null,
       release_id: null,
+      remind_at: null,
       ...input,
       type_id: type.id,
       state_id: state.id,
@@ -256,7 +279,8 @@ export class DexieRepository implements Repository {
       last_touched_at: ts,
     };
     await this.db.tasks.add(task);
-    this.record({ table: 'tasks', key: task.id, before: undefined, after: task }, 'Tarea creada');
+    const log = await this.logActivity(undefined, task);
+    this.recordMany([{ table: 'tasks', key: task.id, before: undefined, after: task }, ...log], 'Tarea creada');
     this.emit();
     return task;
   }
@@ -268,7 +292,8 @@ export class DexieRepository implements Repository {
     const ts = now();
     await this.db.tasks.update(id, touch ? { ...patch, updated_at: ts, last_touched_at: ts } : patch);
     const after = await this.db.tasks.get(id);
-    this.record({ table: 'tasks', key: id, before, after }, label);
+    const log = await this.logActivity(before, after);
+    this.recordMany([{ table: 'tasks', key: id, before, after }, ...log], label);
     this.emit();
     return after;
   }
@@ -516,6 +541,12 @@ export class DexieRepository implements Repository {
     await this.batch(n.kind === 'meeting' ? 'Acta eliminada' : 'Nota eliminada', () => this.updateNote(id, { deleted_at: now() }));
   }
 
+  // ---------- Registro ----------
+
+  async listActivity(fromDate?: string) {
+    return fromDate ? this.db.activity.where('date').aboveOrEqual(fromDate).toArray() : this.db.activity.toArray();
+  }
+
   // ---------- Personas ----------
 
   async listPeople() {
@@ -626,12 +657,13 @@ export class DexieRepository implements Repository {
       releases: await this.db.releases.toArray(),
       notes: await this.db.notes.toArray(),
       people: await this.db.people.toArray(),
+      activity: await this.db.activity.toArray(),
     };
   }
 
   /** Sustituye todos los datos. Vacía el historial: deshacer no puede cruzar una importación. */
   async replaceAll(backup: Backup) {
-    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people];
+    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people, this.db.activity];
     await this.db.transaction('rw', tables, async () => {
       await Promise.all(tables.map((t) => t.clear()));
       await this.db.projects.bulkAdd(backup.projects);
@@ -642,6 +674,7 @@ export class DexieRepository implements Repository {
       await this.db.releases.bulkAdd(backup.releases);
       await this.db.notes.bulkAdd(backup.notes);
       await this.db.people.bulkAdd(backup.people);
+      await this.db.activity.bulkAdd(backup.activity);
     });
     this.undoStack = [];
     this.redoStack = [];

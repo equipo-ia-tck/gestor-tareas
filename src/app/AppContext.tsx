@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { labelColorMap } from '../domain/colors';
-import type { ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
-import { useItemTypes, useLabels, useNotes, usePeople, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
+import { postponeCounts } from '../domain/activity';
+import type { ActivityEntry, ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
+import { useActivity, useItemTypes, useLabels, useNotes, usePeople, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
 
 interface AppData {
   tasks: Task[];
@@ -16,6 +17,9 @@ interface AppData {
   notes: Note[];
   /** Fichas de persona guardadas (rol, notas). */
   peopleCards: Person[];
+  activity: ActivityEntry[];
+  /** Veces que se ha pospuesto cada tarea. */
+  postponed: Map<string, number>;
   labels: Label[];
   /** nameKey(etiqueta) → color personalizado. */
   labelColors: Map<string, string>;
@@ -44,6 +48,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const releases = useReleases();
   const notes = useNotes();
   const peopleCards = usePeople();
+  const activity = useActivity();
   const settings = useSettings();
   const today = useToday();
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -58,6 +63,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     releaseMap: new Map(releases.map((r) => [r.id, r])),
     notes,
     peopleCards,
+    activity,
+    postponed: postponeCounts(activity),
     labels,
     labelColors: labelColorMap(labels),
     settings,
@@ -65,7 +72,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     detailId: detailId && tasks.some((t) => t.id === detailId) ? detailId : null,
     editTask: (t) => setDetailId(t.id),
     closeDetail: () => setDetailId(null),
-  }), [tasks, allProjects, itemTypes, releases, notes, peopleCards, labels, settings, today, detailId]);
+  }), [tasks, allProjects, itemTypes, releases, notes, peopleCards, activity, labels, settings, today, detailId]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

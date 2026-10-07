@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlignLeft, Calendar, Check, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesLinkingTask } from '../domain/notes';
+import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
+import { ensureNotificationPermission } from '../features/reminders/notifications';
+import type { ActivityEntry } from '../domain/types';
 import { useApp } from '../app/AppContext';
 import { repo } from '../data/services';
 import { LABEL_COLORS, labelColor } from '../domain/colors';
@@ -93,6 +96,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         {/* Propiedades */}
         <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-1 text-sm">
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
+          <Prop icon={<AlarmClock className="size-4" />} label="Recordatorio"><ReminderField task={task} /></Prop>
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
           <Prop icon={<Rocket className="size-4" />} label="Release"><ReleaseField task={task} /></Prop>
           <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>
@@ -124,6 +128,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         <Section icon={<CheckSquare className="size-4" />} title="Pasos"><Checklist task={task} /></Section>
         <Section icon={<AlignLeft className="size-4" />} title="Notas"><NotesField task={task} /></Section>
         <RelatedNotes taskId={task.id} />
+        <TaskHistory taskId={task.id} />
 
         <footer className="mt-6 space-y-0.5 border-t border-zinc-100 pt-3 text-xs text-zinc-400 dark:border-zinc-800">
           <p>Creada {new Date(task.created_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</p>
@@ -571,6 +576,71 @@ function StepText({ item, onSave }: { item: ChecklistItem; onSave: (text: string
       onBlur={() => { if (value.trim() && value !== item.text) onSave(value.trim()); else setValue(item.text); }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(item.text); e.currentTarget.blur(); } }}
       className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${item.done ? 'text-zinc-400 line-through' : ''}`} />
+  );
+}
+
+function ReminderField({ task }: { task: Task }) {
+  const [custom, setCustom] = useState('');
+  const now = new Date();
+  const set = async (iso: string | null, label: string) => {
+    if (iso) await ensureNotificationPermission();
+    await repo.batch(label, () => repo.updateTask(task.id, { remind_at: iso }));
+  };
+  const past = task.remind_at && task.remind_at <= now.toISOString();
+  return (
+    <Popover width="w-64" trigger={(toggle) => (
+      <button type="button" className={`${fieldBox} flex w-full items-center gap-2 text-left`} onClick={toggle}>
+        {task.remind_at
+          ? <span className={past ? 'text-orange-600' : ''}>{formatReminder(task.remind_at, now, formatDay)}</span>
+          : <span className="text-zinc-400">Sin aviso</span>}
+      </button>
+    )}>
+      {(close) => (
+        <>
+          {quickReminders(now).map((o) => (
+            <MenuItem key={o.label} onClick={() => { close(); void set(o.at, 'Recordatorio puesto'); }}>{o.label}</MenuItem>
+          ))}
+          <div className="mt-1 flex gap-1 border-t border-zinc-100 px-1 pt-2 dark:border-zinc-800">
+            <input type="datetime-local" value={custom || (task.remind_at ? toDatetimeLocal(task.remind_at) : '')} onChange={(e) => setCustom(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-600 dark:bg-zinc-900" aria-label="Fecha y hora del aviso" />
+            <button type="button" disabled={!custom} onClick={() => { close(); void set(new Date(custom).toISOString(), 'Recordatorio puesto'); }}
+              className="rounded bg-indigo-600 px-2 text-xs text-white disabled:opacity-40">OK</button>
+          </div>
+          {task.remind_at && <MenuItem onClick={() => { close(); void set(null, 'Recordatorio quitado'); }}><span className="text-zinc-400">Quitar aviso</span></MenuItem>}
+          <p className="px-2 pt-1 text-[11px] text-zinc-400">Avisa mientras la app esté abierta (aunque esté en segundo plano).</p>
+        </>
+      )}
+    </Popover>
+  );
+}
+
+const ACTIVITY_LABEL: Record<ActivityEntry['kind'], string> = {
+  created: 'Creada', completed: 'Completada', reopened: 'Reabierta', postponed: 'Pospuesta',
+  deleted: 'Eliminada', archived: 'Archivada', state: 'Estado',
+};
+
+/** Lo que le ha pasado a la tarea (registro de actividad). */
+function TaskHistory({ taskId }: { taskId: string }) {
+  const { activity, itemTypes, today } = useApp();
+  const mine = activity.filter((e) => e.task_id === taskId).sort((a, b) => b.at.localeCompare(a.at));
+  if (!mine.length) return null;
+  const stateName = (id: string | null) => itemTypes.flatMap((t) => t.states).find((s) => s.id === id)?.name ?? id;
+  const times = mine.filter((e) => e.kind === 'postponed').length;
+  return (
+    <Section icon={<History className="size-4" />} title={`Historial${times > 1 ? ` · pospuesta ${times} veces` : ''}`}>
+      <ul className="space-y-0.5 text-xs text-zinc-500">
+        {mine.slice(0, 20).map((e) => (
+          <li key={e.id} className="flex gap-2">
+            <span className="w-20 shrink-0 text-zinc-400">{formatDay(e.date, today)} {new Date(e.at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span>
+              {ACTIVITY_LABEL[e.kind]}
+              {e.kind === 'postponed' && ` de ${e.from ? formatDay(e.from, today).toLowerCase() : '—'} a ${e.to ? formatDay(e.to, today).toLowerCase() : 'sin fecha'}`}
+              {e.kind === 'state' && `: ${stateName(e.from)} → ${stateName(e.to)}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

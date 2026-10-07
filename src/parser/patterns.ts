@@ -184,6 +184,26 @@ export function findRecurrence(text: string, today: ISODate, blocked: (s: number
   return findFirst(RECURRENCE_RULES, text, today, blocked);
 }
 
+// ---------------------------------------------------------------- Recordatorio
+
+/** "recuérdame a las 17:00", "avísame a las 9", "aviso 18.30h". Devuelve hora y minutos. */
+const REMINDER_RE = new RegExp(
+  `${B}(?:recu[eé]rdame|recordarme|av[ií]same|aviso)(?:\\s+(?:a\\s+las?|a))?\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(?:h(?:oras?)?)?${E}`,
+  'giu',
+);
+
+export function findReminder(text: string, blocked: (s: number, e: number) => boolean): Match<{ h: number; m: number }> | null {
+  REMINDER_RE.lastIndex = 0;
+  for (const m of text.matchAll(REMINDER_RE)) {
+    const h = Number(m[1]);
+    const min = m[2] ? Number(m[2]) : 0;
+    if (h > 23 || min > 59) continue;
+    if (blocked(m.index, m.index + m[0].length)) continue;
+    return { start: m.index, end: m.index + m[0].length, value: { h, m: min } };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- Tokens con símbolo
 
 export const SYMBOL_PATTERNS = {

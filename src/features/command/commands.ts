@@ -119,6 +119,7 @@ export function buildCommands(env: CommandEnv): Command[] {
         },
       },
     },
+    { id: 'go-log', section: 'Ir a', title: 'Ir a Registro', shortcut: 'G L', keywords: 'hecho pospuesto diario historial semana', run: go({ view: 'log' }) },
     { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
     { id: 'go-releases', section: 'Ir a', title: 'Ir a Releases', shortcut: 'G R', keywords: 'entregas versiones salidas', run: go({ view: 'releases' }) },
     {

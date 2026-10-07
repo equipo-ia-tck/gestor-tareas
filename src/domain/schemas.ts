@@ -39,6 +39,7 @@ export const taskSchema = z.object({
   external_id: z.string().nullable().default(null),
   url: z.string().nullable().default(null),
   release_id: z.string().nullable().default(null),
+  remind_at: isoDateTime.nullable().default(null),
   recurrence_rule: recurrenceSchema.nullable().default(null),
   series_id: z.string().nullable().default(null),
   sort_order: z.number().default(0),
@@ -111,6 +112,18 @@ export const noteSchema = z.object({
 
 export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default('') });
 
+export const activitySchema = z.object({
+  id: z.string().min(1),
+  at: isoDateTime,
+  date: isoDate,
+  kind: z.enum(['created', 'completed', 'reopened', 'postponed', 'deleted', 'archived', 'state']),
+  task_id: z.string(),
+  title: z.string(),
+  project_id: z.string().nullable(),
+  from: z.string().nullable().default(null),
+  to: z.string().nullable().default(null),
+});
+
 export const BACKUP_APP_ID = 'gestor-tareas';
 
 export const backupSchema = z.object({
@@ -125,6 +138,7 @@ export const backupSchema = z.object({
   releases: z.array(releaseSchema).default([]),
   notes: z.array(noteSchema).default([]),
   people: z.array(personSchema).default([]),
+  activity: z.array(activitySchema).default([]),
 });
 
 export type Backup = z.infer<typeof backupSchema>;

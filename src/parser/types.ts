@@ -1,6 +1,6 @@
 import type { ISODate, Priority, RecurrenceRule } from '../domain/types';
 
-export type TokenKind = 'date' | 'recurrence' | 'project' | 'person' | 'priority' | 'estimate' | 'tag' | 'key' | 'release';
+export type TokenKind = 'date' | 'recurrence' | 'project' | 'person' | 'priority' | 'estimate' | 'tag' | 'key' | 'release' | 'reminder';
 
 /** Fragmento del texto reconocido. Los offsets son relativos al texto completo. */
 export interface Token {
@@ -28,6 +28,8 @@ export interface ParsedTask {
   type_id: string | null;
   /** id null = release nueva que habrá que crear. */
   release: { id: string | null; name: string } | null;
+  /** Aviso ("recuérdame a las 17:00"), ISO. */
+  remind_at: string | null;
   tokens: Token[];
 }
 
@@ -38,6 +40,8 @@ export interface CaptureContext {
   /** Tipos con abreviatura, para deducir el tipo de "US-123". */
   types?: { id: string; short: string }[];
   releases?: { id: string; name: string }[];
+  /** Momento actual (para decidir si "a las 9" es hoy o mañana). Por defecto, ahora. */
+  now?: Date;
   /** Claves de tokens (ver tokenKey) que el usuario ha descartado: se tratan como texto normal. */
   ignore?: string[];
 }

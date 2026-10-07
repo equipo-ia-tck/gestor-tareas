@@ -1,4 +1,4 @@
-import { CheckSquare, Flag, Rocket } from 'lucide-react';
+import { AlarmClock, CheckSquare, Flag, Rocket, Undo2 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { externalUrl } from '../../domain/releases';
 import type { Task } from '../../domain/types';
@@ -112,6 +112,31 @@ export function ReleaseChip({ releaseId }: { releaseId: string | null }) {
   return (
     <span className="inline-flex items-center gap-0.5 rounded bg-lime-50 px-1 text-[10px] font-medium text-lime-800 dark:bg-lime-950 dark:text-lime-300" title={`Release ${r.name}`}>
       <Rocket className="size-2.5" />{r.name}
+    </span>
+  );
+}
+
+/** Hora del aviso si está pendiente. */
+export function ReminderChip({ at }: { at: string | null }) {
+  if (!at) return null;
+  const d = new Date(at);
+  const today = new Date().toDateString() === d.toDateString();
+  const label = today ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[11px] text-orange-600 dark:text-orange-400" title={`Aviso: ${d.toLocaleString('es-ES')}`}>
+      <AlarmClock className="size-3" />{label}
+    </span>
+  );
+}
+
+/** "Pospuesta 3×": a partir de dos veces, para que se note lo que se va arrastrando. */
+export function PostponedChip({ taskId }: { taskId: string }) {
+  const { postponed } = useApp();
+  const n = postponed.get(taskId) ?? 0;
+  if (n < 2) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300" title={`Pospuesta ${n} veces`}>
+      <Undo2 className="size-2.5" />{n}×
     </span>
   );
 }

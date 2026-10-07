@@ -210,13 +210,32 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - **Contexto en la tarea**: el panel de detalle muestra "Sale de" con las notas que la enlazan. Los proyectos muestran sus
   notas y la búsqueda global también encuentra notas (por palabras).
 
+## Fase 9: recordatorios y registro
+
+- **Esquema v5**: `remind_at` en las tareas (ISO; se pone a `null` al atenderlo) y tabla `activity`
+  (`kind: created | completed | reopened | postponed | deleted | archived | state`, `from`/`to`, día local).
+- **Registro automático**: `patchTask` y `createTask` llaman a `logActivity`, que usa la función pura
+  `activityFor(before, after)`. Los apuntes se guardan en la **misma entrada del historial** que el cambio
+  (`recordMany`), así que deshacer quita también el apunte. "Pospuesta" = tenía fecha y se retrasa o se le quita (estando
+  pendiente). Completar no apunta además un cambio de estado.
+- **Registro** (`#/log`, `G L`): semana a semana, con totales y cada día con Hecho, Pospuesto (con "N×"), Dejado de hacer
+  (eliminadas, que se pueden restaurar mientras no se purguen, y archivadas), Cambios de estado y Notas del día.
+  `dailyLog` descuenta lo completado y reabierto el mismo día y agrupa por tarea las pospuestas del mismo día.
+  `PostponedChip` marca en filas y tarjetas lo pospuesto 2 o más veces; el panel muestra el historial de la tarea.
+- **Recordatorios**: sin servidor, así que solo avisan con la app abierta. `ReminderCenter` revisa cada 15 s y programa
+  un temporizador exacto para el siguiente. Al vencer: notificación del sistema (si hay permiso; solo para los que vencen
+  en ese momento, no para los que se pasaron con la app cerrada), aviso en la app con Hecha/Posponer/Descartar y contador
+  en el título de la pestaña. El permiso se pide al poner el primer recordatorio (con un clic) o desde Ajustes.
+- **Sintaxis**: "recuérdame / avísame (a las) HH[:MM]" pone el aviso el día de la tarea o hoy (mañana si ya pasó y no hay
+  fecha). Va antes que la fecha en el orden de extracción. "a las 5" sin "recuérdame" sigue sin significar nada.
+
 ### Hoja de ruta v2
 
 - [x] Fase 6: lista tipo Asana, tablero tipo Trello, panel de detalle, pasos y etiquetas de color
 - [x] Fase 7: US/TS (ID externo y enlace), releases y calendario de "cuándo sale todo"; configurar tipos y estados
 - [x] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
       (temas pendientes y quién dijo qué)
-- [ ] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
+- [x] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
 
 ## Fases
 

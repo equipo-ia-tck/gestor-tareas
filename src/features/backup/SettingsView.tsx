@@ -12,6 +12,7 @@ import { usePersistence } from './usePersistence';
 import { useInstall } from '../../app/install';
 import { LabelsCard } from './LabelsCard';
 import { TypesCard } from './TypesCard';
+import { ensureNotificationPermission, notificationPermission, showNotification } from '../reminders/notifications';
 import { isDictationSupported } from '../dictation/speech';
 
 const WEEKDAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
@@ -105,6 +106,8 @@ export function SettingsView() {
           </>
         )}
       </Card>
+
+      <NotificationsCard />
 
       <InstallCard />
 
@@ -219,6 +222,27 @@ function AutosaveControls({ state }: { state: AutosaveState }) {
         </>
       );
   }
+}
+
+function NotificationsCard() {
+  const [perm, setPerm] = useState(notificationPermission());
+  return (
+    <Card title="Recordatorios y notificaciones">
+      <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
+        Los recordatorios avisan con una notificación del sistema mientras la app esté abierta (aunque esté minimizada o en
+        segundo plano). Si estaba cerrada, verás los que se pasaron al abrirla. No hay servidor: nada sale del navegador.
+      </p>
+      {perm === 'unsupported' && <p className="text-sm text-zinc-500">Este navegador no admite notificaciones; los avisos se verán dentro de la app.</p>}
+      {perm === 'granted' && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-emerald-600">✓ Notificaciones activadas</span>
+          <Button onClick={() => showNotification('⏰ Prueba', 'Así se verán tus recordatorios', () => {})}>Probar</Button>
+        </div>
+      )}
+      {perm === 'default' && <Button primary onClick={() => void ensureNotificationPermission().then(() => setPerm(notificationPermission()))}>Activar notificaciones</Button>}
+      {perm === 'denied' && <p className="text-sm text-amber-700 dark:text-amber-400">Bloqueadas en este navegador. Actívalas en los permisos del sitio (icono junto a la dirección); mientras, los avisos se verán dentro de la app.</p>}
+    </Card>
+  );
 }
 
 function InstallCard() {

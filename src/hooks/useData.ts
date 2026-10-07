@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { repo } from '../data/services';
 import { todayISO } from '../domain/dates';
-import { DEFAULT_SETTINGS, type ItemType, type Label, type Note, type Person, type Project, type Release, type Settings, type Task } from '../domain/types';
+import { DEFAULT_SETTINGS, type ActivityEntry, type ItemType, type Label, type Note, type Person, type Project, type Release, type Settings, type Task } from '../domain/types';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 
 const EMPTY_TASKS: Task[] = [];
@@ -25,6 +25,9 @@ const EMPTY_NOTES: Note[] = [];
 const EMPTY_PEOPLE: Person[] = [];
 export const useNotes = () => useLiveQuery(() => repo.listNotes(), []) ?? EMPTY_NOTES;
 export const usePeople = () => useLiveQuery(() => repo.listPeople(), []) ?? EMPTY_PEOPLE;
+
+const EMPTY_ACTIVITY: ActivityEntry[] = [];
+export const useActivity = () => useLiveQuery(() => repo.listActivity(), []) ?? EMPTY_ACTIVITY;
 
 export const useLabels = () => useLiveQuery(() => repo.listLabels(), []) ?? EMPTY_LABELS;
 

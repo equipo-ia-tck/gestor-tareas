@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { ItemType, Label, Note, Person, Project, Release, Task } from '../domain/types';
+import type { ActivityEntry, ItemType, Label, Note, Person, Project, Release, Task } from '../domain/types';
 import { DEFAULT_ITEM_TYPES, TOPIC_TYPE } from '../domain/workflows';
 
 export interface KeyValue {
@@ -8,7 +8,7 @@ export interface KeyValue {
 }
 
 /** Versión lógica del esquema; se incluye en las copias de seguridad. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export class TasksDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
@@ -18,6 +18,7 @@ export class TasksDB extends Dexie {
   releases!: EntityTable<Release, 'id'>;
   notes!: EntityTable<Note, 'id'>;
   people!: EntityTable<Person, 'name'>;
+  activity!: EntityTable<ActivityEntry, 'id'>;
   /** Ajustes del usuario (entran en las copias). */
   settings!: EntityTable<KeyValue, 'key'>;
   /** Estado local del dispositivo (no entra en las copias): handle del archivo vinculado, etc. */
@@ -67,6 +68,15 @@ export class TasksDB extends Dexie {
       })
       .upgrade(async (tx) => {
         if (!(await tx.table('item_types').get(TOPIC_TYPE.id))) await tx.table('item_types').add(TOPIC_TYPE);
+      });
+    // v5: recordatorios y registro de actividad.
+    this.version(5)
+      .stores({
+        tasks: 'id, project_id, due_date, status, *people, *tags, series_id, last_touched_at, deleted_at, type_id, state_id, release_id, external_id, remind_at',
+        activity: 'id, date, task_id, kind',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('tasks').toCollection().modify((t: Task) => { t.remind_at ??= null; });
       });
     // Base de datos nueva: se crea directamente en la última versión y no pasa por upgrade.
     this.on('populate', (tx) => {

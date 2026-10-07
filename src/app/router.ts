@@ -5,6 +5,7 @@ export type Route =
   | { view: 'week' }
   | { view: 'board' }
   | { view: 'releases' }
+  | { view: 'log' }
   | { view: 'notes'; id?: string }
   | { view: 'calendar' }
   | { view: 'inbox' }
@@ -23,6 +24,7 @@ export function parseHash(hash: string): Route {
     case 'week': return { view: 'week' };
     case 'board': return { view: 'board' };
     case 'releases': return { view: 'releases' };
+    case 'log': return { view: 'log' };
     case 'notes': return arg ? { view: 'notes', id: decodeURIComponent(arg) } : { view: 'notes' };
     case 'calendar': return { view: 'calendar' };
     case 'inbox': return { view: 'inbox' };

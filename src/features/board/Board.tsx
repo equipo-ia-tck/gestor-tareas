@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { AlignLeft, Calendar, Plus, Repeat } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
-import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PriorityFlag, ReleaseChip, TypeBadge } from '../../components/ui/Badges';
+import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PriorityFlag, ReleaseChip, ReminderChip, TypeBadge } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
@@ -114,6 +114,8 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
           </span>
         )}
         <ChecklistProgress items={task.checklist} />
+        {!done && <ReminderChip at={task.remind_at} />}
+        {!done && <PostponedChip taskId={task.id} />}
         {task.notes && <AlignLeft className="size-3" />}
         {task.recurrence_rule && <Repeat className="size-3" />}
         <span className="flex-1" />

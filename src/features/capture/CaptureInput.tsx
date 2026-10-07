@@ -10,6 +10,7 @@ import { parseCapture } from '../../parser/parseCapture';
 import { tokenKey, type ParsedTask, type Token, type TokenKind } from '../../parser/types';
 import { useDictation } from '../dictation/useDictation';
 import { submitCapture } from './submitCapture';
+import { formatReminder } from '../../domain/reminders';
 
 export const TOKEN_STYLE: Record<TokenKind, string> = {
   date: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200',
@@ -21,6 +22,7 @@ export const TOKEN_STYLE: Record<TokenKind, string> = {
   tag: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/60 dark:text-fuchsia-200',
   key: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200',
   release: 'bg-lime-100 text-lime-800 dark:bg-lime-900/60 dark:text-lime-200',
+  reminder: 'bg-orange-100 text-orange-800 dark:bg-orange-900/60 dark:text-orange-200',
 };
 
 interface Props {
@@ -303,6 +305,7 @@ function chipLabel(t: Token, p: ParsedTask, today: string): string {
     case 'tag': return t.text;
     case 'key': return `🔗 ${p.external_id}`;
     case 'release': return p.release?.id ? `🚀 ${p.release.name}` : `🚀 ${p.release?.name} (nueva)`;
+    case 'reminder': return `⏰ ${formatReminder(p.remind_at!, new Date(), formatDay)}`;
   }
 }
 

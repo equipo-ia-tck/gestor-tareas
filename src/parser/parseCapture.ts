@@ -1,7 +1,9 @@
 import { firstOccurrence } from '../domain/recurrence';
 import { nameKey } from '../domain/text';
 import type { ISODate, Priority, RecurrenceRule } from '../domain/types';
-import { estimateMinutes, findDate, findRecurrence, SYMBOL_PATTERNS, type Match } from './patterns';
+import { estimateMinutes, findDate, findRecurrence, findReminder, SYMBOL_PATTERNS, type Match } from './patterns';
+import { addDays } from '../domain/dates';
+import { atLocal } from '../domain/reminders';
 import { tokenKey, type CaptureContext, type ParseCapture, type ParsedTask, type Token, type TokenKind } from './types';
 
 /**
@@ -91,6 +93,8 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
     }
   };
 
+  // El recordatorio va antes que la fecha para que "a las 9" no se lea como otra cosa.
+  const reminderMatch = findWords('reminder', (b) => findReminder(seg, b));
   const recurrenceMatch = findWords('recurrence', (b) => findRecurrence(seg, ctx.today, b));
   const dateMatch = findWords('date', (b) => findDate(seg, ctx.today, b));
   let recurrence: RecurrenceRule | null = recurrenceMatch?.value ?? null;
@@ -103,6 +107,14 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
 
   let due: ISODate | null = dateMatch?.value ?? null;
   if (!due && recurrence) due = firstOccurrence(recurrence, ctx.today);
+
+  // Aviso el día de la tarea (o hoy); si sin fecha la hora ya pasó, mañana.
+  let remindAt: string | null = null;
+  if (reminderMatch) {
+    const { h, m } = reminderMatch.value;
+    remindAt = atLocal(due ?? ctx.today, h, m);
+    if (!due && remindAt <= (ctx.now ?? new Date()).toISOString()) remindAt = atLocal(addDays(ctx.today, 1), h, m);
+  }
 
   return {
     title: buildTitle(seg, tokens, personNames),
@@ -117,6 +129,7 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
     external_id: externalId,
     type_id: typeId,
     release,
+    remind_at: remindAt,
     tokens: tokens
       .map((t) => ({ ...t, start: t.start + offset, end: t.end + offset }))
       .sort((a, b) => a.start - b.start),

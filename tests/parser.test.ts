@@ -285,3 +285,38 @@ describe('claves externas y releases (fase 7)', () => {
     expect(one7('desplegar ^R3.0').title).toBe('desplegar');
   });
 });
+
+describe('recordatorios (fase 9)', () => {
+  // 5 oct 2026, 10:00 hora local.
+  const now = new Date(2026, 9, 5, 10, 0);
+  const r = (text: string) => parseCapture(text, { ...ctx, now })[0];
+  const local = (iso: string | null) => {
+    const d = new Date(iso!);
+    return `${d.getDate()}/${d.getMonth() + 1} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  it('recuérdame a las 17:00 → hoy a las 17:00', () => {
+    const t = r('recuérdame a las 17:00 llamar a Luis');
+    expect(local(t.remind_at)).toBe('5/10 17:00');
+    expect(t.title).toBe('llamar a Luis');
+    expect(t.due_date).toBeNull();
+  });
+
+  it('si la hora ya pasó y no hay fecha, mañana', () => {
+    expect(local(r('avísame a las 9 revisar TS').remind_at)).toBe('6/10 9:00');
+  });
+
+  it('con fecha, el aviso es ese día', () => {
+    const t = r('el jueves preparar demo recuérdame a las 8.30');
+    expect(t.due_date).toBe('2026-10-08');
+    expect(local(t.remind_at)).toBe('8/10 8:30');
+  });
+
+  it('"a las 5" sin "recuérdame" sigue sin ser nada', () => {
+    expect(r('llamar a las 5').remind_at).toBeNull();
+  });
+
+  it('horas imposibles se quedan como texto', () => {
+    expect(r('recuérdame a las 27 algo').remind_at).toBeNull();
+  });
+});

@@ -67,6 +67,23 @@ export interface Label {
   color: string;
 }
 
+export type ActivityKind = 'created' | 'completed' | 'reopened' | 'postponed' | 'deleted' | 'archived' | 'state';
+
+/** Apunte del registro diario. Se genera solo al cambiar tareas; entra en el historial (deshacer lo quita). */
+export interface ActivityEntry {
+  id: string;
+  at: ISODateTime;
+  /** Día local del apunte. */
+  date: ISODate;
+  kind: ActivityKind;
+  task_id: string;
+  title: string;
+  project_id: string | null;
+  /** Fecha o estado anterior (pospuestas y cambios de estado). */
+  from: string | null;
+  to: string | null;
+}
+
 export type NoteKind = 'meeting' | 'note';
 
 /** Nota o acta de reunión en Markdown. Las acciones (`- [ ] …`) pueden enlazarse a tareas con `[[t:id]]`. */
@@ -120,6 +137,8 @@ export interface Task {
   /** Enlace explícito; si no hay, se construye con la plantilla del tipo. */
   url: string | null;
   release_id: string | null;
+  /** Fecha y hora del aviso (ISO). Se pone a null al atenderlo. */
+  remind_at: ISODateTime | null;
   recurrence_rule: RecurrenceRule | null;
   /** Enlaza las ocurrencias de una misma tarea recurrente. */
   series_id: string | null;

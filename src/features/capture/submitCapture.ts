@@ -38,6 +38,7 @@ export async function submitCapture(parsed: ParsedTask[], defaults: Partial<NewT
       recurrence_rule: p.recurrence,
       external_id: p.external_id ?? defaults.external_id ?? null,
       release_id: releaseId ?? defaults.release_id ?? null,
+      remind_at: p.remind_at ?? defaults.remind_at ?? null,
       // El tipo deducido de la clave ("US-12") manda; si la vista fija un estado, solo vale para su propio tipo.
       ...(p.type_id && p.type_id !== defaults.type_id ? { type_id: p.type_id, state_id: undefined } : {}),
       series_id: p.recurrence ? crypto.randomUUID() : null,

@@ -2,6 +2,19 @@
 
 App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, sin cuentas y sin conexión obligatoria.
 
+## Qué incluye
+
+- **Captura en segundos** (Cmd/Ctrl+K o la barra de cada vista) con sintaxis rápida: `mañana`, `el viernes`,
+  `#proyecto`, `@persona`, `!1`, `~30m`, `+etiqueta`, `cada lunes`, `US-1234`, `^R2.3`, `recuérdame a las 17:00`…
+- **Vistas**: Hoy (con resumen del día, atrasadas y "Repartir"), Próximos 7 días, Bandeja, Tablero kanban, Calendario,
+  Releases, Notas, Registro, Proyectos (lista o tablero) y Personas.
+- **Panel de detalle** de cada tarea: tipo (Tarea, User Story, Test Scenario, Tema…), estado, fecha, recordatorio,
+  release, ID externo con enlace a Jira/Xray, prioridad, personas, etiquetas de color, estimación, pasos, notas e historial.
+- **Notas y actas** en Markdown con formato en vivo. Las acciones `- [ ]` se convierten en tareas enlazadas.
+- **Fichas de persona**: temas pendientes, tareas, lo que dijo cada uno en las reuniones y reuniones con ella.
+- **Teclado**: J/K, Enter, E, C, D, T, M, 1–4, Supr; `?` muestra todos los atajos. Deshacer global con Cmd/Ctrl+Z.
+- **Tus datos**: todo en el navegador, sin conexión, con copias JSON y copia automática en archivo.
+
 ## Arrancar en local
 
 Requisitos: Node 20 o superior.
@@ -47,6 +60,7 @@ barra de direcciones. A partir de ahí funciona sin conexión y se abre en su pr
 - Se guardan solo en este navegador y en este dispositivo. Borrar los datos del sitio los elimina.
 - En **Copias y ajustes** puedes exportar o importar una copia JSON y, en Chrome o Edge, vincular un archivo para que se guarde una copia automática tras cada cambio. Ponlo en una carpeta sincronizada (Drive, iCloud, Dropbox) y tendrás copia en la nube.
 - Si pasan más de 7 días sin copia, la app te lo recuerda.
+- Los recordatorios avisan solo mientras la app está abierta (aunque esté minimizada); no hay servidor de notificaciones.
 - El dictado por voz (opcional, desactivado por defecto) es lo único que puede enviar datos fuera: en Chrome y Edge el
   audio se transcribe en servidores externos. Se activa en **Copias y ajustes** y se usa con el micrófono de la barra de
   captura o con Alt+M.
