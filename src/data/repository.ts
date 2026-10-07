@@ -5,6 +5,8 @@ import {
   type ItemType,
   type Label,
   type NewTask,
+  type Note,
+  type Person,
   type Project,
   type Release,
   type Settings,
@@ -13,14 +15,15 @@ import {
 } from '../domain/types';
 import { doneState, equivalentState, findType, initialState, patchForState, stateOf } from '../domain/workflows';
 import { nameKey } from '../domain/text';
+import { extractMentions } from '../domain/markdown';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
 import { formatDay, todayISO } from '../domain/dates';
 import { nextOccurrenceTask } from '../domain/maintenance';
 import { SCHEMA_VERSION, TasksDB } from './db';
 
-type TableName = 'tasks' | 'projects' | 'labels' | 'item_types' | 'releases';
-type Row = Task | Project | Label | ItemType | Release;
+type TableName = 'tasks' | 'projects' | 'labels' | 'item_types' | 'releases' | 'notes' | 'people';
+type Row = Task | Project | Label | ItemType | Release | Note | Person;
 
 /** Estado de un registro antes y después de un cambio (undefined = no existía). */
 export interface Change {
@@ -33,6 +36,8 @@ export interface Change {
 export interface HistoryEntry {
   label: string;
   changes: Change[];
+  /** Se puede deshacer pero no muestra aviso (p. ej. el autoguardado de una nota). */
+  silent?: boolean;
 }
 
 export type HistoryEvent = { type: 'push' | 'undo' | 'redo'; entry: HistoryEntry };
@@ -79,6 +84,16 @@ export interface Repository {
   /** Quita la etiqueta de todas las tareas y su color. */
   deleteLabel(name: string): Promise<void>;
 
+  listNotes(): Promise<Note[]>;
+  getNote(id: string): Promise<Note | undefined>;
+  createNote(fields: Partial<Omit<Note, 'id' | 'created_at' | 'updated_at'>> & Pick<Note, 'date'>): Promise<Note>;
+  /** Actualiza una nota (recalcula las personas mencionadas si cambia el cuerpo). */
+  updateNote(id: string, patch: Partial<Omit<Note, 'id' | 'created_at'>>, opts?: { silent?: boolean }): Promise<void>;
+  deleteNote(id: string): Promise<void>;
+
+  listPeople(): Promise<Person[]>;
+  savePerson(person: Person): Promise<void>;
+
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
   /** Registra una copia hecha. No dispara onChange para no provocar otra copia automática. */
@@ -91,7 +106,7 @@ export interface Repository {
   setMeta(key: string, value: unknown): Promise<void>;
 
   /** Agrupa varias mutaciones en una sola entrada del historial (un solo "Deshacer"). */
-  batch<T>(label: string, fn: () => Promise<T>): Promise<T>;
+  batch<T>(label: string, fn: () => Promise<T>, opts?: { silent?: boolean }): Promise<T>;
   undo(): Promise<HistoryEntry | null>;
   redo(): Promise<HistoryEntry | null>;
   onHistory(listener: (e: HistoryEvent) => void): () => void;
@@ -153,9 +168,9 @@ export class DexieRepository implements Repository {
     this.notify({ type: 'push', entry });
   }
 
-  async batch<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  async batch<T>(label: string, fn: () => Promise<T>, opts: { silent?: boolean } = {}): Promise<T> {
     if (this.group) return fn(); // anidado: se suma al grupo exterior
-    const group: HistoryEntry = { label, changes: [] };
+    const group: HistoryEntry = { label, changes: [], ...(opts.silent ? { silent: true } : {}) };
     this.group = group;
     try {
       return await fn();
@@ -167,7 +182,7 @@ export class DexieRepository implements Repository {
 
   private async apply(entry: HistoryEntry, side: 'before' | 'after') {
     const changes = side === 'before' ? [...entry.changes].reverse() : entry.changes;
-    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types, this.db.releases], async () => {
+    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people], async () => {
       for (const c of changes) {
         const table = this.db[c.table] as unknown as Table<Row, string>;
         const value = c[side];
@@ -458,6 +473,63 @@ export class DexieRepository implements Repository {
     });
   }
 
+  // ---------- Notas ----------
+
+  async listNotes() {
+    return (await this.db.notes.toArray()).filter((n) => !n.deleted_at);
+  }
+
+  getNote(id: string) {
+    return this.db.notes.get(id);
+  }
+
+  async createNote(fields: Partial<Omit<Note, 'id' | 'created_at' | 'updated_at'>> & Pick<Note, 'date'>) {
+    const ts = now();
+    const body = fields.body ?? '';
+    const note: Note = {
+      title: '', kind: 'note', project_id: null, pinned: false, deleted_at: null,
+      ...fields, body, people: extractMentions(body), id: uuid(), created_at: ts, updated_at: ts,
+    };
+    await this.db.notes.add(note);
+    this.record({ table: 'notes', key: note.id, before: undefined, after: note }, note.kind === 'meeting' ? 'Acta creada' : 'Nota creada');
+    this.emit();
+    return note;
+  }
+
+  async updateNote(id: string, patch: Partial<Omit<Note, 'id' | 'created_at'>>, opts: { silent?: boolean } = {}) {
+    const before = await this.db.notes.get(id);
+    if (!before) return;
+    const full = { ...patch, updated_at: now(), ...(patch.body !== undefined ? { people: extractMentions(patch.body) } : {}) };
+    const write = async () => {
+      await this.db.notes.update(id, full);
+      const after = await this.db.notes.get(id);
+      this.record({ table: 'notes', key: id, before, after }, 'Nota actualizada');
+    };
+    if (opts.silent) await this.batch('Nota guardada', write, { silent: true });
+    else await write();
+    this.emit();
+  }
+
+  async deleteNote(id: string) {
+    const n = await this.db.notes.get(id);
+    if (!n) return;
+    await this.batch(n.kind === 'meeting' ? 'Acta eliminada' : 'Nota eliminada', () => this.updateNote(id, { deleted_at: now() }));
+  }
+
+  // ---------- Personas ----------
+
+  async listPeople() {
+    return this.db.people.toArray();
+  }
+
+  async savePerson(person: Person) {
+    const before = (await this.db.people.toArray()).find((p) => nameKey(p.name) === nameKey(person.name));
+    const after = { ...person, name: before?.name ?? person.name };
+    await this.db.people.put(after);
+    this.record({ table: 'people', key: after.name, before, after }, 'Ficha guardada');
+    this.emit();
+  }
+
   // ---------- Etiquetas ----------
 
   async listLabels() {
@@ -552,12 +624,14 @@ export class DexieRepository implements Repository {
       labels: await this.db.labels.toArray(),
       item_types: await this.listItemTypes(),
       releases: await this.db.releases.toArray(),
+      notes: await this.db.notes.toArray(),
+      people: await this.db.people.toArray(),
     };
   }
 
   /** Sustituye todos los datos. Vacía el historial: deshacer no puede cruzar una importación. */
   async replaceAll(backup: Backup) {
-    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types, this.db.releases];
+    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types, this.db.releases, this.db.notes, this.db.people];
     await this.db.transaction('rw', tables, async () => {
       await Promise.all(tables.map((t) => t.clear()));
       await this.db.projects.bulkAdd(backup.projects);
@@ -566,6 +640,8 @@ export class DexieRepository implements Repository {
       await this.db.labels.bulkAdd(backup.labels);
       await this.db.item_types.bulkAdd(backup.item_types);
       await this.db.releases.bulkAdd(backup.releases);
+      await this.db.notes.bulkAdd(backup.notes);
+      await this.db.people.bulkAdd(backup.people);
     });
     this.undoStack = [];
     this.redoStack = [];

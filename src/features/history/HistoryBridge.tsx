@@ -11,6 +11,7 @@ export function HistoryBridge() {
   const toast = useToast();
 
   useEffect(() => repo.onHistory(({ type, entry }) => {
+    if (type === 'push' && entry.silent) return;
     if (type === 'push') toast(entry.label, { label: 'Deshacer', run: () => void repo.undo() });
     else if (type === 'undo') toast(`Deshecho: ${entry.label}`, { label: 'Rehacer', run: () => void repo.redo() });
     else toast(`Rehecho: ${entry.label}`, { label: 'Deshacer', run: () => void repo.undo() });

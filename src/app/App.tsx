@@ -5,6 +5,7 @@ import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { BoardView } from '../features/board/BoardView';
 import { CalendarView } from '../features/calendar/CalendarView';
 import { ReleasesView } from '../features/releases/ReleasesView';
+import { NotesView } from '../features/notes/NotesView';
 import { routeHref, useRoute, type Route } from './router';
 import { Sidebar } from './Sidebar';
 import { ToastProvider } from '../components/Toast';
@@ -28,6 +29,7 @@ function View({ route }: { route: Route }) {
     case 'week': return <WeekView />;
     case 'board': return <BoardView />;
     case 'releases': return <ReleasesView />;
+    case 'notes': return <NotesView id={route.id} />;
     case 'calendar': return <CalendarView />;
     case 'inbox': return <InboxView />;
     case 'projects': return <ProjectsView />;

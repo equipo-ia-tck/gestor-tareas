@@ -1,4 +1,4 @@
-import { DEFAULT_TYPE_ID, type ItemType, type StateCategory, type Task, type WorkflowState } from './types';
+import { DEFAULT_TYPE_ID, TOPIC_TYPE_ID, type ItemType, type StateCategory, type Task, type WorkflowState } from './types';
 
 export const DEFAULT_ITEM_TYPES: ItemType[] = [
   {
@@ -33,7 +33,16 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
       { id: 'ts-passed', name: 'Pasado', color: '#22c55e', category: 'done' },
     ],
   },
+  {
+    id: TOPIC_TYPE_ID, name: 'Tema', short: 'TEMA', color: '#f59e0b', order: 3,
+    states: [
+      { id: 'topic-pending', name: 'Pendiente', color: '#f59e0b', category: 'todo' },
+      { id: 'topic-done', name: 'Hablado', color: '#22c55e', category: 'done' },
+    ],
+  },
 ];
+
+export const TOPIC_TYPE = DEFAULT_ITEM_TYPES.find((t) => t.id === TOPIC_TYPE_ID)!;
 
 export const findType = (types: ItemType[], id: string | undefined): ItemType =>
   types.find((t) => t.id === id) ?? types.find((t) => t.id === DEFAULT_TYPE_ID) ?? DEFAULT_ITEM_TYPES[0];

@@ -5,6 +5,8 @@ import { addDays } from '../../domain/dates';
 import { overdueTasks, peopleIndex } from '../../domain/selectors';
 import type { ISODate, Project, Settings, Task } from '../../domain/types';
 import { staleTasks } from '../../domain/maintenance';
+import { TOPIC_TYPE_ID } from '../../domain/types';
+import { newNote } from '../notes/NotesView';
 
 export interface Command {
   id: string;
@@ -100,6 +102,23 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Próximos 7 días', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas', run: go({ view: 'board' }) },
+    { id: 'go-notes', section: 'Ir a', title: 'Ir a Notas', shortcut: 'G N', keywords: 'actas reuniones apuntes', run: go({ view: 'notes' }) },
+    { id: 'new-meeting', section: 'Crear', title: 'Nueva acta de reunión', keywords: 'nota reunión daily', run: () => newNote('meeting', env.today).then(() => undefined) },
+    { id: 'new-note', section: 'Crear', title: 'Nueva nota', keywords: 'apunte', run: () => newNote('note', env.today).then(() => undefined) },
+    {
+      id: 'new-topic', section: 'Crear', title: 'Nuevo tema para hablar con…', keywords: 'pendiente persona conversación',
+      input: {
+        placeholder: '@persona tema a tratar',
+        run: async (text) => {
+          const m = /@([\p{L}\p{N}_\-.]+)/u.exec(text);
+          if (!m) return env.toast('Escribe @persona y el tema');
+          const name = m[1].replace(/-/g, ' ');
+          const title = text.replace(m[0], '').trim();
+          if (!title) return;
+          await repo.batch('Tema añadido', () => repo.createTask({ title, type_id: TOPIC_TYPE_ID, people: [name] }));
+        },
+      },
+    },
     { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
     { id: 'go-releases', section: 'Ir a', title: 'Ir a Releases', shortcut: 'G R', keywords: 'entregas versiones salidas', run: go({ view: 'releases' }) },
     {

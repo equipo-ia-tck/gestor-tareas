@@ -188,11 +188,33 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   categoría; `deleteItemType` pasa las tareas a Tarea (Tarea no se puede eliminar). Todo entra en el historial.
 - **Tablero global**: filtro por release; las tarjetas nuevas heredan la release filtrada.
 
+## Fase 8: notas, actas y personas
+
+- **Esquema v4**: tabla `notes` (`title`, `body` en Markdown, `kind: meeting | note`, `date`, `project_id`, `people`
+  derivado de las @menciones, `pinned`, borrado suave con `deleted_at`) y tabla `people` (fichas por nombre: `role` y
+  `notes`). Tipo nuevo **Tema** (`TOPIC_TYPE_ID`, estados Pendiente/Hablado) para los temas pendientes con alguien: son
+  tareas normales (completar, deshacer, buscar…), pero no entran en la Bandeja.
+- **Markdown propio** (`domain/markdown.ts`, sin dependencias ni innerHTML): bloques por línea (encabezados, listas,
+  acciones `- [ ]`, citas, separadores) e inlines (negrita, cursiva, código, enlaces, @persona, #proyecto, claves
+  `US-123`). Las acciones enlazadas llevan `[[t:<id>]]` al final de la línea.
+- **Editor** (`features/notes/NoteEditor.tsx`): al escribir, un textarea con una capa coloreada detrás (mismas métricas:
+  solo cambia el color, no el tamaño ni el peso); al salir (Esc o "Ver"), Markdown formateado. Autoguardado con debounce de
+  700 ms mediante `updateNote(…, { silent: true })`: entra en el historial pero no muestra aviso (`HistoryEntry.silent`).
+  Enter continúa listas y acciones, Cmd/Ctrl+B pone negrita y hay autocompletado de @persona.
+- **Acciones → tareas** (`noteActions.ts`): cada `- [ ] …` pasa por `parseCapture` (admite @persona, fechas, !1…), hereda el
+  proyecto de la nota, guarda "De: <acta> (fecha)" en las notas de la tarea y la línea recibe su `[[t:id]]`. Todo en un lote
+  deshacible. La casilla de una acción enlazada refleja el estado de la tarea; marcarla completa o reabre la tarea.
+- **Quién dijo qué** (`domain/notes.ts`, `mentionsOf`): líneas que mencionan a la persona (excepto la de asistentes), con
+  su sección del acta y su fecha. La ficha de persona reúne rol y notas, temas pendientes (con alta rápida), tareas, "lo que
+  dijo o se habló" y sus reuniones. En un acta, el panel lateral muestra los temas pendientes con los asistentes.
+- **Contexto en la tarea**: el panel de detalle muestra "Sale de" con las notas que la enlazan. Los proyectos muestran sus
+  notas y la búsqueda global también encuentra notas (por palabras).
+
 ### Hoja de ruta v2
 
 - [x] Fase 6: lista tipo Asana, tablero tipo Trello, panel de detalle, pasos y etiquetas de color
 - [x] Fase 7: US/TS (ID externo y enlace), releases y calendario de "cuándo sale todo"; configurar tipos y estados
-- [ ] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
+- [x] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
       (temas pendientes y quién dijo qué)
 - [ ] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
 

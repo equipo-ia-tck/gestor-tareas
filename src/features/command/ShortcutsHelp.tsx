@@ -49,6 +49,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['G  S', 'Próximos 7 días'],
       ['G  B', 'Bandeja'],
       ['G  T', 'Tablero'],
+      ['G  N', 'Notas'],
       ['G  C', 'Calendario'],
       ['G  R', 'Releases'],
       ['G  P', 'Proyectos'],

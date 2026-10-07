@@ -13,6 +13,9 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import type { StateCategory } from '../../domain/types';
 import { findType, stateOf } from '../../domain/workflows';
 import { Board, TypeTabs } from '../board/Board';
+import { newNote } from '../notes/NotesView';
+import { noteExcerpt, sortNotes } from '../../domain/notes';
+import { formatDay } from '../../domain/dates';
 import { ViewHeader } from './ViewHeader';
 
 export function ProjectsView() {
@@ -138,6 +141,7 @@ export function ProjectView({ id }: { id: string }) {
           <TaskList {...list} tasks={done} />
         </Section>
       )}
+      <ProjectNotes projectId={id} />
       </>
       )}
     </>
@@ -153,6 +157,29 @@ export function ProjectView({ id }: { id: string }) {
       }
     });
   }
+}
+
+function ProjectNotes({ projectId }: { projectId: string }) {
+  const { notes, today } = useApp();
+  const mine = sortNotes(notes.filter((n) => n.project_id === projectId));
+  return (
+    <Section
+      title={`Notas y actas · ${mine.length}`}
+      aside={<SmallButton onClick={() => void newNote('meeting', today, { project_id: projectId })}>+ Acta</SmallButton>}
+      collapsible
+      defaultOpen={mine.length > 0}
+    >
+      {!mine.length && <p className="px-2 py-2 text-sm text-zinc-400">Sin notas en este proyecto.</p>}
+      <ul>
+        {mine.slice(0, 10).map((n) => (
+          <li key={n.id}><a href={`#/notes/${n.id}`} className="flex justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+            <span className="truncate">{n.title || 'Sin título'} <span className="text-xs text-zinc-400">{noteExcerpt(n)}</span></span>
+            <span className="shrink-0 text-xs text-zinc-400">{formatDay(n.date, today)}</span>
+          </a></li>
+        ))}
+      </ul>
+    </Section>
+  );
 }
 
 const CATEGORY_SECTIONS: { cat: StateCategory; title: string; color: string }[] = [

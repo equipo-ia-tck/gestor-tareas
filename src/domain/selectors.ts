@@ -1,10 +1,10 @@
 import { addDays, isWorkday } from './dates';
-import type { ISODate, Settings, Task } from './types';
+import { TOPIC_TYPE_ID, type ISODate, type Settings, type Task } from './types';
 
 export const isActive = (t: Task) => t.status === 'todo' && !t.deleted_at;
 
-/** La bandeja no es un estado: es lo activo sin fecha ni proyecto. */
-export const isInbox = (t: Task) => isActive(t) && !t.project_id && !t.due_date;
+/** La bandeja no es un estado: es lo activo sin fecha ni proyecto (los temas de conversación viven en su persona). */
+export const isInbox = (t: Task) => isActive(t) && !t.project_id && !t.due_date && t.type_id !== TOPIC_TYPE_ID;
 
 export const isOverdue = (t: Task, today: ISODate) =>
   isActive(t) && t.due_date !== null && t.due_date < today;

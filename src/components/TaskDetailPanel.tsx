@@ -3,6 +3,7 @@ import {
   AlignLeft, Calendar, Check, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
+import { notesLinkingTask } from '../domain/notes';
 import { useApp } from '../app/AppContext';
 import { repo } from '../data/services';
 import { LABEL_COLORS, labelColor } from '../domain/colors';
@@ -122,6 +123,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
 
         <Section icon={<CheckSquare className="size-4" />} title="Pasos"><Checklist task={task} /></Section>
         <Section icon={<AlignLeft className="size-4" />} title="Notas"><NotesField task={task} /></Section>
+        <RelatedNotes taskId={task.id} />
 
         <footer className="mt-6 space-y-0.5 border-t border-zinc-100 pt-3 text-xs text-zinc-400 dark:border-zinc-800">
           <p>Creada {new Date(task.created_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</p>
@@ -569,6 +571,24 @@ function StepText({ item, onSave }: { item: ChecklistItem; onSave: (text: string
       onBlur={() => { if (value.trim() && value !== item.text) onSave(value.trim()); else setValue(item.text); }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(item.text); e.currentTarget.blur(); } }}
       className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${item.done ? 'text-zinc-400 line-through' : ''}`} />
+  );
+}
+
+/** Actas o notas de donde salió la tarea (acciones enlazadas con [[t:id]]). */
+function RelatedNotes({ taskId }: { taskId: string }) {
+  const { notes, today } = useApp();
+  const related = notesLinkingTask(taskId, notes);
+  if (!related.length) return null;
+  return (
+    <Section icon={<AlignLeft className="size-4" />} title="Sale de">
+      <ul className="space-y-1">
+        {related.map((n) => (
+          <li key={n.id}><a href={`#/notes/${n.id}`} className="flex justify-between gap-2 rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            <span className="truncate">{n.title || 'Nota'}</span><span className="shrink-0 text-xs text-zinc-400">{formatDay(n.date, today)}</span>
+          </a></li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

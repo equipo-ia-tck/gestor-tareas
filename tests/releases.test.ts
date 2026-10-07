@@ -102,6 +102,6 @@ describe('configurar tipos', () => {
     await repo.deleteItemType('ts');
     expect(await repo.getTask(task.id)).toMatchObject({ type_id: 'task', state_id: 'task-doing' });
     await repo.deleteItemType('task');
-    expect((await repo.listItemTypes()).map((t) => t.id)).toEqual(['task', 'us']);
+    expect((await repo.listItemTypes()).map((t) => t.id)).toEqual(['task', 'us', 'topic']);
   });
 });

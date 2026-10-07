@@ -25,11 +25,11 @@ describe('migración v1 → v2', () => {
     const tasks = await db.tasks.toArray();
     expect(tasks.find((t) => t.id === 'a')).toMatchObject({ type_id: 'task', state_id: 'task-todo', checklist: [] });
     expect(tasks.find((t) => t.id === 'b')).toMatchObject({ state_id: 'task-done' });
-    expect((await db.item_types.toArray()).map((t) => t.id).sort()).toEqual(['task', 'ts', 'us']);
+    expect((await db.item_types.toArray()).map((t) => t.id).sort()).toEqual(['task', 'topic', 'ts', 'us']);
   });
 
   it('una base de datos nueva trae los tipos por defecto', async () => {
-    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS']);
+    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'TEMA']);
   });
 });
 
@@ -124,18 +124,18 @@ describe('copias', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.backup.tasks[0]).toMatchObject({ type_id: 'task', state_id: 'task-done', checklist: [] });
-    expect(r.backup.item_types).toHaveLength(3);
+    expect(r.backup.item_types).toHaveLength(4);
     expect(r.backup.labels).toEqual([]);
   });
 
   it('exporta e importa tipos y etiquetas', async () => {
     await repo.setLabelColor('casa', '#111111');
     const snap = await repo.exportSnapshot();
-    expect(snap.schema_version).toBe(3);
+    expect(snap.schema_version).toBe(4);
     const other = new DexieRepository(new TasksDB(`v2-${crypto.randomUUID()}`));
     const r = parseBackup(JSON.stringify(snap));
     if (r.ok) await other.replaceAll(r.backup);
     expect(await other.listLabels()).toEqual([{ name: 'casa', color: '#111111' }]);
-    expect(await other.listItemTypes()).toHaveLength(3);
+    expect(await other.listItemTypes()).toHaveLength(4);
   });
 });

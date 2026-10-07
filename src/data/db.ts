@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { ItemType, Label, Project, Release, Task } from '../domain/types';
-import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
+import type { ItemType, Label, Note, Person, Project, Release, Task } from '../domain/types';
+import { DEFAULT_ITEM_TYPES, TOPIC_TYPE } from '../domain/workflows';
 
 export interface KeyValue {
   key: string;
@@ -8,7 +8,7 @@ export interface KeyValue {
 }
 
 /** Versión lógica del esquema; se incluye en las copias de seguridad. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export class TasksDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
@@ -16,6 +16,8 @@ export class TasksDB extends Dexie {
   labels!: EntityTable<Label, 'name'>;
   item_types!: EntityTable<ItemType, 'id'>;
   releases!: EntityTable<Release, 'id'>;
+  notes!: EntityTable<Note, 'id'>;
+  people!: EntityTable<Person, 'name'>;
   /** Ajustes del usuario (entran en las copias). */
   settings!: EntityTable<KeyValue, 'key'>;
   /** Estado local del dispositivo (no entra en las copias): handle del archivo vinculado, etc. */
@@ -37,7 +39,7 @@ export class TasksDB extends Dexie {
         item_types: 'id',
       })
       .upgrade(async (tx) => {
-        await tx.table('item_types').bulkPut(DEFAULT_ITEM_TYPES);
+        await tx.table('item_types').bulkPut(DEFAULT_ITEM_TYPES.filter((t) => t.id !== TOPIC_TYPE.id));
         await tx.table('tasks').toCollection().modify((t: Task) => {
           t.type_id ??= 'task';
           t.state_id ??= t.status === 'done' ? 'task-done' : 'task-todo';
@@ -56,6 +58,15 @@ export class TasksDB extends Dexie {
           t.url ??= null;
           t.release_id ??= null;
         });
+      });
+    // v4: notas y actas, fichas de persona y el tipo "Tema".
+    this.version(4)
+      .stores({
+        notes: 'id, date, project_id, kind, *people, deleted_at',
+        people: 'name',
+      })
+      .upgrade(async (tx) => {
+        if (!(await tx.table('item_types').get(TOPIC_TYPE.id))) await tx.table('item_types').add(TOPIC_TYPE);
       });
     // Base de datos nueva: se crea directamente en la última versión y no pasa por upgrade.
     this.on('populate', (tx) => {

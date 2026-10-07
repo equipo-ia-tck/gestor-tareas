@@ -95,6 +95,22 @@ export const releaseSchema = z.object({
 
 export const labelSchema = z.object({ name: z.string().min(1), color: z.string() });
 
+export const noteSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  body: z.string(),
+  kind: z.enum(['meeting', 'note']),
+  date: isoDate,
+  project_id: z.string().nullable(),
+  people: z.array(z.string()).default([]),
+  pinned: z.boolean().default(false),
+  created_at: isoDateTime,
+  updated_at: isoDateTime,
+  deleted_at: isoDateTime.nullable().default(null),
+});
+
+export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default('') });
+
 export const BACKUP_APP_ID = 'gestor-tareas';
 
 export const backupSchema = z.object({
@@ -107,6 +123,8 @@ export const backupSchema = z.object({
   labels: z.array(labelSchema).default([]),
   item_types: z.array(itemTypeSchema).default(DEFAULT_ITEM_TYPES),
   releases: z.array(releaseSchema).default([]),
+  notes: z.array(noteSchema).default([]),
+  people: z.array(personSchema).default([]),
 });
 
 export type Backup = z.infer<typeof backupSchema>;

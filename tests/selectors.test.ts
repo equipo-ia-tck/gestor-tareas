@@ -14,6 +14,7 @@ describe('selectors', () => {
     expect(isInbox(makeTask({ project_id: 'p1' }))).toBe(false);
     expect(isInbox(makeTask({ status: 'done' }))).toBe(false);
     expect(isInbox(makeTask({ deleted_at: '2026-10-01T00:00:00Z' }))).toBe(false);
+    expect(isInbox(makeTask({ type_id: 'topic' }))).toBe(false); // los temas viven en la ficha de la persona
   });
 
   it('ordena por prioridad y después por orden manual', () => {

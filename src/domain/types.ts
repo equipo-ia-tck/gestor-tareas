@@ -67,6 +67,31 @@ export interface Label {
   color: string;
 }
 
+export type NoteKind = 'meeting' | 'note';
+
+/** Nota o acta de reunión en Markdown. Las acciones (`- [ ] …`) pueden enlazarse a tareas con `[[t:id]]`. */
+export interface Note {
+  id: string;
+  title: string;
+  body: string;
+  kind: NoteKind;
+  date: ISODate;
+  project_id: string | null;
+  /** Personas mencionadas con @ en el cuerpo (se recalcula al guardar; sirve de índice). */
+  people: string[];
+  pinned: boolean;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  deleted_at: ISODateTime | null;
+}
+
+/** Ficha de una persona. El nombre es la clave (el mismo que en @persona). */
+export interface Person {
+  name: string;
+  role: string;
+  notes: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -134,6 +159,8 @@ export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'l
 export type TaskPatch = Partial<Omit<Task, 'id' | 'created_at'>>;
 
 export const DEFAULT_TYPE_ID = 'task';
+/** Tipo para los temas pendientes de hablar con alguien. */
+export const TOPIC_TYPE_ID = 'topic';
 
 export const PROJECT_COLORS = [
   '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',

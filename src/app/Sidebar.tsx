@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, CalendarDays, FolderOpen, Inbox, KanbanSquare, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, CalendarDays, FolderOpen, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { useTaskActions } from '../hooks/useTaskActions';
@@ -77,6 +77,7 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
         onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>
       <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board')}>Tablero</NavItem>
+      <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar')}>Calendario</NavItem>
       <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={is('releases')}
         count={releases.filter((r) => r.status === 'planned').length}>Releases</NavItem>

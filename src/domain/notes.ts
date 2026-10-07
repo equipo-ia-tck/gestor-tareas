@@ -1,0 +1,89 @@
+import { plainLine, sectionOf } from './markdown';
+import { fold, nameKey } from './text';
+import type { ISODate, Note } from './types';
+
+export const isLiveNote = (n: Note) => !n.deleted_at;
+
+/** Plantilla de acta: asistentes, contexto, notas, decisiones y acciones. */
+export function meetingTemplate(attendees: string[] = []): string {
+  const who = attendees.map((a) => `@${a.replace(/\s+/g, '-')}`).join(' ');
+  return [
+    `**Asistentes:** ${who}`,
+    '',
+    '## Contexto',
+    '',
+    '',
+    '## Notas',
+    '- ',
+    '',
+    '## Decisiones',
+    '- ',
+    '',
+    '## Acciones',
+    '- [ ] ',
+  ].join('\n');
+}
+
+export interface Mention {
+  note: Note;
+  line: number;
+  /** Línea en texto plano. */
+  text: string;
+  /** Sección del acta donde aparece ("Decisiones", "Notas"…). */
+  section: string | null;
+}
+
+/**
+ * "Quién dijo qué": líneas de notas que mencionan a la persona (excepto la de asistentes),
+ * las más recientes primero.
+ */
+export function mentionsOf(person: string, notes: Note[]): Mention[] {
+  const key = nameKey(person);
+  const re = /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu;
+  const out: Mention[] = [];
+  for (const note of notes) {
+    if (!isLiveNote(note)) continue;
+    note.body.split('\n').forEach((raw, line) => {
+      if (/^\s*\*\*asistentes:?\*\*/i.test(raw)) return;
+      const hits = [...raw.matchAll(re)].some((m) => nameKey(m[1]) === key);
+      if (!hits) return;
+      const text = plainLine(raw);
+      if (text.replace(re, '').trim().length < 2) return; // línea con solo la mención
+      out.push({ note, line, text, section: sectionOf(note.body, line) });
+    });
+  }
+  return out.sort((a, b) => b.note.date.localeCompare(a.note.date) || a.line - b.line);
+}
+
+/** Notas que enlazan una tarea con [[t:id]] (contexto de dónde salió). */
+export const notesLinkingTask = (taskId: string, notes: Note[]) =>
+  notes.filter((n) => isLiveNote(n) && n.body.includes(`[[t:${taskId}]]`));
+
+/** Reuniones en las que estuvo (o se mencionó) a la persona. */
+export const meetingsWith = (person: string, notes: Note[]) =>
+  notes
+    .filter((n) => isLiveNote(n) && n.people.some((p) => nameKey(p) === nameKey(person)))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+export function matchesNote(n: Note, words: string[]): boolean {
+  if (!isLiveNote(n) || !words.length) return false;
+  const hay = fold(`${n.title} ${n.body}`);
+  return words.every((w) => hay.includes(w));
+}
+
+/** Primera línea con contenido (resumen en listas). */
+export function noteExcerpt(n: Note): string {
+  for (const raw of n.body.split('\n')) {
+    if (/^\s*#{1,3}\s/.test(raw) || /^\s*\*\*asistentes/i.test(raw)) continue;
+    const t = plainLine(raw);
+    if (t.length > 1) return t;
+  }
+  return '';
+}
+
+export function sortNotes(notes: Note[]): Note[] {
+  return [...notes].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.date.localeCompare(a.date) || b.updated_at.localeCompare(a.updated_at));
+}
+
+export const defaultNoteTitle = (kind: Note['kind'], date: ISODate) =>
+  kind === 'meeting' ? `Reunión ${date.split('-').reverse().join('/')}` : 'Nota sin título';
