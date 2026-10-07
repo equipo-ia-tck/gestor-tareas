@@ -7,7 +7,7 @@ import { makeTask } from './factories';
 
 const note = (extra: Partial<Note>): Note => ({
   id: crypto.randomUUID(), title: 'Daily', body: '', kind: 'meeting', date: '2026-10-07', project_id: null, people: [],
-  pinned: false, task_id: null, meeting_url: null, created_at: '2026-10-07T09:00:00Z', updated_at: '', deleted_at: null, ...extra,
+  pinned: false, task_id: null, meeting_url: null, sort_order: null, created_at: '2026-10-07T09:00:00Z', updated_at: '', deleted_at: null, ...extra,
 });
 
 describe('notas de elementos', () => {

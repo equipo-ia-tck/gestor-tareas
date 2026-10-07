@@ -104,3 +104,6 @@ export function isoWeek(iso: ISODate): number {
   const firstThursday = new Date(thursday.getFullYear(), 0, 4);
   return 1 + Math.round(((thursday.getTime() - firstThursday.getTime()) / 86_400_000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
 }
+
+/** Lunes de la semana (de lunes a domingo) de un día. */
+export const mondayOf = (iso: ISODate): ISODate => addDays(iso, -((weekdayOf(iso) + 6) % 7));

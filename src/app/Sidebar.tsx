@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, CalendarDays, ChevronDown, ChevronRight, FolderOpen, History, ListFilter, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, CalendarDays, ChevronDown, ChevronRight, FolderOpen, History, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { useTaskActions } from '../hooks/useTaskActions';
@@ -111,11 +111,10 @@ export function Sidebar({ route }: { route: Route }) {
       </form>
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={tasksDueOn(tasks, today).length + overdueTasks(tasks, today).length}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
-      <NavItem icon={CalendarDays} href={routeHref({ view: 'week' })} active={is('week')}>Próximos 7 días</NavItem>
+      <NavItem icon={CalendarDays} href={routeHref({ view: 'week' })} active={is('week')}>Semana</NavItem>
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
         onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>
-      <NavItem icon={ListFilter} href={routeHref({ view: 'all' })} active={is('all')}>Todo</NavItem>
-      <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board')}>Tablero</NavItem>
+      <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar')}>Calendario</NavItem>
       <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={is('releases')}

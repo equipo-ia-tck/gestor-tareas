@@ -101,6 +101,8 @@ export interface Note {
   task_id: string | null;
   /** Enlace de la reunión (Teams, Meet…). */
   meeting_url: string | null;
+  /** Orden manual de la página dentro de su sección (como en OneNote). null = por fecha de creación. */
+  sort_order: number | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
   deleted_at: ISODateTime | null;

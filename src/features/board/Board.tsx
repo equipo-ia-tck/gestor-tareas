@@ -6,7 +6,7 @@ import { repo } from '../../data/services';
 import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
 import { knownPeople, sortTasks } from '../../domain/selectors';
-import type { ItemType, NewTask, Task, WorkflowState } from '../../domain/types';
+import type { ItemType, NewTask, StateCategory, Task } from '../../domain/types';
 import { findType, stateOf } from '../../domain/workflows';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
@@ -23,57 +23,94 @@ interface Props {
   showProject?: boolean;
 }
 
-/** Tablero kanban: una columna por estado del tipo; arrastrar una tarjeta cambia su estado. */
+interface ColumnDef {
+  id: string;
+  label: string;
+  color: string;
+  tasks: Task[];
+  onDrop: (ids: string[]) => void;
+  /** Valores de las tarjetas creadas en la columna. `category`: si el texto cambia el tipo (US-123), se ajusta el estado. */
+  add: { label: string; defaults: Partial<NewTask>; category?: StateCategory };
+}
+
+/** Tareas visibles en un tablero: sin borradas ni archivadas, y las completadas solo si son recientes. */
+function boardable(t: Task, today: string) {
+  if (t.deleted_at || t.status === 'archived') return false;
+  return !(t.status === 'done' && t.completed_at && diffDays(t.completed_at.slice(0, 10), today) > DONE_VISIBLE_DAYS);
+}
+
+const moveLabel = (n: number, to: string) => (n === 1 ? `Movida a ${to}` : `${n} tareas movidas a ${to}`);
+
+/** Tablero de un tipo: una columna por cada estado de su flujo. */
 export function Board({ tasks, type, defaults, showProject = true }: Props) {
   const { itemTypes, today } = useApp();
-  const columns = useMemo(() => {
-    const byState = new Map<string, Task[]>(type.states.map((s) => [s.id, []]));
-    for (const t of tasks) {
-      if (t.deleted_at || t.status === 'archived' || findType(itemTypes, t.type_id).id !== type.id) continue;
-      if (t.status === 'done' && t.completed_at && diffDays(t.completed_at.slice(0, 10), today) > DONE_VISIBLE_DAYS) continue;
-      byState.get(stateOf(itemTypes, t).id)?.push(t);
-    }
-    return type.states.map((s) => ({ state: s, tasks: sortTasks(byState.get(s.id) ?? []) }));
-  }, [tasks, type, itemTypes, today]);
+  const columns = useMemo<ColumnDef[]>(() => type.states.map((state) => ({
+    id: state.id,
+    label: state.name,
+    color: state.color,
+    tasks: sortTasks(tasks.filter((t) => boardable(t, today) && findType(itemTypes, t.type_id).id === type.id && stateOf(itemTypes, t).id === state.id)),
+    onDrop: (ids) => void repo.batch(moveLabel(ids.length, state.name), async () => { for (const id of ids) await repo.setState(id, state.id); }),
+    add: { label: state.name, defaults: { ...defaults, type_id: type.id, state_id: state.id } },
+  })), [tasks, type, itemTypes, today, defaults]);
+  return <BoardColumns columns={columns} showProject={showProject} />;
+}
 
+export const CATEGORY_COLUMNS: { category: StateCategory; label: string; color: string }[] = [
+  { category: 'todo', label: 'Por hacer', color: '#94a3b8' },
+  { category: 'doing', label: 'En curso', color: '#3b82f6' },
+  { category: 'blocked', label: 'Bloqueado', color: '#ef4444' },
+  { category: 'done', label: 'Hecho', color: '#22c55e' },
+];
+
+/**
+ * Tablero mixto (tareas, US, TS, temas…): columnas por grupo de estado. Cada tarjeta muestra su estado
+ * concreto; al soltarla pasa al primer estado de ese grupo dentro de su propio flujo.
+ */
+export function CategoryBoard({ tasks, defaults, showProject = true }: Omit<Props, 'type'>) {
+  const { itemTypes, today } = useApp();
+  const columns = useMemo<ColumnDef[]>(() => CATEGORY_COLUMNS.map(({ category, label, color }) => ({
+    id: category,
+    label,
+    color,
+    tasks: sortTasks(tasks.filter((t) => boardable(t, today) && stateOf(itemTypes, t).category === category)),
+    onDrop: (ids) => void repo.batch(moveLabel(ids.length, label.toLowerCase()), async () => {
+      for (const id of ids) {
+        const t = tasks.find((x) => x.id === id);
+        const state = t && findType(itemTypes, t.type_id).states.find((st) => st.category === category);
+        if (state) await repo.setState(id, state.id);
+      }
+    }),
+    add: { label, defaults: { ...defaults }, category },
+  })), [tasks, itemTypes, today, defaults]);
+  return <BoardColumns columns={columns} showProject={showProject} />;
+}
+
+function BoardColumns({ columns, showProject }: { columns: ColumnDef[]; showProject: boolean }) {
   return (
     <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-4">
-      {columns.map(({ state, tasks: colTasks }) => (
-        <Column key={state.id} state={state} type={type} tasks={colTasks} defaults={defaults} showProject={showProject} />
-      ))}
+      {columns.map((c) => <Column key={c.id} column={c} showProject={showProject} />)}
     </div>
   );
 }
 
-function Column({ state, type, tasks, defaults, showProject }: {
-  state: WorkflowState;
-  type: ItemType;
-  tasks: Task[];
-  defaults?: Partial<NewTask>;
-  showProject: boolean;
-}) {
-  const { over, dropProps } = useTaskDrop((ids) => {
-    void repo.batch(ids.length === 1 ? `Movida a ${state.name}` : `${ids.length} tareas movidas a ${state.name}`, async () => {
-      for (const id of ids) await repo.setState(id, state.id);
-    });
-  });
-
+function Column({ column: c, showProject }: { column: ColumnDef; showProject: boolean }) {
+  const { over, dropProps } = useTaskDrop(c.onDrop);
   return (
     <section
       {...dropProps}
-      aria-label={state.name}
+      aria-label={c.label}
       className={`flex w-64 shrink-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
-      style={{ background: tint(state.color, over ? 0.22 : 0.1) }}
+      style={{ background: tint(c.color, over ? 0.22 : 0.1) }}
     >
       <header className="mb-2 flex items-center gap-2 px-1">
-        <span className="size-2.5 rounded-full" style={{ background: state.color }} />
-        <h3 className="text-sm font-semibold">{state.name}</h3>
-        <span className="text-xs text-zinc-500">{tasks.length}</span>
+        <span className="size-2.5 rounded-full" style={{ background: c.color }} />
+        <h3 className="text-sm font-semibold">{c.label}</h3>
+        <span className="text-xs text-zinc-500">{c.tasks.length}</span>
       </header>
       <ul className="flex min-h-8 flex-col gap-2">
-        {tasks.map((t) => <Card key={t.id} task={t} showProject={showProject} />)}
+        {c.tasks.map((t) => <Card key={t.id} task={t} showProject={showProject} />)}
       </ul>
-      <AddCard state={state} type={type} defaults={defaults} />
+      <AddCard add={c.add} />
     </section>
   );
 }
@@ -125,7 +162,7 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
   );
 }
 
-function AddCard({ state, type, defaults }: { state: WorkflowState; type: ItemType; defaults?: Partial<NewTask> }) {
+function AddCard({ add }: { add: ColumnDef['add'] }) {
   const { tasks, projects, today, itemTypes, releases } = useApp();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -133,8 +170,16 @@ function AddCard({ state, type, defaults }: { state: WorkflowState; type: ItemTy
   async function submit() {
     const parsed = parseCapture(text, { today, projects, people: knownPeople(tasks), types: itemTypes, releases }).filter((p) => p.title);
     if (!parsed.length) return;
-    await repo.batch(parsed.length === 1 ? `Tarjeta creada en ${state.name}` : `${parsed.length} tarjetas creadas`, () =>
-      submitCapture(parsed, { ...defaults, type_id: type.id, state_id: state.id }));
+    await repo.batch(parsed.length === 1 ? `Tarjeta creada en ${add.label}` : `${parsed.length} tarjetas creadas`, async () => {
+      const created = await submitCapture(parsed, add.defaults);
+      // En el tablero mixto, cada tarjeta nueva va al primer estado de la columna dentro de su propio tipo.
+      if (add.category) {
+        for (const t of created) {
+          const state = findType(itemTypes, t.type_id).states.find((st) => st.category === add.category);
+          if (state && state.id !== t.state_id) await repo.setState(t.id, state.id);
+        }
+      }
+    });
     setText('');
   }
 

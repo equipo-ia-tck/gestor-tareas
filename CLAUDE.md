@@ -243,7 +243,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - **Captura**: `#padre/hijo` (el token de proyecto admite `/`). `resolveProjectToken` acepta la ruta completa o su final;
   sin ruta, gana el de menos profundidad. `#padre/nuevo` crea el subproyecto dentro del padre. El autocompletado muestra la
   ruta e inserta `caixa/Sprint-14`. Los selectores usan `useProjectOptions` (árbol con sangría y ruta al buscar).
-- **Vista Todo** (`#/all`, `G O`; `features/all`, `domain/filters.ts`): `applyFilter` combina tipo (interruptores por
+- **Vista Todo** (fusionada en el Tablero en la fase 12; `domain/filters.ts`): `applyFilter` combina tipo (interruptores por
   tipo), categoría de estado, proyecto (con subproyectos), persona, etiqueta, release, fecha (atrasadas, hoy, 7 días, con o
   sin fecha), texto y "completadas"; `groupTasks` agrupa por tipo, estado, proyecto, persona o fecha. El filtro actual se
   recuerda en localStorage. Las **vistas guardadas** van en `settings.saved_views`, así que entran en las copias.
@@ -271,6 +271,26 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   importar se guardan los emails de los asistentes en sus fichas. La conexión directa con el calendario de Microsoft
   (Graph) queda fuera: necesitaría registrar una app en Entra ID con permiso de la empresa.
 
+## Fase 12: tablero único, semana y cuaderno tipo OneNote
+
+- **Clic = abrir**: un clic normal en una fila (o tarjeta) la selecciona y abre el panel de detalle. Cmd/Ctrl/Shift + clic
+  solo seleccionan (selección múltiple), sin abrir el panel.
+- **Semana** (`#/week`): de lunes a domingo (`mondayOf`), con flechas entre semanas y número de semana ISO. Los días
+  pasados se atenúan y muestran también lo completado ese día.
+- **Tablero = todo**: la vista "Todo" de la fase 10 desaparece como apartado y su contenido pasa al Tablero (`#/all` redirige
+  a él). El tablero tiene interruptores por tipo, filtros, vistas guardadas y modo Tablero/Lista (`board-mode`). Con un solo
+  tipo elegido, las columnas son sus estados (`Board`); con varios o ninguno, son las categorías comunes (`CategoryBoard`:
+  Por hacer, En curso, Bloqueado y Hecho). Al soltar, cada tarjeta pasa al primer estado de esa categoría en su propio
+  flujo, y las tarjetas creadas en una columna se colocan igual. Si el filtro tiene un solo proyecto o una sola release,
+  las tarjetas nuevas los heredan.
+- **Notas tipo OneNote**: tres columnas. Secciones = proyectos y subproyectos con su color, más "Todas las notas" y "Sin
+  sección". Páginas = notas de la sección, en orden manual (`sort_order`, sin índice ni cambio de esquema;
+  `sortPages`/`reorderPages`, arrastrando). Las notas de US/TS van debajo, en su propio grupo. Contenido = la página. Abajo,
+  "Agregar sección" (dentro de la seleccionada si se marca) y "Agregar página"/"Acta". El lateral de acciones y temas solo
+  aparece en actas o en notas con acciones.
+- **Teams en tiempo real**: no disponible sin un registro de app en el Entra ID de la empresa (Microsoft Graph). Además,
+  el enlace ICS publicado de Outlook no se puede leer desde el navegador por CORS sin un servidor intermedio.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -285,6 +305,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
 - [x] Fase 10: subproyectos, vista "Todo" con filtros y vistas guardadas, selector de fecha con calendario
 - [x] Fase 11: notas fechadas por elemento (en panel, proyecto y Notas) y Teams (enlace, compartir, chat e importar .ics)
+- [x] Fase 12: clic abre el panel, semana de lunes a domingo, todo en el Tablero, notas con diseño OneNote
 
 ## Fases
 

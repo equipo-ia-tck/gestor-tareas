@@ -514,7 +514,7 @@ export class DexieRepository implements Repository {
     const ts = now();
     const body = fields.body ?? '';
     const note: Note = {
-      title: '', kind: 'note', project_id: null, pinned: false, deleted_at: null, task_id: null, meeting_url: null,
+      title: '', kind: 'note', project_id: null, pinned: false, deleted_at: null, task_id: null, meeting_url: null, sort_order: Date.now(),
       ...fields, body, people: extractMentions(body), id: uuid(), created_at: ts, updated_at: ts,
     };
     await this.db.notes.add(note);

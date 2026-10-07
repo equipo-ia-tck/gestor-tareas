@@ -3,14 +3,12 @@ import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, FileText, GitCommi
 import { useApp } from '../../app/AppContext';
 import { StatePill } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
-import { addDays, formatDay, parseISODate } from '../../domain/dates';
+import { addDays, formatDay, mondayOf, parseISODate } from '../../domain/dates';
 import { dailyLog, isEmptyDay, type DayLog } from '../../domain/activity';
 import type { ActivityEntry } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { ViewHeader } from '../views/ViewHeader';
 
-/** Lunes de la semana de un día. */
-const mondayOf = (d: string) => addDays(d, -((parseISODate(d).getDay() + 6) % 7));
 
 /** Registro: lo que se hizo, lo que se pospuso y lo que se dejó, día a día. */
 export function LogView() {

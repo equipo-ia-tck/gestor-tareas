@@ -49,6 +49,8 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
   function onClick(e: MouseEvent) {
     if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
     click(task.id, e);
+    // Clic normal: además abre el panel de detalle. Con Cmd/Ctrl o Shift solo se selecciona (selección múltiple).
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onEdit(task);
   }
 
   function onDoubleClick(e: MouseEvent) {

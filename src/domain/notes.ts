@@ -108,3 +108,22 @@ export function notesByTask(taskIds: Set<string>, notes: Note[]): { taskId: stri
     .map(([taskId, list]) => ({ taskId, notes: list.sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at)) }))
     .sort((a, b) => b.notes[0].date.localeCompare(a.notes[0].date) || b.notes[0].created_at.localeCompare(a.notes[0].created_at));
 }
+
+/** Clave de orden de una página: la manual o, si no tiene, su fecha de creación. */
+const pageKey = (n: Note) => n.sort_order ?? Date.parse(n.created_at) ?? 0;
+
+/** Páginas de una sección en su orden (manual, como en OneNote). */
+export const sortPages = (notes: Note[]) => [...notes].sort((a, b) => pageKey(a) - pageKey(b) || a.created_at.localeCompare(b.created_at));
+
+/**
+ * Nuevo orden al soltar la página `id` delante de `beforeId` (o al final si es null).
+ * Devuelve los cambios de `sort_order` necesarios (solo los que cambian).
+ */
+export function reorderPages(pages: Note[], id: string, beforeId: string | null): { id: string; sort_order: number }[] {
+  const order = sortPages(pages).filter((n) => n.id !== id);
+  const moved = pages.find((n) => n.id === id);
+  if (!moved) return [];
+  const at = beforeId ? order.findIndex((n) => n.id === beforeId) : order.length;
+  order.splice(at < 0 ? order.length : at, 0, moved);
+  return order.map((n, i) => ({ id: n.id, sort_order: (i + 1) * 1000 })).filter((c) => pages.find((n) => n.id === c.id)?.sort_order !== c.sort_order);
+}

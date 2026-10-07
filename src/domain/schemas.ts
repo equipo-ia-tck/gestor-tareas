@@ -122,6 +122,7 @@ export const noteSchema = z.object({
   pinned: z.boolean().default(false),
   task_id: z.string().nullable().default(null),
   meeting_url: z.string().nullable().default(null),
+  sort_order: z.number().nullable().default(null),
   created_at: isoDateTime,
   updated_at: isoDateTime,
   deleted_at: isoDateTime.nullable().default(null),

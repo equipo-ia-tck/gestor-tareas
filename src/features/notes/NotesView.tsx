@@ -1,7 +1,7 @@
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { DateButton } from '../../components/ui/DatePicker';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CheckSquare, FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { navigate } from '../../app/router';
@@ -9,10 +9,12 @@ import { AvatarStack, StatePill } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { formatDay } from '../../domain/dates';
 import { actionItems } from '../../domain/markdown';
-import { defaultNoteTitle, matchesNote, meetingTemplate, noteExcerpt, sortNotes } from '../../domain/notes';
+import { defaultNoteTitle, matchesNote, meetingTemplate, noteExcerpt, reorderPages, sortNotes, sortPages } from '../../domain/notes';
+import { ancestry, flattenTree, MAX_PROJECT_DEPTH, projectPath, projectTree } from '../../domain/projects';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { knownPeople } from '../../domain/selectors';
 import { fold, nameKey } from '../../domain/text';
-import { TOPIC_TYPE_ID, type Note, type NoteKind } from '../../domain/types';
+import { TOPIC_TYPE_ID, type Note, type NoteKind, type Project } from '../../domain/types';
 import { stateOf } from '../../domain/workflows';
 import { createTasksFromActions, toggleAction } from './noteActions';
 import { IcsImport } from './IcsImport';
@@ -33,63 +35,94 @@ export async function newNote(kind: NoteKind, today: string, fields: Partial<Not
   return n;
 }
 
-/** Notas y actas: lista a la izquierda, nota abierta a la derecha. */
+const ALL = '~all';
+const NONE = '~none';
+
+/**
+ * Notas al estilo OneNote: secciones (proyectos y subproyectos, con su color) a la izquierda,
+ * páginas de la sección en medio (en orden manual, arrastrando) y la página abierta a la derecha.
+ */
 export function NotesView({ id }: { id?: string }) {
   useWideLayout(true);
-  const { notes, tasks, today } = useApp();
+  const { notes, tasks, projects, projectMap, today } = useApp();
+  const [stored, setSection] = usePersistentState('notes-section', ALL);
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<NoteKind | 'item' | ''>('');
-  const [projectId, setProjectId] = useState('');
-
-  const list = useMemo(() => {
-    const words = fold(query).split(/\s+/).filter(Boolean);
-    // Las notas de un elemento pertenecen al proyecto de ese elemento (aunque se mueva).
-    const projectOf = (n: Note) => (n.task_id ? tasks.find((t) => t.id === n.task_id)?.project_id ?? n.project_id : n.project_id);
-    const kindOk = (n: Note) => !kind || (kind === 'item' ? !!n.task_id : n.kind === kind && !n.task_id);
-    return sortNotes(notes.filter((n) =>
-      kindOk(n) && (!projectId || projectOf(n) === projectId) && (!words.length || matchesNote(n, words))));
-  }, [notes, tasks, query, kind, projectId]);
   const current = id ? notes.find((n) => n.id === id) : undefined;
 
+  // Las notas de un elemento pertenecen al proyecto de ese elemento (aunque se mueva).
+  const sectionOf = (n: Note) => (n.task_id ? tasks.find((t) => t.id === n.task_id)?.project_id ?? n.project_id : n.project_id) ?? NONE;
+  // Al abrir una nota concreta, su sección queda seleccionada.
+  const section = current ? sectionOf(current) : stored;
+  // Solo al cambiar de nota (no en cada cambio de su contenido).
+  const currentSection = current ? sectionOf(current) : null;
+  useEffect(() => { if (currentSection) setSection(currentSection); }, [currentSection]); // setSection es estable en la práctica
+
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  const inSection = notes.filter((n) => (section === ALL || sectionOf(n) === section) && (!words.length || matchesNote(n, words)));
+  const pages = section === ALL ? sortNotes(inSection.filter((n) => !n.task_id)) : sortPages(inSection.filter((n) => !n.task_id));
+  const itemNotes = sortNotes(inSection.filter((n) => n.task_id));
+  const sectionProject = section !== ALL && section !== NONE ? projectMap.get(section) : undefined;
+  const count = (key: string) => notes.filter((n) => sectionOf(n) === key).length;
+
+  const addPage = (kind: NoteKind) => void newNote(kind, today, { project_id: sectionProject?.id ?? null });
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-      <aside className="min-w-0">
-        <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Notas</h1>
-          <div className="flex gap-1">
-            <button type="button" onClick={() => void newNote('meeting', today)} className="flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-indigo-500">
-              <Plus className="size-4" />Acta
-            </button>
-            <button type="button" onClick={() => void newNote('note', today)} className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              <Plus className="size-4" />Nota
-            </button>
+    <div className="grid h-[calc(100dvh-7rem)] min-h-[480px] grid-cols-[210px_250px_1fr] overflow-hidden rounded-xl border border-zinc-200 bg-white max-lg:h-auto max-lg:grid-cols-1 dark:border-zinc-800 dark:bg-zinc-950">
+      {/* Secciones */}
+      <nav aria-label="Secciones" className="flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40">
+        <h2 className="px-3 pt-3 pb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones</h2>
+        <div className="flex-1 overflow-y-auto pb-2">
+          <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => setSection(ALL)} />
+          {flattenTree(projectTree(projects)).map(({ project: p, depth }) => (
+            <SectionRow key={p.id} label={p.name} color={p.color} depth={depth} active={section === p.id} count={count(p.id)} onClick={() => setSection(p.id)} />
+          ))}
+          {count(NONE) > 0 && <SectionRow label="Sin sección" color="#d4d4d8" active={section === NONE} count={count(NONE)} onClick={() => setSection(NONE)} />}
+        </div>
+        <AddSection parent={sectionProject} onCreated={(pid) => setSection(pid)} />
+      </nav>
+
+      {/* Páginas */}
+      <div className="flex min-h-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
+        <div className="space-y-2 px-3 pt-3 pb-2">
+          <div className="flex items-center gap-1">
+            <h2 className="flex-1 truncate text-sm font-semibold" title={sectionProject ? projectPath(sectionProject.id, projectMap) : undefined}>
+              {section === ALL ? 'Todas las notas' : section === NONE ? 'Sin sección' : sectionProject?.name}
+            </h2>
             <IcsImport />
           </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar…"
+              className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
+          </div>
         </div>
-        <div className="relative mb-2">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar en notas…"
-            className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
+        <div className="flex-1 overflow-y-auto">
+          <PageList pages={pages} activeId={id} reorderable={section !== ALL && !words.length} />
+          {itemNotes.length > 0 && (
+            <>
+              <h3 className="mt-3 px-3 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">Notas de US, TS y tareas · {itemNotes.length}</h3>
+              <PageList pages={itemNotes} activeId={id} reorderable={false} />
+            </>
+          )}
+          {!pages.length && !itemNotes.length && (
+            <p className="px-3 py-4 text-sm text-zinc-400">{words.length ? 'Nada coincide.' : 'Sección vacía. Añade una página o un acta.'}</p>
+          )}
         </div>
-        <div className="mb-3 flex gap-1.5 text-xs">
-          {([['', 'Todas'], ['meeting', 'Actas'], ['note', 'Notas'], ['item', 'De elementos']] as const).map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setKind(k)}
-              className={`rounded-full px-2.5 py-0.5 ${kind === k ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>{label}</button>
-          ))}
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="ml-auto rounded-md border border-zinc-200 bg-white px-1 dark:border-zinc-700 dark:bg-zinc-900" aria-label="Proyecto">
-            <option value="">Todos los proyectos</option>
-            <ProjectOptions />
-          </select>
+        <div className="flex gap-1 border-t border-zinc-200 p-2 dark:border-zinc-800">
+          <button type="button" onClick={() => addPage('note')} className="flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950">
+            <Plus className="size-4" />Agregar página
+          </button>
+          <button type="button" onClick={() => addPage('meeting')} title="Nueva acta de reunión" className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            <Users className="size-4" />Acta
+          </button>
         </div>
-        <ul className="space-y-1">
-          {list.map((n) => <NoteItem key={n.id} note={n} active={n.id === id} />)}
-          {!list.length && <li className="px-2 py-6 text-center text-sm text-zinc-400">{notes.length ? 'Nada coincide.' : 'Aún no hay notas. Crea un acta para tu próxima reunión.'}</li>}
-        </ul>
-      </aside>
-      <section className="min-w-0">
+      </div>
+
+      {/* Contenido */}
+      <section className="min-w-0 overflow-y-auto px-8 py-5">
         {current ? <NotePage key={current.id} note={current} /> : (
-          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 text-sm text-zinc-400 dark:border-zinc-700">
-            <FileText className="mb-2 size-6" />Elige una nota o crea un acta nueva
+          <div className="flex h-64 flex-col items-center justify-center text-sm text-zinc-400">
+            <FileText className="mb-2 size-6" />Elige una página o crea una nueva
           </div>
         )}
       </section>
@@ -97,31 +130,100 @@ export function NotesView({ id }: { id?: string }) {
   );
 }
 
-function NoteItem({ note, active }: { note: Note; active: boolean }) {
-  const { projectMap, today, tasks, itemTypes } = useApp();
-  const task = note.task_id ? tasks.find((t) => t.id === note.task_id) : undefined;
-  const projectId = task?.project_id ?? note.project_id;
-  const project = projectId ? projectMap.get(projectId) : undefined;
-  const actions = actionItems(note.body);
-  const Icon = note.kind === 'meeting' ? Users : FileText;
+/** Sección con su color (barra a la izquierda, como las pestañas de OneNote). */
+function SectionRow({ label, color, active, count, depth = 0, onClick }: {
+  label: string; color: string; active: boolean; count: number; depth?: number; onClick: () => void;
+}) {
   return (
-    <li>
-      <a href={`#/notes/${note.id}`} className={`block rounded-lg px-2.5 py-2 ${active ? 'bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}>
-        <div className="flex items-center gap-1.5 text-sm font-medium">
-          {task ? <TypeBadge type={findType(itemTypes, task.type_id)} /> : <Icon className="size-3.5 shrink-0 text-zinc-400" />}
-          <span className="truncate">{task ? taskLabel(task) : note.title || 'Sin título'}</span>
-          {note.pinned && <Pin className="size-3 shrink-0 text-amber-500" />}
-        </div>
-        {noteExcerpt(note) && <p className="mt-0.5 truncate text-xs text-zinc-500">{noteExcerpt(note)}</p>}
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
-          <span>{formatDay(note.date, today)}</span>
-          {project && <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full" style={{ background: project.color }} />{project.name}</span>}
-          {actions.length > 0 && <span className="inline-flex items-center gap-0.5"><CheckSquare className="size-3" />{actions.filter((a) => a.checked).length}/{actions.length}</span>}
-          <span className="flex-1" />
-          <AvatarStack names={note.people} size={16} />
-        </div>
-      </a>
-    </li>
+    <button type="button" onClick={onClick} style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
+      className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-sm ${active ? 'bg-white font-medium shadow-sm dark:bg-zinc-800' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}>
+      <span className="h-5 w-1 shrink-0 rounded-full" style={{ background: color }} />
+      <span className="flex-1 truncate">{label}</span>
+      {count > 0 && <span className="text-xs text-zinc-400">{count}</span>}
+    </button>
+  );
+}
+
+function AddSection({ parent, onCreated }: { parent?: Project; onCreated: (id: string) => void }) {
+  const { projectMap } = useApp();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const canNest = !!parent && ancestry(parent.id, projectMap).length < MAX_PROJECT_DEPTH;
+  const [inside, setInside] = useState(false);
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    if (name.trim()) {
+      const p = await repo.createProject(name.trim(), { parent_id: inside && canNest ? parent!.id : null });
+      onCreated(p.id);
+    }
+    setName('');
+    setOpen(false);
+  }
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1 border-t border-zinc-200 px-3 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:border-zinc-800 dark:text-indigo-400 dark:hover:bg-indigo-950">
+        <Plus className="size-4" />Agregar sección
+      </button>
+    );
+  }
+  return (
+    <form onSubmit={create} className="space-y-1 border-t border-zinc-200 p-2 dark:border-zinc-800">
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la sección"
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+        className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+      {canNest && (
+        <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+          <input type="checkbox" checked={inside} onChange={(e) => setInside(e.target.checked)} />Dentro de {parent!.name}
+        </label>
+      )}
+    </form>
+  );
+}
+
+/** Lista de páginas; si es reordenable, se arrastran para cambiar su orden. */
+function PageList({ pages, activeId, reorderable }: { pages: Note[]; activeId?: string; reorderable: boolean }) {
+  const { tasks, itemTypes, today } = useApp();
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+
+  async function drop(beforeId: string | null) {
+    if (!dragging) return;
+    const changes = reorderPages(pages, dragging, beforeId);
+    setDragging(null);
+    setOver(null);
+    if (changes.length) {
+      await repo.batch('Páginas reordenadas', async () => {
+        for (const c of changes) await repo.updateNote(c.id, { sort_order: c.sort_order });
+      });
+    }
+  }
+
+  return (
+    <ul onDragOver={(e) => { if (dragging) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); void drop(null); }}>
+      {pages.map((n) => {
+        const task = n.task_id ? tasks.find((t) => t.id === n.task_id) : undefined;
+        const active = n.id === activeId;
+        return (
+          <li key={n.id}
+            draggable={reorderable}
+            onDragStart={() => setDragging(n.id)}
+            onDragEnd={() => { setDragging(null); setOver(null); }}
+            onDragOver={(e) => { if (dragging && dragging !== n.id) { e.preventDefault(); e.stopPropagation(); setOver(n.id); } }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void drop(n.id); }}
+            className={`${over === n.id ? 'border-t-2 border-indigo-500' : 'border-t-2 border-transparent'} ${dragging === n.id ? 'opacity-40' : ''}`}>
+            <a href={`#/notes/${n.id}`}
+              className={`block px-3 py-1.5 ${active ? 'bg-indigo-50 font-medium text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}>
+              <span className="flex items-center gap-1.5 text-sm">
+                {task ? <TypeBadge type={findType(itemTypes, task.type_id)} /> : n.kind === 'meeting' && <Users className="size-3.5 shrink-0 text-zinc-400" />}
+                <span className="truncate">{task ? taskLabel(task) : n.title || 'Sin título'}</span>
+                {n.pinned && <Pin className="size-3 shrink-0 text-amber-500" />}
+              </span>
+              <span className="block truncate text-[11px] text-zinc-400">{formatDay(n.date, today)}{noteExcerpt(n) ? ` · ${noteExcerpt(n)}` : ''}</span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -133,6 +235,7 @@ function NotePage({ note }: { note: Note }) {
   const ctx = { today, projects, people: knownPeople(tasks), types: itemTypes, releases };
   const actions = actionItems(note.body);
   const unlinked = actions.filter((a) => !a.taskId);
+  const showSide = note.kind === 'meeting' || actions.length > 0;
 
   return (
     <article className="min-w-0">
@@ -165,13 +268,14 @@ function NotePage({ note }: { note: Note }) {
       {note.task_id && <TaskOrigin taskId={note.task_id} />}
       {note.kind === 'meeting' && <MeetingLink note={note} />}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_260px]">
+      {/* El lateral (acciones, temas de los asistentes) solo en actas o si la nota tiene acciones. */}
+      <div className={`grid gap-6 ${showSide ? '2xl:grid-cols-[1fr_260px]' : ''}`}>
         <NoteEditor
           note={note}
           onToggle={(line, taskId) => void toggleAction(note, line, taskId, taskMap)}
           onMakeTask={(line) => void createTasksFromActions(note, ctx, actions.find((a) => a.line === line))}
         />
-        <div className="space-y-5 text-sm">
+        {showSide && <div className="space-y-5 text-sm">
           <SidePanel icon={<ListChecks className="size-4" />} title={`Acciones · ${actions.filter((a) => (a.taskId ? taskMap.get(a.taskId)?.status === 'done' : a.checked)).length}/${actions.length}`}>
             {actions.length === 0 && <p className="text-xs text-zinc-400">Escribe acciones con <code>- [ ] …</code> (admiten @persona, fechas y !1).</p>}
             {unlinked.length > 0 && (
@@ -183,7 +287,7 @@ function NotePage({ note }: { note: Note }) {
             <LinkedTasks ids={actions.flatMap((a) => (a.taskId ? [a.taskId] : []))} />
           </SidePanel>
           <AttendeeTopics people={note.people} />
-        </div>
+        </div>}
       </div>
     </article>
   );

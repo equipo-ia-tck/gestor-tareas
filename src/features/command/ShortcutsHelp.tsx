@@ -36,7 +36,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
   {
     title: 'Ratón',
     items: [
-      ['Clic', 'Seleccionar'],
+      ['Clic', 'Abrir el panel de la tarea'],
       [`${MOD} clic  ·  ⇧ clic`, 'Añadir · rango'],
       ['Doble clic', 'Editar el campo'],
       ['Arrastrar', 'A un día, proyecto, Hoy o Bandeja'],
@@ -46,10 +46,9 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     title: 'Ir a',
     items: [
       ['G  H', 'Hoy'],
-      ['G  S', 'Próximos 7 días'],
+      ['G  S', 'Semana (lunes a domingo)'],
       ['G  B', 'Bandeja'],
-      ['G  O', 'Todo (con filtros)'],
-      ['G  T', 'Tablero'],
+      ['G  T', 'Tablero (todo, con filtros)'],
       ['G  N', 'Notas'],
       ['G  C', 'Calendario'],
       ['G  R', 'Releases'],

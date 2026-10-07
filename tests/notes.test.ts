@@ -13,7 +13,7 @@ beforeEach(() => { repo = new DexieRepository(new TasksDB(`v4-${crypto.randomUUI
 
 const note = (body: string, extra: Partial<Note> = {}): Note => ({
   id: crypto.randomUUID(), title: 'Daily', body, kind: 'meeting', date: '2026-10-07', project_id: null,
-  people: extractMentions(body), pinned: false, task_id: null, meeting_url: null, created_at: '', updated_at: '', deleted_at: null, ...extra,
+  people: extractMentions(body), pinned: false, task_id: null, meeting_url: null, sort_order: null, created_at: '', updated_at: '', deleted_at: null, ...extra,
 });
 
 describe('markdown', () => {
@@ -104,5 +104,18 @@ describe('notas', () => {
     const db = new TasksDB(name);
     expect((await db.item_types.toArray()).map((t) => t.id).sort()).toEqual(['task', 'topic']);
     expect(await db.notes.count()).toBe(0);
+  });
+});
+
+describe('páginas (orden manual)', () => {
+  it('ordena por sort_order y, sin él, por creación; reordenar devuelve solo los cambios', async () => {
+    const { reorderPages, sortPages } = await import('../src/domain/notes');
+    const a = note('', { id: 'a', sort_order: 1000, created_at: '2026-10-01' });
+    const b = note('', { id: 'b', sort_order: 2000, created_at: '2026-10-02' });
+    const c = note('', { id: 'c', sort_order: null, created_at: '2026-01-01T00:00:00Z' });
+    expect(sortPages([b, a]).map((n) => n.id)).toEqual(['a', 'b']);
+    expect(reorderPages([a, b], 'b', 'a')).toEqual([{ id: 'b', sort_order: 1000 }, { id: 'a', sort_order: 2000 }]);
+    expect(reorderPages([a, b], 'a', null)).toEqual([{ id: 'b', sort_order: 1000 }, { id: 'a', sort_order: 2000 }]);
+    expect(sortPages([a, c]).map((n) => n.id)).toEqual(['a', 'c']);
   });
 });

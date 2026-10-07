@@ -70,3 +70,10 @@ describe('semana ISO', () => {
     expect(isoWeek(iso)).toBe(week);
   });
 });
+
+describe('mondayOf', () => {
+  it.each([['2026-10-07', '2026-10-05'], ['2026-10-05', '2026-10-05'], ['2026-10-11', '2026-10-05'], ['2026-11-01', '2026-10-26']])('%s → %s', async (d, m) => {
+    const { mondayOf } = await import('../src/domain/dates');
+    expect(mondayOf(d)).toBe(m);
+  });
+});

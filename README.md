@@ -6,9 +6,9 @@ App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, 
 
 - **Captura en segundos** (Cmd/Ctrl+K o la barra de cada vista) con sintaxis rápida: `mañana`, `el viernes`,
   `#proyecto`, `@persona`, `!1`, `~30m`, `+etiqueta`, `cada lunes`, `US-1234`, `^R2.3`, `recuérdame a las 17:00`…
-- **Vistas**: Hoy (con resumen del día, atrasadas y "Repartir"), Próximos 7 días, Bandeja, **Todo** (filtros por tipo,
-  estado, proyecto, persona, etiqueta, release y fecha, con vistas guardadas), Tablero kanban, Calendario, Releases, Notas,
-  Registro, Proyectos (con **subproyectos**, en lista o tablero) y Personas.
+- **Vistas**: Hoy (con resumen del día, atrasadas y "Repartir"), Semana (de lunes a domingo), Bandeja, **Tablero** (todas
+  las tareas, US, TS y temas, con filtros, vistas guardadas y modo lista), Calendario, Releases, **Notas** (como OneNote:
+  secciones, páginas y contenido), Registro, Proyectos (con **subproyectos**, en lista o tablero) y Personas.
 - **Panel de detalle** de cada tarea: tipo (Tarea, User Story, Test Scenario, Tema…), estado, fecha, recordatorio,
   release, ID externo con enlace a Jira/Xray, prioridad, personas, etiquetas de color, estimación, pasos, notas e historial.
 - **Notas y actas** en Markdown con formato en vivo. Las acciones `- [ ]` se convierten en tareas enlazadas. Cada US/TS
