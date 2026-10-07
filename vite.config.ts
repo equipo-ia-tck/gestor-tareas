@@ -39,8 +39,8 @@ export default defineConfig({
     }),
   ],
   base: './',
-  // App local y cacheada como PWA: ~160 kB gzip es aceptable y no merece trocear el bundle.
-  build: { chunkSizeWarningLimit: 700 },
+  // App local y cacheada como PWA: ~220 kB gzip es aceptable y no merece trocear el bundle.
+  build: { chunkSizeWarningLimit: 1000 },
   test: {
     environment: 'node',
     setupFiles: ['tests/setup.ts'],
