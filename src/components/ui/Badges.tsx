@@ -1,4 +1,7 @@
-import { CheckSquare, Flag } from 'lucide-react';
+import { CheckSquare, Flag, Rocket } from 'lucide-react';
+import { useApp } from '../../app/AppContext';
+import { externalUrl } from '../../domain/releases';
+import type { Task } from '../../domain/types';
 import { colorFor, initials, labelColor, tint } from '../../domain/colors';
 import type { ChecklistItem, ItemType, Priority, WorkflowState } from '../../domain/types';
 
@@ -88,6 +91,27 @@ export function ChecklistProgress({ items }: { items: ChecklistItem[] }) {
   return (
     <span className={`inline-flex items-center gap-0.5 text-[11px] ${complete ? 'text-emerald-600 dark:text-emerald-400' : ''}`} title={`${done} de ${items.length} pasos`}>
       <CheckSquare className="size-3" />{done}/{items.length}
+    </span>
+  );
+}
+
+/** ID externo (US-1234); enlaza a la herramienta si hay URL o plantilla. */
+export function ExternalChip({ task, type }: { task: Pick<Task, 'external_id' | 'url'>; type: ItemType }) {
+  if (!task.external_id) return null;
+  const url = externalUrl(task, type);
+  const cls = 'rounded bg-cyan-50 px-1 font-mono text-[10px] text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300';
+  return url
+    ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`${cls} hover:underline`} title="Abrir en la herramienta externa">{task.external_id}</a>
+    : <span className={cls}>{task.external_id}</span>;
+}
+
+export function ReleaseChip({ releaseId }: { releaseId: string | null }) {
+  const { releaseMap } = useApp();
+  const r = releaseId ? releaseMap.get(releaseId) : undefined;
+  if (!r) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded bg-lime-50 px-1 text-[10px] font-medium text-lime-800 dark:bg-lime-950 dark:text-lime-300" title={`Release ${r.name}`}>
+      <Rocket className="size-2.5" />{r.name}
     </span>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { AlignLeft, Calendar, Plus, Repeat } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
-import { AvatarStack, ChecklistProgress, LabelChip, PriorityFlag, TypeBadge } from '../../components/ui/Badges';
+import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PriorityFlag, ReleaseChip, TypeBadge } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
@@ -104,6 +104,9 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
         <PriorityFlag priority={task.priority} />
       </p>
       {showProject && project && <p className="mt-1 truncate text-[11px] text-zinc-500">{project.name}</p>}
+      {(task.external_id || task.release_id) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><ExternalChip task={task} type={type} /><ReleaseChip releaseId={task.release_id} /></div>
+      )}
       <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
         {task.due_date && (
           <span className={`inline-flex items-center gap-0.5 rounded px-1 ${late ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : dueToday ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : ''}`}>
@@ -121,12 +124,12 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
 }
 
 function AddCard({ state, type, defaults }: { state: WorkflowState; type: ItemType; defaults?: Partial<NewTask> }) {
-  const { tasks, projects, today } = useApp();
+  const { tasks, projects, today, itemTypes, releases } = useApp();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
 
   async function submit() {
-    const parsed = parseCapture(text, { today, projects, people: knownPeople(tasks) }).filter((p) => p.title);
+    const parsed = parseCapture(text, { today, projects, people: knownPeople(tasks), types: itemTypes, releases }).filter((p) => p.title);
     if (!parsed.length) return;
     await repo.batch(parsed.length === 1 ? `Tarjeta creada en ${state.name}` : `${parsed.length} tarjetas creadas`, () =>
       submitCapture(parsed, { ...defaults, type_id: type.id, state_id: state.id }));

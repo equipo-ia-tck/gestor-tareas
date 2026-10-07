@@ -3,6 +3,8 @@ import { AppProvider, useApp } from './AppContext';
 import { WideContext } from './Layout';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { BoardView } from '../features/board/BoardView';
+import { CalendarView } from '../features/calendar/CalendarView';
+import { ReleasesView } from '../features/releases/ReleasesView';
 import { routeHref, useRoute, type Route } from './router';
 import { Sidebar } from './Sidebar';
 import { ToastProvider } from '../components/Toast';
@@ -25,6 +27,8 @@ function View({ route }: { route: Route }) {
     case 'today': return <TodayView />;
     case 'week': return <WeekView />;
     case 'board': return <BoardView />;
+    case 'releases': return <ReleasesView />;
+    case 'calendar': return <CalendarView />;
     case 'inbox': return <InboxView />;
     case 'projects': return <ProjectsView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;

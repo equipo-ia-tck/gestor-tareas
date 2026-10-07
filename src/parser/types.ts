@@ -1,6 +1,6 @@
 import type { ISODate, Priority, RecurrenceRule } from '../domain/types';
 
-export type TokenKind = 'date' | 'recurrence' | 'project' | 'person' | 'priority' | 'estimate' | 'tag';
+export type TokenKind = 'date' | 'recurrence' | 'project' | 'person' | 'priority' | 'estimate' | 'tag' | 'key' | 'release';
 
 /** Fragmento del texto reconocido. Los offsets son relativos al texto completo. */
 export interface Token {
@@ -22,6 +22,12 @@ export interface ParsedTask {
   priority: Priority | null;
   estimated_minutes: number | null;
   recurrence: RecurrenceRule | null;
+  /** Clave tipo Jira detectada ("US-1234"). */
+  external_id: string | null;
+  /** Tipo deducido del prefijo de la clave (US → User Story). */
+  type_id: string | null;
+  /** id null = release nueva que habrá que crear. */
+  release: { id: string | null; name: string } | null;
   tokens: Token[];
 }
 
@@ -29,6 +35,9 @@ export interface CaptureContext {
   today: ISODate;
   projects: { id: string; name: string }[];
   people: string[];
+  /** Tipos con abreviatura, para deducir el tipo de "US-123". */
+  types?: { id: string; short: string }[];
+  releases?: { id: string; name: string }[];
   /** Claves de tokens (ver tokenKey) que el usuario ha descartado: se tratan como texto normal. */
   ignore?: string[];
 }

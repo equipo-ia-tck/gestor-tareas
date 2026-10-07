@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { labelColorMap } from '../domain/colors';
-import type { ISODate, ItemType, Label, Project, Settings, Task } from '../domain/types';
-import { useItemTypes, useLabels, useProjects, useSettings, useTasks, useToday } from '../hooks/useData';
+import type { ISODate, ItemType, Label, Project, Release, Settings, Task } from '../domain/types';
+import { useItemTypes, useLabels, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
 
 interface AppData {
   tasks: Task[];
@@ -11,6 +11,8 @@ interface AppData {
   projects: Project[];
   projectMap: Map<string, Project>;
   itemTypes: ItemType[];
+  releases: Release[];
+  releaseMap: Map<string, Release>;
   labels: Label[];
   /** nameKey(etiqueta) → color personalizado. */
   labelColors: Map<string, string>;
@@ -36,6 +38,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const allProjects = useProjects(true);
   const itemTypes = useItemTypes();
   const labels = useLabels();
+  const releases = useReleases();
   const settings = useSettings();
   const today = useToday();
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -46,6 +49,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     projects: allProjects.filter((p) => !p.archived),
     projectMap: new Map(allProjects.map((p) => [p.id, p])),
     itemTypes,
+    releases,
+    releaseMap: new Map(releases.map((r) => [r.id, r])),
     labels,
     labelColors: labelColorMap(labels),
     settings,
@@ -53,7 +58,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     detailId: detailId && tasks.some((t) => t.id === detailId) ? detailId : null,
     editTask: (t) => setDetailId(t.id),
     closeDetail: () => setDetailId(null),
-  }), [tasks, allProjects, itemTypes, labels, settings, today, detailId]);
+  }), [tasks, allProjects, itemTypes, releases, labels, settings, today, detailId]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -35,6 +35,10 @@ export const taskSchema = z.object({
   type_id: z.string().default(DEFAULT_TYPE_ID),
   state_id: z.string().optional(),
   checklist: z.array(z.object({ id: z.string(), text: z.string(), done: z.boolean() })).default([]),
+  // Campos v3.
+  external_id: z.string().nullable().default(null),
+  url: z.string().nullable().default(null),
+  release_id: z.string().nullable().default(null),
   recurrence_rule: recurrenceSchema.nullable().default(null),
   series_id: z.string().nullable().default(null),
   sort_order: z.number().default(0),
@@ -76,6 +80,17 @@ export const itemTypeSchema = z.object({
   color: z.string(),
   order: z.number().default(0),
   states: z.array(stateSchema).min(1),
+  url_template: z.string().optional(),
+});
+
+export const releaseSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  date: isoDate.nullable(),
+  project_id: z.string().nullable(),
+  status: z.enum(['planned', 'released', 'cancelled']),
+  notes: z.string().default(''),
+  created_at: isoDateTime,
 });
 
 export const labelSchema = z.object({ name: z.string().min(1), color: z.string() });
@@ -91,6 +106,7 @@ export const backupSchema = z.object({
   settings: settingsSchema,
   labels: z.array(labelSchema).default([]),
   item_types: z.array(itemTypeSchema).default(DEFAULT_ITEM_TYPES),
+  releases: z.array(releaseSchema).default([]),
 });
 
 export type Backup = z.infer<typeof backupSchema>;

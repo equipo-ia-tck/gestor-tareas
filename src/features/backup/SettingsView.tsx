@@ -11,6 +11,7 @@ import { ViewHeader } from '../views/ViewHeader';
 import { usePersistence } from './usePersistence';
 import { useInstall } from '../../app/install';
 import { LabelsCard } from './LabelsCard';
+import { TypesCard } from './TypesCard';
 import { isDictationSupported } from '../dictation/speech';
 
 const WEEKDAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
@@ -106,6 +107,8 @@ export function SettingsView() {
       </Card>
 
       <InstallCard />
+
+      <TypesCard />
 
       <LabelsCard />
 

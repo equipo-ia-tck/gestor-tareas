@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { ItemType, Label, Project, Task } from '../domain/types';
+import type { ItemType, Label, Project, Release, Task } from '../domain/types';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 
 export interface KeyValue {
@@ -8,13 +8,14 @@ export interface KeyValue {
 }
 
 /** Versión lógica del esquema; se incluye en las copias de seguridad. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export class TasksDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
   tasks!: EntityTable<Task, 'id'>;
   labels!: EntityTable<Label, 'name'>;
   item_types!: EntityTable<ItemType, 'id'>;
+  releases!: EntityTable<Release, 'id'>;
   /** Ajustes del usuario (entran en las copias). */
   settings!: EntityTable<KeyValue, 'key'>;
   /** Estado local del dispositivo (no entra en las copias): handle del archivo vinculado, etc. */
@@ -41,6 +42,19 @@ export class TasksDB extends Dexie {
           t.type_id ??= 'task';
           t.state_id ??= t.status === 'done' ? 'task-done' : 'task-todo';
           t.checklist ??= [];
+        });
+      });
+    // v3: ID externo, enlace y release en las tareas; tabla de releases.
+    this.version(3)
+      .stores({
+        tasks: 'id, project_id, due_date, status, *people, *tags, series_id, last_touched_at, deleted_at, type_id, state_id, release_id, external_id',
+        releases: 'id, date, project_id',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('tasks').toCollection().modify((t: Task) => {
+          t.external_id ??= null;
+          t.url ??= null;
+          t.release_id ??= null;
         });
       });
     // Base de datos nueva: se crea directamente en la última versión y no pasa por upgrade.

@@ -131,7 +131,7 @@ describe('copias', () => {
   it('exporta e importa tipos y etiquetas', async () => {
     await repo.setLabelColor('casa', '#111111');
     const snap = await repo.exportSnapshot();
-    expect(snap.schema_version).toBe(2);
+    expect(snap.schema_version).toBe(3);
     const other = new DexieRepository(new TasksDB(`v2-${crypto.randomUUID()}`));
     const r = parseBackup(JSON.stringify(snap));
     if (r.ok) await other.replaceAll(r.backup);

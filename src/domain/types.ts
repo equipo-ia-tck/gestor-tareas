@@ -34,6 +34,24 @@ export interface ItemType {
   color: string;
   order: number;
   states: WorkflowState[];
+  /**
+   * Plantilla para enlazar el ID externo, p. ej. "https://empresa.atlassian.net/browse/{id}".
+   * Vacía = sin enlace automático.
+   */
+  url_template?: string;
+}
+
+export type ReleaseStatus = 'planned' | 'released' | 'cancelled';
+
+/** Entrega o versión con fecha ("cuándo sale todo"). */
+export interface Release {
+  id: string;
+  name: string;
+  date: ISODate | null;
+  project_id: string | null;
+  status: ReleaseStatus;
+  notes: string;
+  created_at: ISODateTime;
 }
 
 /** Paso dentro de una tarea (como en Microsoft To Do). */
@@ -72,6 +90,11 @@ export interface Task {
   type_id: string;
   state_id: string;
   checklist: ChecklistItem[];
+  /** ID en otra herramienta (Jira, Xray, Azure DevOps…), p. ej. "US-1234". */
+  external_id: string | null;
+  /** Enlace explícito; si no hay, se construye con la plantilla del tipo. */
+  url: string | null;
+  release_id: string | null;
   recurrence_rule: RecurrenceRule | null;
   /** Enlaza las ocurrencias de una misma tarea recurrente. */
   series_id: string | null;

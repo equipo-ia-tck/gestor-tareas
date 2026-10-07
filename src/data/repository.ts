@@ -6,6 +6,7 @@ import {
   type Label,
   type NewTask,
   type Project,
+  type Release,
   type Settings,
   type Task,
   type TaskPatch,
@@ -18,8 +19,8 @@ import { formatDay, todayISO } from '../domain/dates';
 import { nextOccurrenceTask } from '../domain/maintenance';
 import { SCHEMA_VERSION, TasksDB } from './db';
 
-type TableName = 'tasks' | 'projects' | 'labels' | 'item_types';
-type Row = Task | Project | Label | ItemType;
+type TableName = 'tasks' | 'projects' | 'labels' | 'item_types' | 'releases';
+type Row = Task | Project | Label | ItemType | Release;
 
 /** Estado de un registro antes y después de un cambio (undefined = no existía). */
 export interface Change {
@@ -60,6 +61,17 @@ export interface Repository {
   updateProject(id: string, patch: Partial<Omit<Project, 'id'>>): Promise<void>;
 
   listItemTypes(): Promise<ItemType[]>;
+  createItemType(name: string): Promise<ItemType>;
+  /** Guarda un tipo; las tareas en estados eliminados pasan al estado equivalente por categoría. */
+  saveItemType(type: ItemType): Promise<void>;
+  /** Elimina un tipo (no el de Tarea); sus tareas pasan a Tarea. */
+  deleteItemType(id: string): Promise<void>;
+
+  listReleases(): Promise<Release[]>;
+  createRelease(name: string, fields?: Partial<Omit<Release, 'id' | 'name' | 'created_at'>>): Promise<Release>;
+  updateRelease(id: string, patch: Partial<Omit<Release, 'id'>>): Promise<void>;
+  /** Elimina la release y la quita de sus tareas. */
+  deleteRelease(id: string): Promise<void>;
 
   listLabels(): Promise<Label[]>;
   setLabelColor(name: string, color: string): Promise<void>;
@@ -155,7 +167,7 @@ export class DexieRepository implements Repository {
 
   private async apply(entry: HistoryEntry, side: 'before' | 'after') {
     const changes = side === 'before' ? [...entry.changes].reverse() : entry.changes;
-    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types], async () => {
+    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types, this.db.releases], async () => {
       for (const c of changes) {
         const table = this.db[c.table] as unknown as Table<Row, string>;
         const value = c[side];
@@ -215,6 +227,9 @@ export class DexieRepository implements Repository {
       completed_at: null,
       deleted_at: null,
       checklist: [],
+      external_id: null,
+      url: null,
+      release_id: null,
       ...input,
       type_id: type.id,
       state_id: state.id,
@@ -356,6 +371,93 @@ export class DexieRepository implements Repository {
     return (await this.db.item_types.toArray()).sort((a, b) => a.order - b.order);
   }
 
+  async createItemType(name: string) {
+    const types = await this.listItemTypes();
+    const id = uuid();
+    const short = name.trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+    const type: ItemType = {
+      id, name: name.trim(), short, color: PROJECT_COLORS[types.length % PROJECT_COLORS.length], order: types.length,
+      states: [
+        { id: `${id}-todo`, name: 'Por hacer', color: '#94a3b8', category: 'todo' },
+        { id: `${id}-doing`, name: 'En curso', color: '#3b82f6', category: 'doing' },
+        { id: `${id}-blocked`, name: 'Bloqueado', color: '#ef4444', category: 'blocked' },
+        { id: `${id}-done`, name: 'Hecho', color: '#22c55e', category: 'done' },
+      ],
+    };
+    await this.db.item_types.add(type);
+    this.record({ table: 'item_types', key: id, before: undefined, after: type }, `Tipo ${type.name} creado`);
+    this.emit();
+    return type;
+  }
+
+  async saveItemType(type: ItemType) {
+    const before = await this.db.item_types.get(type.id);
+    if (!type.states.length) return;
+    await this.batch(`Tipo ${type.name} guardado`, async () => {
+      await this.db.item_types.put(type);
+      this.record({ table: 'item_types', key: type.id, before, after: type }, '');
+      // Tareas en estados que ya no existen: al equivalente por categoría.
+      const ids = new Set(type.states.map((st) => st.id));
+      const orphans = (await this.db.tasks.where('type_id').equals(type.id).toArray()).filter((t) => !ids.has(t.state_id));
+      for (const t of orphans) {
+        const old = before?.states.find((st) => st.id === t.state_id);
+        const state = old ? equivalentState(old, type) : t.status === 'done' ? doneState(type) : initialState(type);
+        await this.patchTask(t.id, patchForState(t, state, now()), '', false);
+      }
+    });
+  }
+
+  async deleteItemType(id: string) {
+    if (id === DEFAULT_TYPE_ID) return;
+    const types = await this.listItemTypes();
+    const type = types.find((t) => t.id === id);
+    if (!type) return;
+    const fallback = findType(types, DEFAULT_TYPE_ID);
+    await this.batch(`Tipo ${type.name} eliminado`, async () => {
+      for (const t of await this.db.tasks.where('type_id').equals(id).toArray()) {
+        const state = equivalentState(stateOf(types, t), fallback);
+        await this.patchTask(t.id, { type_id: fallback.id, state_id: state.id }, '', false);
+      }
+      await this.db.item_types.delete(id);
+      this.record({ table: 'item_types', key: id, before: type, after: undefined }, '');
+    });
+  }
+
+  // ---------- Releases ----------
+
+  async listReleases() {
+    return (await this.db.releases.toArray()).sort((a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.name.localeCompare(b.name, 'es'));
+  }
+
+  async createRelease(name: string, fields: Partial<Omit<Release, 'id' | 'name' | 'created_at'>> = {}) {
+    const release: Release = { date: null, project_id: null, status: 'planned', notes: '', ...fields, id: uuid(), name: name.trim(), created_at: now() };
+    await this.db.releases.add(release);
+    this.record({ table: 'releases', key: release.id, before: undefined, after: release }, `Release ${release.name} creada`);
+    this.emit();
+    return release;
+  }
+
+  async updateRelease(id: string, patch: Partial<Omit<Release, 'id'>>) {
+    const before = await this.db.releases.get(id);
+    if (!before) return;
+    await this.db.releases.update(id, patch);
+    const after = await this.db.releases.get(id);
+    this.record({ table: 'releases', key: id, before, after }, 'Release actualizada');
+    this.emit();
+  }
+
+  async deleteRelease(id: string) {
+    const release = await this.db.releases.get(id);
+    if (!release) return;
+    await this.batch(`Release ${release.name} eliminada`, async () => {
+      for (const t of await this.db.tasks.where('release_id').equals(id).toArray()) {
+        await this.patchTask(t.id, { release_id: null }, '', false);
+      }
+      await this.db.releases.delete(id);
+      this.record({ table: 'releases', key: id, before: release, after: undefined }, '');
+    });
+  }
+
   // ---------- Etiquetas ----------
 
   async listLabels() {
@@ -449,12 +551,13 @@ export class DexieRepository implements Repository {
       settings: await this.getSettings(),
       labels: await this.db.labels.toArray(),
       item_types: await this.listItemTypes(),
+      releases: await this.db.releases.toArray(),
     };
   }
 
   /** Sustituye todos los datos. Vacía el historial: deshacer no puede cruzar una importación. */
   async replaceAll(backup: Backup) {
-    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types];
+    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types, this.db.releases];
     await this.db.transaction('rw', tables, async () => {
       await Promise.all(tables.map((t) => t.clear()));
       await this.db.projects.bulkAdd(backup.projects);
@@ -462,6 +565,7 @@ export class DexieRepository implements Repository {
       await this.db.settings.put({ key: SETTINGS_KEY, value: backup.settings });
       await this.db.labels.bulkAdd(backup.labels);
       await this.db.item_types.bulkAdd(backup.item_types);
+      await this.db.releases.bulkAdd(backup.releases);
     });
     this.undoStack = [];
     this.redoStack = [];

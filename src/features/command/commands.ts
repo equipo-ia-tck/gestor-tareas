@@ -100,6 +100,12 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Próximos 7 días', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas', run: go({ view: 'board' }) },
+    { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
+    { id: 'go-releases', section: 'Ir a', title: 'Ir a Releases', shortcut: 'G R', keywords: 'entregas versiones salidas', run: go({ view: 'releases' }) },
+    {
+      id: 'new-release', section: 'Crear', title: 'Nueva release', keywords: 'versión entrega',
+      input: { placeholder: 'Nombre de la release (p. ej. R2.3)', run: async (name) => { if (name.trim()) { await repo.createRelease(name); navigate({ view: 'releases' }); } } },
+    },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },
     { id: 'go-projects', section: 'Ir a', title: 'Ir a Proyectos', shortcut: 'G P', run: go({ view: 'projects' }) },
     { id: 'go-people', section: 'Ir a', title: 'Ir a Personas', shortcut: 'G E', run: go({ view: 'people' }) },

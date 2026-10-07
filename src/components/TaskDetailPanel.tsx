@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlignLeft, Calendar, Check, CheckSquare, Clock, Flag, Folder, GripVertical, Plus, Repeat, Tag, Trash2, User, X,
+  AlignLeft, Calendar, Check, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
+import { externalUrl, releaseCountdown } from '../domain/releases';
 import { useApp } from '../app/AppContext';
 import { repo } from '../data/services';
 import { LABEL_COLORS, labelColor } from '../domain/colors';
@@ -92,6 +93,9 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-1 text-sm">
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
+          <Prop icon={<Rocket className="size-4" />} label="Release"><ReleaseField task={task} /></Prop>
+          <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>
+          <Prop icon={<Link2 className="size-4" />} label="Enlace"><UrlField task={task} /></Prop>
           <Prop icon={<Flag className="size-4" />} label="Prioridad">
             <div className="flex gap-1">
               {([1, 2, 3, 4] as Priority[]).map((p) => (
@@ -230,6 +234,96 @@ function DateField({ task }: { task: Task }) {
         if (r.ok) void repo.batch(r.value ? 'Fecha cambiada' : 'Fecha quitada', () => repo.updateTask(task.id, { due_date: r.value }));
       }}
     />
+  );
+}
+
+function ExternalIdField({ task }: { task: Task }) {
+  const { itemTypes } = useApp();
+  const url = externalUrl(task, findType(itemTypes, task.type_id));
+  return (
+    <div className="flex items-center gap-1">
+      <div className="min-w-0 flex-1">
+        <InlineText
+          initial={task.external_id ?? ''}
+          placeholder="US-1234, TS-55…"
+          display={task.external_id ? <span className="font-mono text-xs">{task.external_id}</span> : <span className="text-zinc-400">Sin ID</span>}
+          onSave={(t) => {
+            const v = t.trim() || null;
+            if (v !== task.external_id) void repo.batch(v ? `ID ${v}` : 'ID quitado', () => repo.updateTask(task.id, { external_id: v }));
+          }}
+        />
+      </div>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer" title="Abrir en la herramienta externa"
+          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-indigo-600 dark:hover:bg-zinc-800"><ExternalLink className="size-4" /></a>
+      )}
+    </div>
+  );
+}
+
+function UrlField({ task }: { task: Task }) {
+  const { itemTypes } = useApp();
+  const type = findType(itemTypes, task.type_id);
+  const auto = !task.url && externalUrl(task, type);
+  return (
+    <InlineText
+      initial={task.url ?? ''}
+      placeholder="https://…"
+      display={task.url
+        ? <span className="block truncate text-indigo-600 dark:text-indigo-400">{task.url.replace(/^https?:\/\//, '')}</span>
+        : <span className="text-zinc-400">{auto ? 'Automático desde el ID' : 'Sin enlace'}</span>}
+      parse={(t) => ({ ok: !t.trim() || /^https?:\/\//i.test(t.trim()), preview: t.trim() && !/^https?:\/\//i.test(t.trim()) ? 'Empieza por https://' : '' })}
+      onSave={(t) => {
+        const v = t.trim() || null;
+        if (v !== task.url) void repo.batch(v ? 'Enlace guardado' : 'Enlace quitado', () => repo.updateTask(task.id, { url: v }));
+      }}
+    />
+  );
+}
+
+function ReleaseField({ task }: { task: Task }) {
+  const { releases, releaseMap, today } = useApp();
+  const current = task.release_id ? releaseMap.get(task.release_id) : undefined;
+  const [query, setQuery] = useState('');
+  const open = releases.filter((r) => r.status === 'planned' || r.id === task.release_id);
+  const list = open.filter((r) => fuzzyScore(query, r.name) !== null);
+  const assign = (id: string | null, name: string) => repo.batch(id ? `Release ${name}` : 'Release quitada', () => repo.updateTask(task.id, { release_id: id }));
+  return (
+    <Popover width="w-64" trigger={(toggle) => (
+      <button type="button" className={`${fieldBox} flex w-full items-center gap-2 text-left`} onClick={toggle}>
+        {current
+          ? <>{current.name}{current.date && <span className="text-xs text-zinc-400">· {formatDay(current.date, today)} ({releaseCountdown(current, today)})</span>}</>
+          : <span className="text-zinc-400">Sin release</span>}
+      </button>
+    )}>
+      {(close) => (
+        <>
+          <input autoFocus className={`${inputBox} mb-1`} placeholder="Buscar o crear…" value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={async (e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              if (list[0]) { await assign(list[0].id, list[0].name); close(); }
+              else if (query.trim()) {
+                await repo.batch(`Release ${query.trim()}`, async () => {
+                  const r = await repo.createRelease(query.trim(), { project_id: task.project_id });
+                  await repo.updateTask(task.id, { release_id: r.id });
+                });
+                close();
+              }
+            }} />
+          <div className="max-h-56 overflow-y-auto">
+            {!query && current && <MenuItem onClick={() => { close(); void assign(null, ''); }}><span className="text-zinc-400">Quitar release</span></MenuItem>}
+            {list.map((r) => (
+              <MenuItem key={r.id} active={r.id === task.release_id} onClick={() => { close(); void assign(r.id, r.name); }}>
+                <Rocket className="size-3.5 text-zinc-400" />{r.name}
+                {r.date && <span className="ml-auto text-xs text-zinc-400">{formatDay(r.date, today)}</span>}
+              </MenuItem>
+            ))}
+            {query.trim() && !list.length && <p className="px-2 py-1 text-xs text-zinc-400">Enter para crear «{query.trim()}»</p>}
+          </div>
+        </>
+      )}
+    </Popover>
   );
 }
 

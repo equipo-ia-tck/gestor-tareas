@@ -74,3 +74,25 @@ export function formatMinutes(min: number): string {
   const m = min % 60;
   return m ? `${h} h ${m} min` : `${h} h`;
 }
+
+/** Semanas (de lunes a domingo) que cubren el mes de `anyDay`, como matriz de fechas. */
+export function monthGrid(anyDay: ISODate): ISODate[][] {
+  const d = parseISODate(anyDay);
+  const first = toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+  const last = toISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+  let start = addDays(first, -((weekdayOf(first) + 6) % 7));
+  const weeks: ISODate[][] = [];
+  while (start <= last) {
+    weeks.push(Array.from({ length: 7 }, (_, i) => addDays(start, i)));
+    start = addDays(start, 7);
+  }
+  return weeks;
+}
+
+/** Mismo día del mes anterior/siguiente (ajustado a fin de mes). */
+export function addMonths(iso: ISODate, n: number): ISODate {
+  const d = parseISODate(iso);
+  const target = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return toISODate(new Date(target.getFullYear(), target.getMonth(), Math.min(d.getDate(), lastDay)));
+}

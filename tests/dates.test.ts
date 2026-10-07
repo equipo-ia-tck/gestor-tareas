@@ -43,3 +43,21 @@ describe('dates', () => {
     expect(formatMinutes(90)).toBe('1 h 30 min');
   });
 });
+
+describe('calendario', () => {
+  it('monthGrid empieza en lunes y cubre el mes', async () => {
+    const { monthGrid } = await import('../src/domain/dates');
+    const g = monthGrid('2026-10-15');
+    expect(g[0][0]).toBe('2026-09-28');
+    expect(g.at(-1)!.at(-1)).toBe('2026-11-01');
+    expect(g).toHaveLength(5);
+    expect(g.flat()).toContain('2026-10-31');
+  });
+
+  it('addMonths ajusta a fin de mes', async () => {
+    const { addMonths } = await import('../src/domain/dates');
+    expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
+    expect(addMonths('2026-10-07', -1)).toBe('2026-09-07');
+    expect(addMonths('2026-12-15', 1)).toBe('2027-01-15');
+  });
+});

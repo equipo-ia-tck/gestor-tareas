@@ -165,10 +165,33 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - **Ancho**: las vistas de tablero piden todo el ancho con `useWideLayout(true)`.
 - Iconos con `lucide-react`. Componentes visuales en `components/ui/` (`Badges`, `Popover`, `ViewSwitcher`).
 
+## Fase 7: US/TS, releases y calendario
+
+- **Esquema v3**: en las tareas, `external_id`, `url` y `release_id` (con índices `release_id` y `external_id`); tabla
+  `releases` (`name`, `date`, `project_id`, `status: planned | released | cancelled`, `notes`). En los tipos,
+  `url_template` opcional. Las copias v1 y v2 se siguen importando (zod pone `null` en los campos que faltan).
+- **Enlaces** (`domain/releases.ts`, `externalUrl`): el `url` explícito manda; si no hay, se usa la plantilla del tipo
+  sustituyendo `{id}` por el ID externo.
+- **Sintaxis de captura**: las claves en mayúsculas tipo Jira (`US-1234`, `QA2-17`) son `external_id` y salen del título;
+  si el prefijo coincide con la abreviatura de un tipo, la tarea se crea de ese tipo. Las minúsculas (`covid-19`) no cuentan.
+  `^nombre` asigna la release, que se crea si no existe (una vez por lote, con el proyecto de la tarea). El autocompletado
+  cubre `^`.
+- **Personas en el título**: el nombre se queda solo detrás de una preposición o conjunción ("a @Diana", "con @Luis");
+  suelto ("revisar login @Diana") se quita.
+- **Releases** (`#/releases`, `G R`): agrupadas en pasadas sin publicar, próximas y publicadas/canceladas. Cada tarjeta
+  muestra la cuenta atrás, el progreso (terminadas y bloqueadas) y una barra por tipo con el reparto de estados
+  (`releaseProgress`). Al eliminar una release se quita de sus tareas en un lote deshacible.
+- **Calendario** (`#/calendar`, `G C`): mes de lunes a domingo (`monthGrid`) con vencimientos y releases; soltar una
+  tarea en un día cambia su fecha. El mes visible y "mostrar completadas" se recuerdan en localStorage.
+- **Configurar tipos** (Ajustes → Tipos y estados): nombre, abreviatura, color, plantilla y estados (añadir, renombrar,
+  recolorear, categoría, reordenar, eliminar). `saveItemType` pasa las tareas de estados eliminados al equivalente por
+  categoría; `deleteItemType` pasa las tareas a Tarea (Tarea no se puede eliminar). Todo entra en el historial.
+- **Tablero global**: filtro por release; las tarjetas nuevas heredan la release filtrada.
+
 ### Hoja de ruta v2
 
 - [x] Fase 6: lista tipo Asana, tablero tipo Trello, panel de detalle, pasos y etiquetas de color
-- [ ] Fase 7: US/TS (ID externo y enlace), releases y calendario de "cuándo sale todo"; configurar tipos y estados
+- [x] Fase 7: US/TS (ID externo y enlace), releases y calendario de "cuándo sale todo"; configurar tipos y estados
 - [ ] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
       (temas pendientes y quién dijo qué)
 - [ ] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado

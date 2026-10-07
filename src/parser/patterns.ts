@@ -192,6 +192,9 @@ export const SYMBOL_PATTERNS = {
   priority: /(?<!\S)!([1-4])(?![\p{L}\p{N}_])/gu,
   estimate: /(?<!\S)~(\d+(?:[.,]\d+)?)(h|m|min)?(?:(\d{1,2})(?:m|min)?)?(?![\p{L}\p{N}_])/gu,
   tag: /(?<!\S)\+([\p{L}\p{N}_\-]*[\p{L}\p{N}_])/gu,
+  // Clave de Jira/Xray/ADO en mayúsculas: "US-1234", "QA2-17". Las minúsculas ("covid-19") no cuentan.
+  key: /(?<![\p{L}\p{N}_\-])([A-Z][A-Z0-9]{0,9})-(\d{1,7})(?![\p{L}\p{N}_\-])/gu,
+  release: /(?<!\S)\^([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu,
 };
 
 /** "~30m" → 30, "~2h" → 120, "~1h30" → 90, "~1,5h" → 90, "~45" → 45. */

@@ -19,6 +19,8 @@ export const TOKEN_STYLE: Record<TokenKind, string> = {
   priority: 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200',
   estimate: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200',
   tag: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/60 dark:text-fuchsia-200',
+  key: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200',
+  release: 'bg-lime-100 text-lime-800 dark:bg-lime-900/60 dark:text-lime-200',
 };
 
 interface Props {
@@ -42,7 +44,7 @@ interface Suggestion {
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
 export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large, autoDictate }: Props) {
-  const { tasks, projects, today } = useApp();
+  const { tasks, projects, today, itemTypes, releases } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [ignore, setIgnore] = useState<string[]>([]);
@@ -68,20 +70,21 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
 
   const people = useMemo(() => knownPeople(tasks), [tasks]);
   const parsed = useMemo(
-    () => parseCapture(text, { today, projects, people, ignore }),
-    [text, today, projects, people, ignore],
+    () => parseCapture(text, { today, projects, people, ignore, types: itemTypes, releases }),
+    [text, today, projects, people, ignore, itemTypes, releases],
   );
   const tokens = parsed.flatMap((p) => p.tokens);
 
   // ---- Autocompletado de #proyecto y @persona
   const trigger = useMemo(() => {
-    const m = /(?:^|[\s(])([#@])([\p{L}\p{N}_\-.]*)$/u.exec(text.slice(0, caret));
+    const m = /(?:^|[\s(])([#@^])([\p{L}\p{N}_\-.]*)$/u.exec(text.slice(0, caret));
     return m ? { symbol: m[1], query: m[2], start: caret - m[2].length - 1 } : null;
   }, [text, caret]);
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (!trigger || dismissedAt === trigger.start) return [];
-    const pool = trigger.symbol === '#' ? projects.map((p) => p.name) : people;
+    const pool = trigger.symbol === '#' ? projects.map((p) => p.name)
+      : trigger.symbol === '^' ? releases.filter((r) => r.status === 'planned').map((r) => r.name) : people;
     const ranked = pool
       .map((name) => ({ name, score: fuzzyScore(trigger.query, name) }))
       .filter((x) => x.score !== null)
@@ -92,8 +95,11 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
     if (trigger.symbol === '#' && trigger.query && !exact) {
       items.push({ label: <>Crear proyecto <strong>#{trigger.query}</strong></>, insert: trigger.query });
     }
+    if (trigger.symbol === '^' && trigger.query && !exact) {
+      items.push({ label: <>Crear release <strong>^{trigger.query}</strong></>, insert: trigger.query });
+    }
     return items;
-  }, [trigger, dismissedAt, projects, people]);
+  }, [trigger, dismissedAt, projects, people, releases]);
 
   const showSuggestions = suggestions.length > 0;
 
@@ -274,6 +280,7 @@ function Preview({ parsed, today, defaults, onRemove }: {
       {parsed.map((p, i) => (
         <li key={i} className="flex flex-wrap items-center gap-1.5">
           {parsed.length > 1 && <span className="text-xs text-zinc-400">{i + 1}.</span>}
+          {p.type_id && <TypeName id={p.type_id} />}
           <span className={p.title ? '' : 'text-amber-600 italic'}>{p.title || 'Falta el título'}</span>
           {p.tokens.map((t) => (
             <Chip key={t.start} kind={t.kind} onRemove={() => onRemove(t)}>{chipLabel(t, p, today)}</Chip>
@@ -294,6 +301,8 @@ function chipLabel(t: Token, p: ParsedTask, today: string): string {
     case 'priority': return `Prioridad ${p.priority}`;
     case 'estimate': return `~${formatMinutes(p.estimated_minutes!)}`;
     case 'tag': return t.text;
+    case 'key': return `🔗 ${p.external_id}`;
+    case 'release': return p.release?.id ? `🚀 ${p.release.name}` : `🚀 ${p.release?.name} (nueva)`;
   }
 }
 
@@ -322,4 +331,11 @@ function MicIcon() {
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </svg>
   );
+}
+
+function TypeName({ id }: { id: string }) {
+  const { itemTypes } = useApp();
+  const type = itemTypes.find((t) => t.id === id);
+  if (!type) return null;
+  return <span className="rounded px-1 text-[10px] font-bold text-white" style={{ background: type.color }}>{type.name}</span>;
 }

@@ -8,10 +8,13 @@ import { Board, TypeTabs } from './Board';
 /** Tablero global: todas las tareas de todos los proyectos, filtrables por proyecto. */
 export function BoardView() {
   useWideLayout(true);
-  const { tasks, projects, itemTypes } = useApp();
+  const { tasks, projects, itemTypes, releases } = useApp();
+  const [releaseFilter, setReleaseFilter] = usePersistentState<string>('board-release', '');
   const [typeId, setTypeId] = usePersistentState('board-type', 'task');
   const [projectFilter, setProjectFilter] = usePersistentState<string[]>('board-projects', []);
-  const visible = projectFilter.length ? tasks.filter((t) => t.project_id && projectFilter.includes(t.project_id)) : tasks;
+  const visible = tasks
+    .filter((t) => !projectFilter.length || (t.project_id && projectFilter.includes(t.project_id)))
+    .filter((t) => !releaseFilter || t.release_id === releaseFilter);
   const toggle = (id: string) => setProjectFilter(projectFilter.includes(id) ? projectFilter.filter((x) => x !== id) : [...projectFilter, id]);
 
   return (
@@ -36,7 +39,17 @@ export function BoardView() {
           })}
         </div>
       )}
-      <Board tasks={visible} type={findType(itemTypes, typeId)} />
+      {releases.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 text-xs">
+          <span className="text-zinc-500">Release:</span>
+          <select value={releaseFilter} onChange={(e) => setReleaseFilter(e.target.value)}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <option value="">Todas</option>
+            {releases.map((r) => <option key={r.id} value={r.id}>{r.name}{r.status !== 'planned' ? ' (cerrada)' : ''}</option>)}
+          </select>
+        </div>
+      )}
+      <Board tasks={visible} type={findType(itemTypes, typeId)} defaults={releaseFilter ? { release_id: releaseFilter } : undefined} />
     </>
   );
 }

@@ -16,7 +16,7 @@ export const parseCapture: ParseCapture = (text, ctx) => {
   return out;
 };
 
-const SINGLE: TokenKind[] = ['project', 'priority', 'estimate'];
+const SINGLE: TokenKind[] = ['project', 'priority', 'estimate', 'key', 'release'];
 
 function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedTask {
   const ignore = new Set(ctx.ignore ?? []);
@@ -32,6 +32,9 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
   const tags: string[] = [];
   let priority: Priority | null = null;
   let estimate: number | null = null;
+  let externalId: string | null = null;
+  let typeId: string | null = null;
+  let release: ParsedTask['release'] = null;
 
   const addToken = (kind: TokenKind, start: number, end: number): boolean => {
     const text = seg.slice(start, end);
@@ -43,7 +46,7 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
   };
 
   // 1. Tokens con símbolo: no son ambiguos y tienen preferencia.
-  for (const kind of ['project', 'person', 'priority', 'estimate', 'tag'] as const) {
+  for (const kind of ['project', 'person', 'priority', 'estimate', 'tag', 'key', 'release'] as const) {
     const re = SYMBOL_PATTERNS[kind];
     re.lastIndex = 0;
     for (const m of seg.matchAll(re)) {
@@ -69,6 +72,12 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
         priority = Number(value) as Priority;
       } else if (kind === 'tag') {
         if (!tags.includes(value)) tags.push(value);
+      } else if (kind === 'key') {
+        externalId = m[0];
+        typeId = ctx.types?.find((t) => t.short && t.short.toUpperCase() === value)?.id ?? null;
+      } else if (kind === 'release') {
+        const found = ctx.releases?.find((r) => nameKey(r.name) === nameKey(value));
+        release = found ? { id: found.id, name: found.name } : { id: null, name: value };
       }
     }
   }
@@ -105,19 +114,26 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
     priority,
     estimated_minutes: estimate,
     recurrence,
+    external_id: externalId,
+    type_id: typeId,
+    release,
     tokens: tokens
       .map((t) => ({ ...t, start: t.start + offset, end: t.end + offset }))
       .sort((a, b) => a.start - b.start),
   };
 }
 
-/** Quita los tokens del texto. Las personas se quedan como nombre ("a @Diana" → "a Diana"). */
+const KEEPS_PERSON = /(?:^|\s)(?:a|al|con|para|de|del|según|y|e|o|u|ni|por|sobre|entre|que)\s+$/i;
+
+/** Quita los tokens del texto. Las personas tras preposición se quedan como nombre ("a @Diana" → "a Diana"). */
 function buildTitle(seg: string, tokens: Token[], personNames: Map<number, string>): string {
   let out = '';
   let pos = 0;
   for (const t of [...tokens].sort((a, b) => a.start - b.start)) {
     out += seg.slice(pos, t.start);
-    if (t.kind === 'person') out += personNames.get(t.start) ?? t.text.slice(1);
+    // La persona se queda en el título solo si la frase la necesita ("a @Diana", "con @Luis");
+    // si va suelta ("revisar login @Diana") es solo un dato y se quita.
+    if (t.kind === 'person' && KEEPS_PERSON.test(seg.slice(0, t.start))) out += personNames.get(t.start) ?? t.text.slice(1);
     pos = t.end;
   }
   out += seg.slice(pos);

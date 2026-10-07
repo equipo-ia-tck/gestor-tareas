@@ -217,7 +217,7 @@ describe('varias tareas y casos límite', () => {
 
   it('separa por saltos de línea (notas de reunión pegadas)', () => {
     const r = parseCapture('enviar acta @Diana\n\nrevisar presupuesto #caixa mañana\n', ctx);
-    expect(r.map((t) => t.title)).toEqual(['enviar acta Diana', 'revisar presupuesto']);
+    expect(r.map((t) => t.title)).toEqual(['enviar acta', 'revisar presupuesto']);
     expect(r[1].due_date).toBe('2026-10-06');
   });
 
@@ -232,6 +232,12 @@ describe('varias tareas y casos límite', () => {
     expect(text.slice(tok.start, tok.end)).toBe('el viernes');
   });
 
+  it('la persona solo se queda en el título tras una preposición', () => {
+    expect(one('revisar login @Diana').title).toBe('revisar login');
+    expect(one('@Diana revisar login').title).toBe('revisar login');
+    expect(one('hablar con @Diana del login').title).toBe('hablar con Diana del login');
+  });
+
   it('un token descartado se queda en el título', () => {
     const ignore = [tokenKey({ kind: 'date', text: 'mañana' })];
     const t = one('llamar mañana a Luis', { ignore });
@@ -244,5 +250,38 @@ describe('varias tareas y casos límite', () => {
     const t = one('revisar cada lunes', { ignore });
     expect(t.recurrence).toBeNull();
     expect(t.due_date).toBeNull();
+  });
+});
+
+describe('claves externas y releases (fase 7)', () => {
+  const ctx7: CaptureContext = {
+    ...ctx,
+    types: [{ id: 'task', short: '' }, { id: 'us', short: 'US' }, { id: 'ts', short: 'TS' }],
+    releases: [{ id: 'r1', name: 'R2.3' }],
+  };
+  const one7 = (text: string) => parseCapture(text, ctx7)[0];
+
+  it('US-1234 → User Story con ID externo, fuera del título', () => {
+    const t = one7('US-1234 login con SSO #caixa');
+    expect(t).toMatchObject({ external_id: 'US-1234', type_id: 'us', title: 'login con SSO' });
+  });
+
+  it('TS-55 → Test Scenario', () => {
+    expect(one7('revisar TS-55 mañana')).toMatchObject({ external_id: 'TS-55', type_id: 'ts', due_date: '2026-10-06' });
+  });
+
+  it('otras claves se guardan sin cambiar el tipo', () => {
+    expect(one7('mirar QA-17')).toMatchObject({ external_id: 'QA-17', type_id: null });
+  });
+
+  it('no confunde minúsculas ni palabras con guion', () => {
+    expect(one7('protocolo covid-19 y us-12').external_id).toBeNull();
+    expect(one7('el wi-fi del piso').external_id).toBeNull();
+  });
+
+  it('^release existente o nueva', () => {
+    expect(one7('desplegar ^r2.3').release).toEqual({ id: 'r1', name: 'R2.3' });
+    expect(one7('desplegar ^R3.0').release).toEqual({ id: null, name: 'R3.0' });
+    expect(one7('desplegar ^R3.0').title).toBe('desplegar');
   });
 });
