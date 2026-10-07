@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 export type Route =
   | { view: 'today' }
   | { view: 'week' }
+  | { view: 'board' }
   | { view: 'inbox' }
   | { view: 'projects' }
   | { view: 'project'; id: string }
@@ -17,6 +18,7 @@ export function parseHash(hash: string): Route {
   const arg = rest.join('/');
   switch (view) {
     case 'week': return { view: 'week' };
+    case 'board': return { view: 'board' };
     case 'inbox': return { view: 'inbox' };
     case 'projects': return { view: 'projects' };
     case 'project': return arg ? { view: 'project', id: decodeURIComponent(arg) } : { view: 'projects' };

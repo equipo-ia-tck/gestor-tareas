@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS, DEFAULT_TYPE_ID } from './types';
+import { DEFAULT_ITEM_TYPES } from './workflows';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha con formato YYYY-MM-DD');
 const isoDateTime = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'Fecha y hora no válida');
@@ -30,6 +31,10 @@ export const taskSchema = z.object({
   people: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
   status: z.enum(['todo', 'done', 'archived']),
+  // Campos v2: las copias v1 no los tienen y se completan al normalizar.
+  type_id: z.string().default(DEFAULT_TYPE_ID),
+  state_id: z.string().optional(),
+  checklist: z.array(z.object({ id: z.string(), text: z.string(), done: z.boolean() })).default([]),
   recurrence_rule: recurrenceSchema.nullable().default(null),
   series_id: z.string().nullable().default(null),
   sort_order: z.number().default(0),
@@ -39,7 +44,11 @@ export const taskSchema = z.object({
   completed_at: isoDateTime.nullable(),
   last_touched_at: isoDateTime,
   deleted_at: isoDateTime.nullable().default(null),
-});
+}).transform((t) => ({
+  ...t,
+  // Copias v1: solo existía el tipo "Tarea"; el estado sale de status.
+  state_id: t.state_id ?? (t.status === 'done' ? 'task-done' : 'task-todo'),
+}));
 
 export const settingsSchema = z.object({
   capacity_minutes: z.number().int().min(0).max(1440).default(DEFAULT_SETTINGS.capacity_minutes),
@@ -53,6 +62,24 @@ export const settingsSchema = z.object({
     .default(DEFAULT_SETTINGS.ui),
 });
 
+const stateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  color: z.string(),
+  category: z.enum(['todo', 'doing', 'blocked', 'done']),
+});
+
+export const itemTypeSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  short: z.string().default(''),
+  color: z.string(),
+  order: z.number().default(0),
+  states: z.array(stateSchema).min(1),
+});
+
+export const labelSchema = z.object({ name: z.string().min(1), color: z.string() });
+
 export const BACKUP_APP_ID = 'gestor-tareas';
 
 export const backupSchema = z.object({
@@ -62,6 +89,8 @@ export const backupSchema = z.object({
   projects: z.array(projectSchema),
   tasks: z.array(taskSchema),
   settings: settingsSchema,
+  labels: z.array(labelSchema).default([]),
+  item_types: z.array(itemTypeSchema).default(DEFAULT_ITEM_TYPES),
 });
 
 export type Backup = z.infer<typeof backupSchema>;

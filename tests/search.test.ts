@@ -8,7 +8,7 @@ const projects = new Map<string, Project>([
 ]);
 
 const t1 = makeTask({ title: 'Revisar informe trimestral', project_id: 'p1', people: ['Diana'], tags: ['urgente'] });
-const t2 = makeTask({ title: 'Comprar café', notes: 'el de Colombia' });
+const t2 = makeTask({ title: 'Comprar café', notes: 'el de Colombia', checklist: [{ id: 'c', text: 'molido fino', done: false }] });
 const t3 = makeTask({ title: 'Informe antiguo', status: 'done' });
 const all = [t1, t2, t3];
 const search = (q: string) => all.filter((t) => matchesSearch(t, parseSearch(q), projects)).map((t) => t.id);
@@ -18,6 +18,7 @@ describe('búsqueda', () => {
     expect(search('INFORME')).toEqual([t1.id]);
     expect(search('colombia')).toEqual([t2.id]);
     expect(search('cafe')).toEqual([t2.id]);
+    expect(search('molido')).toEqual([t2.id]);
   });
 
   it('todas las palabras deben coincidir', () => {

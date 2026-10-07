@@ -15,6 +15,40 @@ export interface RecurrenceRule {
   monthDay?: number;
 }
 
+/** Grupo de un estado: decide si cuenta como pendiente, en curso, bloqueado o terminado. */
+export type StateCategory = 'todo' | 'doing' | 'blocked' | 'done';
+
+export interface WorkflowState {
+  id: string;
+  name: string;
+  color: string;
+  category: StateCategory;
+}
+
+/** Tipo de elemento (Tarea, User Story, Test Scenario…) con su propio flujo de estados. */
+export interface ItemType {
+  id: string;
+  name: string;
+  /** Abreviatura para chips: "US", "TS". Vacía para las tareas normales. */
+  short: string;
+  color: string;
+  order: number;
+  states: WorkflowState[];
+}
+
+/** Paso dentro de una tarea (como en Microsoft To Do). */
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/** Color personalizado de una etiqueta. Las etiquetas sin fila usan un color derivado del nombre. */
+export interface Label {
+  name: string;
+  color: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -33,7 +67,11 @@ export interface Task {
   estimated_minutes: number | null;
   people: string[];
   tags: string[];
+  /** Fuente de verdad de "pendiente/completada/archivada"; se mantiene sincronizado con el estado del flujo. */
   status: TaskStatus;
+  type_id: string;
+  state_id: string;
+  checklist: ChecklistItem[];
   recurrence_rule: RecurrenceRule | null;
   /** Enlaza las ocurrencias de una misma tarea recurrente. */
   series_id: string | null;
@@ -71,6 +109,8 @@ export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'l
 };
 
 export type TaskPatch = Partial<Omit<Task, 'id' | 'created_at'>>;
+
+export const DEFAULT_TYPE_ID = 'task';
 
 export const PROJECT_COLORS = [
   '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',

@@ -3,11 +3,16 @@ import { useApp } from '../../app/AppContext';
 import { navigate, routeHref } from '../../app/router';
 import { QuickAdd } from '../../components/QuickAdd';
 import { Section, SmallButton, TaskList } from '../../components/TaskList';
-import { inputClass } from '../../components/TaskEditor';
+import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import { isActive, sortTasks } from '../../domain/selectors';
 import { PROJECT_COLORS } from '../../domain/types';
-import { useTaskActions } from '../../hooks/useTaskActions';
+import { useWideLayout } from '../../app/Layout';
+import { ViewSwitcher, type DisplayMode } from '../../components/ui/ViewSwitcher';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import type { StateCategory } from '../../domain/types';
+import { findType, stateOf } from '../../domain/workflows';
+import { Board, TypeTabs } from '../board/Board';
 import { ViewHeader } from './ViewHeader';
 
 export function ProjectsView() {
@@ -54,7 +59,10 @@ export function ProjectsView() {
 export function ProjectView({ id }: { id: string }) {
   const { tasks, projectMap, today, editTask } = useApp();
   const project = projectMap.get(id);
-  const { moveIds } = useTaskActions();
+  const { itemTypes } = useApp();
+  const [mode, setMode] = usePersistentState<DisplayMode>(`project-mode:${id}`, 'list');
+  const [typeId, setTypeId] = usePersistentState(`project-type:${id}`, 'task');
+  useWideLayout(mode === 'board');
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
 
@@ -62,8 +70,8 @@ export function ProjectView({ id }: { id: string }) {
 
   const mine = tasks.filter((t) => t.project_id === id);
   const active = sortTasks(mine.filter(isActive));
-  const undated = active.filter((t) => !t.due_date);
-  const dated = active.filter((t) => t.due_date).sort((a, b) => a.due_date!.localeCompare(b.due_date!));
+  // Lista al estilo Asana: secciones por grupo de estado (cada fila muestra su estado concreto).
+  const byCategory = (cat: StateCategory) => active.filter((t) => stateOf(itemTypes, t).category === cat);
   const done = mine.filter((t) => t.status === 'done').sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''));
   const list = { today, projects: projectMap, onEdit: editTask, hideProject: true };
 
@@ -101,25 +109,54 @@ export function ProjectView({ id }: { id: string }) {
         subtitle={`${active.length} pendientes · ${done.length} completadas`}
         actions={
           <>
+            <ViewSwitcher value={mode} onChange={setMode} />
             <SmallButton onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</SmallButton>
             <SmallButton onClick={() => void toggleArchive()}>{project.archived ? 'Desarchivar' : 'Archivar'}</SmallButton>
           </>
         }
       />
+      {mode === 'board' ? (
+        <>
+          <div className="mb-4"><TypeTabs value={typeId} onChange={setTypeId} tasks={mine} /></div>
+          <Board tasks={mine} type={findType(itemTypes, typeId)} defaults={{ project_id: id }} showProject={false} />
+        </>
+      ) : (
+      <>
       <QuickAdd defaults={{ project_id: id }} placeholder={`Añadir tarea a ${project.name}`} />
-      <Section title={`Sin fecha · ${undated.length}`} onDropTasks={(ids) => void moveIds(ids, { project_id: id, due_date: null }, `Movida a ${project.name} sin fecha`)}>
-        <TaskList {...list} tasks={undated} empty="—" />
-      </Section>
-      {dated.length > 0 && (
-        <Section title={`Con fecha · ${dated.length}`}>
-          <TaskList {...list} tasks={dated} />
-        </Section>
-      )}
+      {CATEGORY_SECTIONS.map(({ cat, title, color }) => {
+        const items = byCategory(cat);
+        if (!items.length && cat !== 'todo') return null;
+        return (
+          <Section key={cat} title={<span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: color }} />{title} · {items.length}</span>}
+            onDropTasks={(ids) => void moveToCategory(ids, cat, title)}>
+            <TaskList {...list} tasks={items} empty="—" />
+          </Section>
+        );
+      })}
       {done.length > 0 && (
         <Section title={`Completadas · ${done.length}`} collapsible defaultOpen={false}>
           <TaskList {...list} tasks={done} />
         </Section>
       )}
+      </>
+      )}
     </>
   );
+
+  /** Soltar en una sección: cada tarea pasa al primer estado de ese grupo dentro de su propio flujo. */
+  async function moveToCategory(ids: string[], cat: StateCategory, title: string) {
+    await repo.batch(`${ids.length === 1 ? 'Movida' : `${ids.length} tareas movidas`} a ${title.toLowerCase()}`, async () => {
+      for (const taskId of ids) {
+        const t = tasks.find((x) => x.id === taskId);
+        const state = t && findType(itemTypes, t.type_id).states.find((st) => st.category === cat);
+        if (state) await repo.setState(taskId, state.id);
+      }
+    });
+  }
 }
+
+const CATEGORY_SECTIONS: { cat: StateCategory; title: string; color: string }[] = [
+  { cat: 'doing', title: 'En curso', color: '#3b82f6' },
+  { cat: 'blocked', title: 'Bloqueadas', color: '#ef4444' },
+  { cat: 'todo', title: 'Por hacer', color: '#94a3b8' },
+];

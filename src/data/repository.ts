@@ -1,26 +1,32 @@
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_TYPE_ID,
   PROJECT_COLORS,
+  type ItemType,
+  type Label,
   type NewTask,
   type Project,
   type Settings,
   type Task,
   type TaskPatch,
 } from '../domain/types';
+import { doneState, equivalentState, findType, initialState, patchForState, stateOf } from '../domain/workflows';
+import { nameKey } from '../domain/text';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
 import { formatDay, todayISO } from '../domain/dates';
 import { nextOccurrenceTask } from '../domain/maintenance';
 import { SCHEMA_VERSION, TasksDB } from './db';
 
-type TableName = 'tasks' | 'projects';
+type TableName = 'tasks' | 'projects' | 'labels' | 'item_types';
+type Row = Task | Project | Label | ItemType;
 
 /** Estado de un registro antes y después de un cambio (undefined = no existía). */
 export interface Change {
   table: TableName;
   key: string;
-  before: Task | Project | undefined;
-  after: Task | Project | undefined;
+  before: Row | undefined;
+  after: Row | undefined;
 }
 
 export interface HistoryEntry {
@@ -40,6 +46,10 @@ export interface Repository {
   createTask(input: NewTask): Promise<Task>;
   updateTask(id: string, patch: TaskPatch): Promise<Task | undefined>;
   setCompleted(id: string, done: boolean): Promise<void>;
+  /** Mueve la tarea a un estado de su flujo (y la completa o reabre según la categoría). */
+  setState(id: string, stateId: string): Promise<void>;
+  /** Cambia el tipo (Tarea, US, TS…) manteniendo un estado equivalente. */
+  setType(id: string, typeId: string): Promise<void>;
   deleteTask(id: string): Promise<void>;
   restoreTask(id: string): Promise<void>;
   purgeDeleted(olderThanDays: number): Promise<number>;
@@ -48,6 +58,14 @@ export interface Repository {
   getProject(id: string): Promise<Project | undefined>;
   createProject(name: string, color?: string): Promise<Project>;
   updateProject(id: string, patch: Partial<Omit<Project, 'id'>>): Promise<void>;
+
+  listItemTypes(): Promise<ItemType[]>;
+
+  listLabels(): Promise<Label[]>;
+  setLabelColor(name: string, color: string): Promise<void>;
+  renameLabel(from: string, to: string): Promise<void>;
+  /** Quita la etiqueta de todas las tareas y su color. */
+  deleteLabel(name: string): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -137,9 +155,9 @@ export class DexieRepository implements Repository {
 
   private async apply(entry: HistoryEntry, side: 'before' | 'after') {
     const changes = side === 'before' ? [...entry.changes].reverse() : entry.changes;
-    await this.db.transaction('rw', this.db.tasks, this.db.projects, async () => {
+    await this.db.transaction('rw', [this.db.tasks, this.db.projects, this.db.labels, this.db.item_types], async () => {
       for (const c of changes) {
-        const table = this.db[c.table] as unknown as Table<Task | Project, string>;
+        const table = this.db[c.table] as unknown as Table<Row, string>;
         const value = c[side];
         if (value === undefined) await table.delete(c.key);
         else await table.put(value);
@@ -178,6 +196,9 @@ export class DexieRepository implements Repository {
 
   async createTask(input: NewTask) {
     const ts = now();
+    const type = findType(await this.listItemTypes(), input.type_id ?? DEFAULT_TYPE_ID);
+    const state = input.state_id ? stateOf([type], { type_id: type.id, state_id: input.state_id, status: 'todo' })
+      : input.status === 'done' ? doneState(type) : initialState(type);
     const task: Task = {
       project_id: null,
       notes: '',
@@ -193,7 +214,11 @@ export class DexieRepository implements Repository {
       raw_input: input.title,
       completed_at: null,
       deleted_at: null,
+      checklist: [],
       ...input,
+      type_id: type.id,
+      state_id: state.id,
+      ...(state.category === 'done' ? { status: 'done' as const, completed_at: input.completed_at ?? ts } : {}),
       title: input.title.trim(),
       id: uuid(),
       created_at: ts,
@@ -237,9 +262,39 @@ export class DexieRepository implements Repository {
     const label = !done ? 'Tarea marcada como pendiente'
       : next ? `Tarea completada · se repite ${formatDay(next.due_date!, today).toLowerCase()}` : 'Tarea completada';
     await this.batch(label, async () => {
-      await this.patchTask(id, done ? { status: 'done', completed_at: now() } : { status: 'todo', completed_at: null }, label);
+      const type = findType(await this.listItemTypes(), task.type_id);
+      await this.patchTask(id, done
+        ? { status: 'done', completed_at: now(), state_id: doneState(type).id }
+        : { status: 'todo', completed_at: null, state_id: initialState(type).id }, label);
       if (next) await this.createTask(next);
     });
+  }
+
+  async setState(id: string, stateId: string) {
+    const task = await this.db.tasks.get(id);
+    if (!task || task.state_id === stateId) return;
+    const types = await this.listItemTypes();
+    const type = findType(types, task.type_id);
+    const state = type.states.find((s) => s.id === stateId);
+    if (!state) return;
+    // Pasar a "hecho" es completar: así las recurrentes generan su siguiente ocurrencia.
+    if (state.category === 'done' && task.status !== 'done') {
+      await this.batch(`${state.name}`, async () => {
+        await this.setCompleted(id, true);
+        await this.patchTask(id, { state_id: state.id }, state.name);
+      });
+      return;
+    }
+    await this.patchTask(id, patchForState(task, state, now()), `Movida a ${state.name}`);
+  }
+
+  async setType(id: string, typeId: string) {
+    const task = await this.db.tasks.get(id);
+    if (!task || task.type_id === typeId) return;
+    const types = await this.listItemTypes();
+    const to = findType(types, typeId);
+    const state = equivalentState(stateOf(types, task), to);
+    await this.patchTask(id, { type_id: to.id, state_id: state.id }, `Ahora es ${to.name}`);
   }
 
   async deleteTask(id: string) {
@@ -295,6 +350,68 @@ export class DexieRepository implements Repository {
     this.emit();
   }
 
+  // ---------- Tipos de elemento ----------
+
+  async listItemTypes() {
+    return (await this.db.item_types.toArray()).sort((a, b) => a.order - b.order);
+  }
+
+  // ---------- Etiquetas ----------
+
+  async listLabels() {
+    return (await this.db.labels.toArray()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  }
+
+  private async findLabel(name: string) {
+    return (await this.db.labels.toArray()).find((l) => nameKey(l.name) === nameKey(name));
+  }
+
+  async setLabelColor(name: string, color: string) {
+    const before = await this.findLabel(name);
+    const after: Label = { name: before?.name ?? name, color };
+    await this.db.labels.put(after);
+    this.record({ table: 'labels', key: after.name, before, after }, 'Color de etiqueta cambiado');
+    this.emit();
+  }
+
+  async renameLabel(from: string, to: string) {
+    const target = to.trim().replace(/^\+/, '');
+    if (!target || nameKey(from) === nameKey(target)) return;
+    await this.batch(`Etiqueta renombrada a ${target}`, async () => {
+      const label = await this.findLabel(from);
+      if (label) {
+        await this.db.labels.delete(label.name);
+        this.record({ table: 'labels', key: label.name, before: label, after: undefined }, '');
+        const renamed = { name: target, color: label.color };
+        await this.db.labels.put(renamed);
+        this.record({ table: 'labels', key: target, before: undefined, after: renamed }, '');
+      }
+      const tasks = await this.db.tasks.where('tags').anyOf(await this.tagVariants(from)).toArray();
+      for (const t of tasks) {
+        const tags = [...new Set(t.tags.map((g) => (nameKey(g) === nameKey(from) ? target : g)))];
+        await this.patchTask(t.id, { tags }, '', false);
+      }
+    });
+  }
+
+  async deleteLabel(name: string) {
+    await this.batch(`Etiqueta ${name} eliminada`, async () => {
+      const label = await this.findLabel(name);
+      if (label) {
+        await this.db.labels.delete(label.name);
+        this.record({ table: 'labels', key: label.name, before: label, after: undefined }, '');
+      }
+      const tasks = await this.db.tasks.where('tags').anyOf(await this.tagVariants(name)).toArray();
+      for (const t of tasks) await this.patchTask(t.id, { tags: t.tags.filter((g) => nameKey(g) !== nameKey(name)) }, '', false);
+    });
+  }
+
+  /** Escrituras distintas de una misma etiqueta presentes en las tareas ("Urgente", "urgente"…). */
+  private async tagVariants(name: string) {
+    const all = (await this.db.tasks.orderBy('tags').uniqueKeys()) as string[];
+    return all.filter((g) => nameKey(g) === nameKey(name));
+  }
+
   // ---------- Ajustes (fuera del historial: no son acciones sobre tareas) ----------
 
   async getSettings(): Promise<Settings> {
@@ -330,16 +447,21 @@ export class DexieRepository implements Repository {
       projects: await this.db.projects.toArray(),
       tasks: await this.db.tasks.toArray(),
       settings: await this.getSettings(),
+      labels: await this.db.labels.toArray(),
+      item_types: await this.listItemTypes(),
     };
   }
 
   /** Sustituye todos los datos. Vacía el historial: deshacer no puede cruzar una importación. */
   async replaceAll(backup: Backup) {
-    await this.db.transaction('rw', this.db.projects, this.db.tasks, this.db.settings, async () => {
-      await Promise.all([this.db.projects.clear(), this.db.tasks.clear(), this.db.settings.clear()]);
+    const tables = [this.db.projects, this.db.tasks, this.db.settings, this.db.labels, this.db.item_types];
+    await this.db.transaction('rw', tables, async () => {
+      await Promise.all(tables.map((t) => t.clear()));
       await this.db.projects.bulkAdd(backup.projects);
       await this.db.tasks.bulkAdd(backup.tasks);
       await this.db.settings.put({ key: SETTINGS_KEY, value: backup.settings });
+      await this.db.labels.bulkAdd(backup.labels);
+      await this.db.item_types.bulkAdd(backup.item_types);
     });
     this.undoStack = [];
     this.redoStack = [];

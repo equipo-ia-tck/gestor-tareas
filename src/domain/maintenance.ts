@@ -30,6 +30,9 @@ export function nextOccurrenceTask(task: Task, today: ISODate): NewTask | null {
     people: [...task.people],
     tags: [...task.tags],
     recurrence_rule: task.recurrence_rule,
+    type_id: task.type_id,
+    // Los pasos se repiten sin marcar.
+    checklist: task.checklist.map((c) => ({ ...c, id: crypto.randomUUID(), done: false })),
     series_id: task.series_id ?? task.id,
     raw_input: task.raw_input,
     due_date: nextDueAfterCompletion(task.recurrence_rule, task.due_date, today),

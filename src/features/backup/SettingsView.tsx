@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
-import { inputClass } from '../../components/TaskEditor';
+import { inputClass } from '../../components/ui/styles';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { downloadBackup, parseBackup, type BackupSummary } from '../../data/backup';
@@ -10,6 +10,7 @@ import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
 import { usePersistence } from './usePersistence';
 import { useInstall } from '../../app/install';
+import { LabelsCard } from './LabelsCard';
 import { isDictationSupported } from '../dictation/speech';
 
 const WEEKDAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
@@ -105,6 +106,8 @@ export function SettingsView() {
       </Card>
 
       <InstallCard />
+
+      <LabelsCard />
 
       <Card title="Capacidad y días laborables">
         <label className="mb-3 flex items-center gap-3 text-sm">

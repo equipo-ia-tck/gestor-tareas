@@ -1,18 +1,16 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { formatDay, formatMinutes } from '../domain/dates';
+import { AlignLeft, ChevronRight, Repeat } from 'lucide-react';
+import { useApp } from '../app/AppContext';
 import { describeRule } from '../domain/recurrence';
 import type { ISODate, Project, Task } from '../domain/types';
+import { findType, stateOf } from '../domain/workflows';
+import { AvatarStack, ChecklistProgress, LabelChip, PRIORITY_COLOR, PriorityFlag, StatePill, TypeBadge } from './ui/Badges';
 import { useSelection, type EditableField } from '../features/selection/SelectionContext';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { setDraggedTasks } from '../hooks/useTaskDrop';
 import { FieldEditor } from './FieldEditor';
 
-const PRIORITY_RING: Record<number, string> = {
-  1: 'border-red-500',
-  2: 'border-orange-400',
-  3: 'border-sky-500',
-  4: 'border-zinc-300 dark:border-zinc-600',
-};
 
 interface Props {
   task: Task;
@@ -34,6 +32,11 @@ const INTERACTIVE = 'button, input, select, textarea, a, [role="listbox"]';
 export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject, extra }: Props) {
   const { selected, focused, editing, click, startEdit, stopEdit, targetsFor } = useSelection();
   const { toggleDone, remove, update } = useTaskActions();
+  const { itemTypes, labelColors, detailId } = useApp();
+  const type = findType(itemTypes, task.type_id);
+  const state = stateOf(itemTypes, task);
+  // El estado solo se muestra cuando aporta algo: tipos con flujo propio o tareas que no están "por hacer".
+  const showState = type.short !== '' || (state.category !== 'todo' && state.category !== 'done');
   const done = task.status === 'done';
   const project = task.project_id ? projects.get(task.project_id) : undefined;
   const late = !done && task.due_date !== null && task.due_date < today;
@@ -66,45 +69,53 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject, 
       onDragStart={(e) => setDraggedTasks(e, targetsFor(task.id).map((t) => t.id))}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group flex items-start gap-3 border-b border-zinc-100 px-2 py-1.5 select-none last:border-0 dark:border-zinc-800
-        ${isSelected ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}
+      className={`group flex items-start gap-3 border-b border-zinc-100 px-2 py-2 select-none last:border-0 dark:border-zinc-800/80
+        ${isSelected || detailId === task.id ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'}
         ${isFocused ? 'shadow-[inset_2px_0_0_0] shadow-indigo-500' : ''}`}
+      style={project && !hideProject ? { borderLeft: `3px solid ${project.color}` } : undefined}
     >
       <button
         aria-label={done ? 'Marcar como pendiente' : 'Completar'}
         onClick={() => void toggleDone(isSelected ? targetsFor(task.id) : [task])}
-        className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${PRIORITY_RING[task.priority]} ${done ? 'bg-zinc-400 dark:bg-zinc-500' : ''}`}
+        className={`mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-emerald-500 bg-emerald-500' : 'border-zinc-300 hover:bg-emerald-50 dark:border-zinc-600 dark:hover:bg-emerald-950'}`}
+        style={done ? undefined : { borderColor: task.priority < 4 ? PRIORITY_COLOR[task.priority] : undefined }}
       >
-        {done && <span className="text-[9px] leading-none text-white">✓</span>}
+        {done ? <span className="text-[10px] leading-none text-white">✓</span> : <span className="text-[10px] leading-none text-emerald-500 opacity-0 group-hover:opacity-60">✓</span>}
       </button>
 
       <div className="min-w-0 flex-1">
         {editField === 'title' ? (
           <TitleEditor task={task} onSave={(title) => { stopEdit(); if (title && title !== task.title) void update([task], { title }, 'Título cambiado'); }} onCancel={stopEdit} />
         ) : (
-          <div data-field="title" className={`text-sm ${done ? 'text-zinc-400 line-through' : ''}`}>
-            {task.title || <em className="text-zinc-400">Sin título</em>}
+          <div data-field="title" className={`flex items-center gap-1.5 text-sm ${done ? 'text-zinc-400 line-through' : ''}`}>
+            <TypeBadge type={type} />
+            <span className="truncate">{task.title || <em className="text-zinc-400">Sin título</em>}</span>
+            <PriorityFlag priority={task.priority} />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500 dark:text-zinc-400">
-          {!hideDate && task.due_date && chip('date', formatDay(task.due_date, today), late ? 'text-amber-600 dark:text-amber-400' : '')}
-          {task.recurrence_rule && <span title={describeRule(task.recurrence_rule)}>↻</span>}
-          {!hideProject && project && chip('project', <><span style={{ color: project.color }}>#</span>{project.name}</>)}
-          {task.people.length > 0 && chip('people', task.people.map((p) => `@${p}`).join(' '))}
-          {task.tags.length > 0 && chip('tags', task.tags.map((t) => `+${t}`).join(' '))}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+          {showState && <StatePill state={state} />}
+          {!hideDate && task.due_date && chip('date', formatDay(task.due_date, today), late ? 'font-medium text-amber-600 dark:text-amber-400' : '')}
+          {!hideProject && project && chip('project', <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm" style={{ background: project.color }} />{project.name}</span>)}
+          {task.tags.length > 0 && chip('tags', <span className="inline-flex flex-wrap gap-1">{task.tags.map((t) => <LabelChip key={t} name={t} colors={labelColors} small />)}</span>)}
           {task.estimated_minutes ? chip('estimate', `~${formatMinutes(task.estimated_minutes)}`) : null}
-          {task.notes && <span title={task.notes}>≡</span>}
+          <ChecklistProgress items={task.checklist} />
+          {task.recurrence_rule && <span title={describeRule(task.recurrence_rule)}><Repeat className="size-3" /></span>}
+          {task.notes && <span title={task.notes}><AlignLeft className="size-3" /></span>}
         </div>
         {editField && editField !== 'title' && (
           <FieldEditor task={task} field={editField} targets={targetsFor(task.id)} onClose={stopEdit} />
         )}
       </div>
 
+      {task.people.length > 0 && (
+        <span data-field="people" className="mt-0.5 shrink-0" title="Doble clic para editar"><AvatarStack names={task.people} /></span>
+      )}
       <div className="flex shrink-0 items-center gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
         {extra}
-        <button aria-label="Editar todo" title="Editar todo (E)" onClick={() => onEdit(task)}
-          className="rounded px-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200">
-          ⋯
+        <button aria-label="Abrir detalle" title="Abrir detalle (E)" onClick={() => onEdit(task)}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200">
+          <ChevronRight className="size-4" />
         </button>
         <button aria-label="Eliminar" title="Eliminar (Supr)" onClick={() => void remove(isSelected ? targetsFor(task.id) : [task])}
           className="rounded px-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600 dark:hover:bg-zinc-700">

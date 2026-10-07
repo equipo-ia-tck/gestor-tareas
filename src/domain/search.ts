@@ -28,7 +28,7 @@ export const isEmptySearch = (q: SearchQuery) =>
   !q.words.length && !q.projects.length && !q.people.length && !q.tags.length;
 
 /**
- * Cada palabra debe aparecer en el título, las notas, el nombre del proyecto, las personas o las etiquetas.
+ * Cada palabra debe aparecer en el título, las notas, los pasos, el nombre del proyecto, las personas o las etiquetas.
  * Los filtros #, @ y + se comparan por prefijo ("#cai" encuentra "caixa").
  */
 export function matchesSearch(t: Task, q: SearchQuery, projects: Map<string, Project>): boolean {
@@ -39,6 +39,6 @@ export function matchesSearch(t: Task, q: SearchQuery, projects: Map<string, Pro
   if (q.people.length && !q.people.every((p) => t.people.some((x) => nameKey(x).startsWith(p)))) return false;
   if (q.tags.length && !q.tags.every((g) => t.tags.some((x) => nameKey(x).startsWith(g)))) return false;
   if (!q.words.length) return true;
-  const haystack = fold([t.title, t.notes, project?.name ?? '', ...t.people, ...t.tags].join(' '));
+  const haystack = fold([t.title, t.notes, project?.name ?? '', ...t.people, ...t.tags, ...(t.checklist ?? []).map((c) => c.text)].join(' '));
   return q.words.every((w) => haystack.includes(w));
 }

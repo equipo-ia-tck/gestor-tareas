@@ -99,6 +99,7 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'search', section: 'Ir a', title: 'Buscar tareas', shortcut: '/', keywords: 'encontrar filtrar', run: () => { setTimeout(() => document.getElementById('global-search')?.focus(), 0); } },
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Próximos 7 días', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
+    { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas', run: go({ view: 'board' }) },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },
     { id: 'go-projects', section: 'Ir a', title: 'Ir a Proyectos', shortcut: 'G P', run: go({ view: 'projects' }) },
     { id: 'go-people', section: 'Ir a', title: 'Ir a Personas', shortcut: 'G E', run: go({ view: 'people' }) },

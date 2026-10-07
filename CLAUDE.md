@@ -137,6 +137,42 @@ Atajos globales en `CommandCenterProvider`: Cmd/Ctrl+K captura, Cmd/Ctrl+Shift+P
 pasa a la paleta, `N`/`Q` captura, `G`+letra navega, `?` chuleta. Los atajos de una tecla se ignoran si el foco está
 en un campo editable o hay un diálogo abierto.
 
+## v2 · espacio de trabajo (fase 6: lo visual)
+
+Petición de la usuaria (7 oct 2026): más visual (Asana, To Do, Trello, Notion), registro de lo hecho y lo que no, notas de
+reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién dijo qué y recordatorios.
+
+- **Esquema v2** (`db.ts`, migración automática desde v1): tablas `labels` (color por nombre de etiqueta) e `item_types`
+  (tipos con flujo de estados). En las tareas, `type_id`, `state_id` y `checklist`. `SCHEMA_VERSION = 2`; las copias v1 se
+  siguen importando (zod completa los campos y `state_id` sale de `status`).
+- **Tipos y estados** (`domain/workflows.ts`): Tarea, User Story y Test Scenario, cada uno con estados de color y una
+  categoría (`todo | doing | blocked | done`). `status` sigue siendo la fuente de verdad de pendiente/completada/archivada,
+  así que las reglas de las fases 1-5 no cambian. Se mantiene sincronizado con el estado: `setCompleted` pone el primer estado
+  "done" (o el inicial al reabrir) y `setState` a un estado "done" completa la tarea (pasando por `setCompleted`, para que las
+  recurrentes generen la siguiente). `setType` busca un estado equivalente por categoría.
+- **Etiquetas**: siguen siendo `tags: string[]`. La tabla `labels` solo guarda colores personalizados; sin fila, el color
+  sale de `colorFor(nombre)` (estable). Renombrar y eliminar se aplican a todas las tareas en un lote deshacible. El
+  historial cubre ahora también las tablas `labels` e `item_types`.
+- **Panel de detalle** (`TaskDetailPanel`, sustituye al modal `TaskEditor`): tipo, estado, título, propiedades, pasos con
+  progreso y reordenación por arrastre, y notas. Cada cambio es una entrada del historial. En pantallas de 1280 px o más es
+  una tercera columna; por debajo se superpone. Esc dentro de un campo sale del campo y un segundo Esc cierra el panel.
+- **Lista de proyecto** al estilo Asana: secciones por categoría de estado (En curso, Bloqueadas, Por hacer, Completadas);
+  soltar en una sección pasa cada tarea al primer estado de esa categoría dentro de su propio flujo.
+- **Tablero** (`features/board`): columnas = estados de un tipo (pestañas Tarea/US/TS). Arrastrar llama a `setState`. Las
+  completadas de hace más de 14 días no se muestran. Alta en cada columna con la sintaxis de captura. Hay un tablero global
+  (`#/board`, `G T`) con filtro por proyecto y el modo Lista/Tablero de cada proyecto, ambos recordados en localStorage
+  (`usePersistentState`).
+- **Ancho**: las vistas de tablero piden todo el ancho con `useWideLayout(true)`.
+- Iconos con `lucide-react`. Componentes visuales en `components/ui/` (`Badges`, `Popover`, `ViewSwitcher`).
+
+### Hoja de ruta v2
+
+- [x] Fase 6: lista tipo Asana, tablero tipo Trello, panel de detalle, pasos y etiquetas de color
+- [ ] Fase 7: US/TS (ID externo y enlace), releases y calendario de "cuándo sale todo"; configurar tipos y estados
+- [ ] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
+      (temas pendientes y quién dijo qué)
+- [ ] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
+
 ## Fases
 
 - [x] Fase 1: base, IndexedDB, modelo, CRUD, vistas básicas y copias de seguridad
