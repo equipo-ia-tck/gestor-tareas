@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { CheckSquare, FileText, MessageSquare, Plus, Quote, Users } from 'lucide-react';
+import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { CheckSquare, FileText, MessageCircle, MessageSquare, Plus, Quote, Users } from 'lucide-react';
+import { teamsChatUrl } from '../../domain/teams';
 import { useApp } from '../../app/AppContext';
 import { routeHref } from '../../app/router';
 import { Section, TaskList } from '../../components/TaskList';
@@ -68,6 +69,12 @@ export function PersonView({ name }: { name: string }) {
           <h1 className="text-2xl font-semibold">{name}</h1>
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
+        {card?.email && teamsChatUrl([card.email]) && (
+          <a href={teamsChatUrl([card.email])!} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-sm font-medium text-white hover:bg-[#4b4fb7]">
+            <MessageCircle className="size-4" />Chat en Teams
+          </a>
+        )}
         <button type="button" onClick={() => void newNote('meeting', today, { people: [name], title: `Reunión con ${name}` })}
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <Users className="size-4" />Nueva reunión
@@ -130,15 +137,23 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   );
 }
 
-function RoleField({ name, value, notes, email }: { name: string; value: string; notes: string; email?: string }) {
+function RoleField({ name, value, notes, email = '' }: { name: string; value: string; notes: string; email?: string }) {
   const [role, setRole] = useState(value);
   const [text, setText] = useState(notes);
-  useEffect(() => { setRole(value); setText(notes); }, [value, notes]);
-  const save = () => { if (role !== value || text !== notes) void repo.savePerson({ name, role: role.trim(), notes: text, email: email ?? '' }); };
+  const [mail, setMail] = useState(email);
+  useEffect(() => { setRole(value); setText(notes); setMail(email); }, [value, notes, email]);
+  const save = () => {
+    if (role !== value || text !== notes || mail !== email) void repo.savePerson({ name, role: role.trim(), notes: text, email: mail.trim() });
+  };
+  const blurOnEnter = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.currentTarget.blur(); };
   return (
     <div className="mt-0.5 space-y-1">
-      <input value={role} onChange={(e) => setRole(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-        placeholder="Rol (p. ej. Product Owner, Dev, QA…)" className="w-full max-w-sm bg-transparent text-sm text-zinc-500 outline-none placeholder:text-zinc-400 focus:text-zinc-900 dark:focus:text-zinc-100" />
+      <div className="flex flex-wrap gap-x-4">
+        <input value={role} onChange={(e) => setRole(e.target.value)} onBlur={save} onKeyDown={blurOnEnter}
+          placeholder="Rol (p. ej. Product Owner, Dev, QA…)" className="w-56 bg-transparent text-sm text-zinc-500 outline-none placeholder:text-zinc-400 focus:text-zinc-900 dark:focus:text-zinc-100" />
+        <input value={mail} onChange={(e) => setMail(e.target.value)} onBlur={save} onKeyDown={blurOnEnter} type="email"
+          placeholder="email (para chatear en Teams)" className="w-64 bg-transparent text-sm text-zinc-500 outline-none placeholder:text-zinc-400 focus:text-zinc-900 dark:focus:text-zinc-100" />
+      </div>
       <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={save} rows={text ? 2 : 1}
         placeholder="Notas sobre la persona: contexto, cómo prefiere trabajar…"
         className="w-full max-w-xl resize-none bg-transparent text-sm text-zinc-600 outline-none placeholder:text-zinc-400 dark:text-zinc-300" />

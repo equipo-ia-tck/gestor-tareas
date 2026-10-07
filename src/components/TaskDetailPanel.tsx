@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
-import { notesLinkingTask } from '../domain/notes';
+import { notesForTask, notesLinkingTask } from '../domain/notes';
+import { TaskNotes } from '../features/notes/TaskNotes';
 import { projectPath } from '../domain/projects';
 import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
@@ -45,7 +46,7 @@ export function TaskDetailPanel() {
 }
 
 function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
-  const { itemTypes, today } = useApp();
+  const { itemTypes, today, notes } = useApp();
   const type = findType(itemTypes, task.type_id);
   const state = stateOf(itemTypes, task);
   const update = (patch: Partial<Task>, label: string) => repo.batch(label, () => repo.updateTask(task.id, patch));
@@ -129,7 +130,8 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         </dl>
 
         <Section icon={<CheckSquare className="size-4" />} title="Pasos"><Checklist task={task} /></Section>
-        <Section icon={<AlignLeft className="size-4" />} title="Notas"><NotesField task={task} /></Section>
+        <Section icon={<AlignLeft className="size-4" />} title="Descripción"><NotesField task={task} /></Section>
+        <Section icon={<MessageSquareText className="size-4" />} title={`Notas · ${notesForTask(task.id, notes).length}`}><TaskNotes task={task} compact /></Section>
         <RelatedNotes taskId={task.id} />
         <TaskHistory taskId={task.id} />
 
@@ -664,7 +666,7 @@ function NotesField({ task }: { task: Task }) {
       ref={ref}
       value={value}
       rows={3}
-      placeholder="Contexto, enlaces, lo que se habló…"
+      placeholder="Qué es, criterios de aceptación, enlaces…"
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => { if (value !== task.notes) void repo.batch('Notas guardadas', () => repo.updateTask(task.id, { notes: value })); }}
       className="w-full resize-none rounded-md border border-transparent bg-zinc-50 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:bg-zinc-900"

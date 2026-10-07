@@ -6,13 +6,18 @@ App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, 
 
 - **Captura en segundos** (Cmd/Ctrl+K o la barra de cada vista) con sintaxis rápida: `mañana`, `el viernes`,
   `#proyecto`, `@persona`, `!1`, `~30m`, `+etiqueta`, `cada lunes`, `US-1234`, `^R2.3`, `recuérdame a las 17:00`…
-- **Vistas**: Hoy (con resumen del día, atrasadas y "Repartir"), Próximos 7 días, Bandeja, Tablero kanban, Calendario,
-  Releases, Notas, Registro, Proyectos (lista o tablero) y Personas.
+- **Vistas**: Hoy (con resumen del día, atrasadas y "Repartir"), Próximos 7 días, Bandeja, **Todo** (filtros por tipo,
+  estado, proyecto, persona, etiqueta, release y fecha, con vistas guardadas), Tablero kanban, Calendario, Releases, Notas,
+  Registro, Proyectos (con **subproyectos**, en lista o tablero) y Personas.
 - **Panel de detalle** de cada tarea: tipo (Tarea, User Story, Test Scenario, Tema…), estado, fecha, recordatorio,
   release, ID externo con enlace a Jira/Xray, prioridad, personas, etiquetas de color, estimación, pasos, notas e historial.
-- **Notas y actas** en Markdown con formato en vivo. Las acciones `- [ ]` se convierten en tareas enlazadas.
+- **Notas y actas** en Markdown con formato en vivo. Las acciones `- [ ]` se convierten en tareas enlazadas. Cada US/TS
+  tiene sus **notas fechadas**, visibles también agrupadas en su proyecto.
+- **Teams**: enlace de la reunión con "Unirse", compartir el resumen del acta, abrir un chat con los asistentes e
+  **importar reuniones** desde un archivo `.ics` de Outlook o Teams.
 - **Fichas de persona**: temas pendientes, tareas, lo que dijo cada uno en las reuniones y reuniones con ella.
 - **Teclado**: J/K, Enter, E, C, D, T, M, 1–4, Supr; `?` muestra todos los atajos. Deshacer global con Cmd/Ctrl+Z.
+- **Fechas** con calendario mensual (semanas, carga por día) o escribiendo "vie", "15 oct"…
 - **Tus datos**: todo en el navegador, sin conexión, con copias JSON y copia automática en archivo.
 
 ## Arrancar en local

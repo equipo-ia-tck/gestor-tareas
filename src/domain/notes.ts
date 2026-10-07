@@ -87,3 +87,24 @@ export function sortNotes(notes: Note[]): Note[] {
 
 export const defaultNoteTitle = (kind: Note['kind'], date: ISODate) =>
   kind === 'meeting' ? `Reunión ${date.split('-').reverse().join('/')}` : 'Nota sin título';
+
+/** Notas de un elemento (US, TS, tarea…), las más recientes primero. */
+export const notesForTask = (taskId: string, notes: Note[]) =>
+  notes
+    .filter((n) => isLiveNote(n) && n.task_id === taskId)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
+
+/**
+ * Notas de elementos agrupadas por elemento, para la vista de proyecto: cada grupo ordenado por
+ * fecha y los grupos por su nota más reciente.
+ */
+export function notesByTask(taskIds: Set<string>, notes: Note[]): { taskId: string; notes: Note[] }[] {
+  const groups = new Map<string, Note[]>();
+  for (const n of notes) {
+    if (!isLiveNote(n) || !n.task_id || !taskIds.has(n.task_id)) continue;
+    groups.set(n.task_id, [...(groups.get(n.task_id) ?? []), n]);
+  }
+  return [...groups]
+    .map(([taskId, list]) => ({ taskId, notes: list.sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at)) }))
+    .sort((a, b) => b.notes[0].date.localeCompare(a.notes[0].date) || b.notes[0].created_at.localeCompare(a.notes[0].created_at));
+}

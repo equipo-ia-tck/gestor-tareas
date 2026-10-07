@@ -251,6 +251,31 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   laborables atenuados, un punto en los días con tareas, opciones rápidas y texto libre (`parseDateText`, Enter aplica).
   `DateButton` lo abre en un desplegable (panel, releases, notas); con la tecla D se abre dentro de la fila (`InlineDatePicker`).
 
+## Fase 11: notas de elementos y Teams
+
+- **Notas de un elemento** (US, TS, tarea…): son notas normales (`notes`) con `task_id`, así que también aparecen en Notas
+  y en la búsqueda. Se crean desde el panel de detalle (`TaskNotes`, Markdown, Cmd/Ctrl+Enter) con el título
+  "US-1234 · Título". El antiguo campo `task.notes` se muestra como "Descripción". El proyecto tiene la sección "Notas por
+  elemento" (`ItemNotes`, `notesByTask`): agrupadas por elemento con su estado, cada grupo ordenado por fecha y los grupos
+  por la nota más reciente. Las actas del propio proyecto excluyen las notas de elementos. En la vista Notas, el filtro "De
+  elementos" y el proyecto se toman del elemento (aunque se mueva).
+- **Teams sin servidor ni permisos de Microsoft** (`domain/teams.ts`): `meeting_url` en las actas con botón "Unirse";
+  "Compartir" copia el resumen (`meetingSummary`: asistentes, decisiones y acciones con el estado de su tarea) o el acta en
+  Markdown, y abre un chat de Teams con los asistentes (`teamsChatUrl`, enlace `teams.microsoft.com/l/chat/0/0?users=…`
+  con tema y mensaje), usando el `email` de las fichas. La ficha de persona tiene campo de email y "Chat en Teams".
+- **Importar reuniones (.ics)** (`domain/ics.ts`, `IcsImport`): despliega líneas plegadas, lee SUMMARY, DTSTART (UTC → hora
+  local; con TZID se toma como hora local; VALUE=DATE de día completo), ORGANIZER/ATTENDEE (CN y email), enlace de Teams
+  (`X-MICROSOFT-SKYPETEAMSMEETINGURL` o el que venga en la descripción) y expande RRULE sencillas (DAILY, WEEKLY con BYDAY,
+  MONTHLY; INTERVAL, COUNT, UNTIL, EXDATE) en una ventana de −14 a +30 días. Las canceladas se ignoran. Se marcan por
+  defecto las de los próximos 7 días y, de cada serie, solo la siguiente. Se evitan duplicados (mismo título y día). Al
+  importar se guardan los emails de los asistentes en sus fichas. La conexión directa con el calendario de Microsoft
+  (Graph) queda fuera: necesitaría registrar una app en Entra ID con permiso de la empresa.
+
+### Más adelante
+
+- **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
+  (cargando `dist/`). Ojo: Electron tendrá su propio IndexedDB, y los datos se pasan con exportar e importar.
+
 ### Hoja de ruta v2
 
 - [x] Fase 6: lista tipo Asana, tablero tipo Trello, panel de detalle, pasos y etiquetas de color
@@ -258,6 +283,8 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 8: notas y actas de reunión en Markdown con formato en vivo, acciones convertibles en tareas, ficha de persona
       (temas pendientes y quién dijo qué)
 - [x] Fase 9: recordatorios (solo con la app abierta, sin servidor) y registro diario de lo hecho, pospuesto y abandonado
+- [x] Fase 10: subproyectos, vista "Todo" con filtros y vistas guardadas, selector de fecha con calendario
+- [x] Fase 11: notas fechadas por elemento (en panel, proyecto y Notas) y Teams (enlace, compartir, chat e importar .ics)
 
 ## Fases
 

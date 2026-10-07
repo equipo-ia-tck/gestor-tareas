@@ -15,6 +15,11 @@ import { fold, nameKey } from '../../domain/text';
 import { TOPIC_TYPE_ID, type Note, type NoteKind } from '../../domain/types';
 import { stateOf } from '../../domain/workflows';
 import { createTasksFromActions, toggleAction } from './noteActions';
+import { IcsImport } from './IcsImport';
+import { MeetingLink, ShareMeeting } from './MeetingTools';
+import { taskLabel } from './TaskNotes';
+import { TypeBadge } from '../../components/ui/Badges';
+import { findType } from '../../domain/workflows';
 import { NoteEditor } from './NoteEditor';
 
 /** Crea una nota o un acta (con plantilla) y la abre. */
@@ -31,16 +36,19 @@ export async function newNote(kind: NoteKind, today: string, fields: Partial<Not
 /** Notas y actas: lista a la izquierda, nota abierta a la derecha. */
 export function NotesView({ id }: { id?: string }) {
   useWideLayout(true);
-  const { notes, today } = useApp();
+  const { notes, tasks, today } = useApp();
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<NoteKind | ''>('');
+  const [kind, setKind] = useState<NoteKind | 'item' | ''>('');
   const [projectId, setProjectId] = useState('');
 
   const list = useMemo(() => {
     const words = fold(query).split(/\s+/).filter(Boolean);
+    // Las notas de un elemento pertenecen al proyecto de ese elemento (aunque se mueva).
+    const projectOf = (n: Note) => (n.task_id ? tasks.find((t) => t.id === n.task_id)?.project_id ?? n.project_id : n.project_id);
+    const kindOk = (n: Note) => !kind || (kind === 'item' ? !!n.task_id : n.kind === kind && !n.task_id);
     return sortNotes(notes.filter((n) =>
-      (!kind || n.kind === kind) && (!projectId || n.project_id === projectId) && (!words.length || matchesNote(n, words))));
-  }, [notes, query, kind, projectId]);
+      kindOk(n) && (!projectId || projectOf(n) === projectId) && (!words.length || matchesNote(n, words))));
+  }, [notes, tasks, query, kind, projectId]);
   const current = id ? notes.find((n) => n.id === id) : undefined;
 
   return (
@@ -55,6 +63,7 @@ export function NotesView({ id }: { id?: string }) {
             <button type="button" onClick={() => void newNote('note', today)} className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
               <Plus className="size-4" />Nota
             </button>
+            <IcsImport />
           </div>
         </div>
         <div className="relative mb-2">
@@ -63,7 +72,7 @@ export function NotesView({ id }: { id?: string }) {
             className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
         </div>
         <div className="mb-3 flex gap-1.5 text-xs">
-          {([['', 'Todas'], ['meeting', 'Actas'], ['note', 'Notas']] as const).map(([k, label]) => (
+          {([['', 'Todas'], ['meeting', 'Actas'], ['note', 'Notas'], ['item', 'De elementos']] as const).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setKind(k)}
               className={`rounded-full px-2.5 py-0.5 ${kind === k ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>{label}</button>
           ))}
@@ -89,16 +98,18 @@ export function NotesView({ id }: { id?: string }) {
 }
 
 function NoteItem({ note, active }: { note: Note; active: boolean }) {
-  const { projectMap, today } = useApp();
-  const project = note.project_id ? projectMap.get(note.project_id) : undefined;
+  const { projectMap, today, tasks, itemTypes } = useApp();
+  const task = note.task_id ? tasks.find((t) => t.id === note.task_id) : undefined;
+  const projectId = task?.project_id ?? note.project_id;
+  const project = projectId ? projectMap.get(projectId) : undefined;
   const actions = actionItems(note.body);
   const Icon = note.kind === 'meeting' ? Users : FileText;
   return (
     <li>
       <a href={`#/notes/${note.id}`} className={`block rounded-lg px-2.5 py-2 ${active ? 'bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}>
         <div className="flex items-center gap-1.5 text-sm font-medium">
-          <Icon className="size-3.5 shrink-0 text-zinc-400" />
-          <span className="truncate">{note.title || 'Sin título'}</span>
+          {task ? <TypeBadge type={findType(itemTypes, task.type_id)} /> : <Icon className="size-3.5 shrink-0 text-zinc-400" />}
+          <span className="truncate">{task ? taskLabel(task) : note.title || 'Sin título'}</span>
           {note.pinned && <Pin className="size-3 shrink-0 text-amber-500" />}
         </div>
         {noteExcerpt(note) && <p className="mt-0.5 truncate text-xs text-zinc-500">{noteExcerpt(note)}</p>}
@@ -141,6 +152,7 @@ function NotePage({ note }: { note: Note }) {
         </select>
         {note.people.length > 0 && <span className="flex items-center gap-1.5 text-xs text-zinc-500"><AvatarStack names={note.people} max={6} size={20} /></span>}
         <span className="flex-1" />
+        {note.kind === 'meeting' && <ShareMeeting note={note} />}
         <button type="button" title={note.pinned ? 'Desfijar' : 'Fijar arriba'} onClick={() => void repo.updateNote(note.id, { pinned: !note.pinned })}
           className={`rounded p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${note.pinned ? 'text-amber-500' : 'text-zinc-400'}`}><Pin className="size-4" /></button>
         <button type="button" title="Eliminar" onClick={() => { void repo.deleteNote(note.id); navigate({ view: 'notes' }); }}
@@ -150,6 +162,8 @@ function NotePage({ note }: { note: Note }) {
         onBlur={() => { if (title.trim() !== note.title) void repo.updateNote(note.id, { title: title.trim() }); }}
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
         className="mb-3 w-full bg-transparent text-2xl font-bold outline-none placeholder:text-zinc-300" />
+      {note.task_id && <TaskOrigin taskId={note.task_id} />}
+      {note.kind === 'meeting' && <MeetingLink note={note} />}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_260px]">
         <NoteEditor
@@ -172,6 +186,21 @@ function NotePage({ note }: { note: Note }) {
         </div>
       </div>
     </article>
+  );
+}
+
+/** En una nota de un elemento: de qué US/TS es (abre su panel). */
+function TaskOrigin({ taskId }: { taskId: string }) {
+  const { tasks, itemTypes, editTask } = useApp();
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return <p className="mb-3 text-xs text-zinc-400">Nota de un elemento eliminado.</p>;
+  const type = findType(itemTypes, task.type_id);
+  return (
+    <button type="button" onClick={() => editTask(task)}
+      className="mb-3 flex items-center gap-2 rounded-md bg-zinc-100 px-2 py-1 text-sm hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">
+      <span className="text-xs text-zinc-500">Nota de</span><TypeBadge type={type} /><span className="font-medium">{taskLabel(task)}</span>
+      <StatePill state={stateOf(itemTypes, task)} />
+    </button>
   );
 }
 

@@ -14,6 +14,7 @@ import type { StateCategory } from '../../domain/types';
 import { findType, stateOf } from '../../domain/workflows';
 import { Board, TypeTabs } from '../board/Board';
 import { newNote } from '../notes/NotesView';
+import { ItemNotes } from '../notes/ItemNotes';
 import { noteExcerpt, sortNotes } from '../../domain/notes';
 import { formatDay } from '../../domain/dates';
 import { ViewHeader } from './ViewHeader';
@@ -142,6 +143,7 @@ export function ProjectView({ id }: { id: string }) {
         <>
           <div className="mb-4"><TypeTabs value={typeId} onChange={setTypeId} tasks={mine} /></div>
           <Board tasks={mine} type={findType(itemTypes, typeId)} defaults={{ project_id: id }} showProject={includeSubs && children.length > 0} />
+          <div className="mt-6"><ItemNotes taskIds={new Set(mine.map((t) => t.id))} /></div>
         </>
       ) : (
       <>
@@ -161,6 +163,7 @@ export function ProjectView({ id }: { id: string }) {
           <TaskList {...list} tasks={done} />
         </Section>
       )}
+      <ItemNotes taskIds={new Set(mine.map((t) => t.id))} />
       <ProjectNotes projectIds={scope} projectId={id} />
       </>
       )}
