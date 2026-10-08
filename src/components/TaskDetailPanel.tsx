@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, CalendarPlus, Sun, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
@@ -8,6 +8,7 @@ import { TaskNotes } from '../features/notes/TaskNotes';
 import { projectPath } from '../domain/projects';
 import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
+import { icsFileName, taskToIcs } from '../domain/icsExport';
 import { ensureNotificationPermission } from '../features/reminders/notifications';
 import type { ActivityEntry } from '../domain/types';
 import { useApp } from '../app/AppContext';
@@ -66,6 +67,10 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         >
           <Check className="size-3.5" />{task.status === 'done' ? 'Completada' : 'Marcar como completada'}
         </button>
+        <button type="button" onClick={() => void repo.batch(task.my_day === today ? 'Quitada de Mi día' : 'Añadida a Mi día', () => repo.updateTask(task.id, { my_day: task.my_day === today ? null : today }))}
+          className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${task.my_day === today ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : 'border-zinc-300 hover:border-amber-400 hover:text-amber-700 dark:border-zinc-600'}`}>
+          <Sun className="size-3.5" fill={task.my_day === today ? 'currentColor' : 'none'} />{task.my_day === today ? 'En Mi día' : 'Mi día'}
+        </button>
         <div className="flex-1" />
         <button type="button" title="Eliminar" onClick={() => { void repo.deleteTask(task.id); onClose(); }}
           className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"><Trash2 className="size-4" /></button>
@@ -101,6 +106,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-1 text-sm">
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
           <Prop icon={<AlarmClock className="size-4" />} label="Recordatorio"><ReminderField task={task} /></Prop>
+          <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
           <Prop icon={<Rocket className="size-4" />} label="Release"><ReleaseField task={task} /></Prop>
           <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>
@@ -130,8 +136,10 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         </dl>
 
         <Section icon={<CheckSquare className="size-4" />} title="Pasos"><Checklist task={task} /></Section>
-        <Section icon={<AlignLeft className="size-4" />} title="Descripción"><NotesField task={task} /></Section>
-        <Section icon={<MessageSquareText className="size-4" />} title={`Notas · ${notesForTask(task.id, notes).length}`}><TaskNotes task={task} compact /></Section>
+        <Section icon={<MessageSquareText className="size-4" />} title={`Notas · ${notesForTask(task.id, notes).length}`}>
+          <NotesField task={task} />
+          <TaskNotes task={task} compact />
+        </Section>
         <RelatedNotes taskId={task.id} />
         <TaskHistory taskId={task.id} />
 
@@ -574,6 +582,31 @@ function StepText({ item, onSave }: { item: ChecklistItem; onSave: (text: string
   );
 }
 
+/**
+ * Descarga la tarea como evento de calendario (.ics): al abrirlo se añade a Outlook (o al calendario
+ * por defecto) con su alarma, que avisa aunque esta app esté cerrada.
+ */
+function OutlookButton({ task }: { task: Task }) {
+  const { projectMap } = useApp();
+  const ics = taskToIcs(task, { projectPath: task.project_id ? projectPath(task.project_id, projectMap) : undefined });
+  if (!ics) return <span className="px-2 text-xs text-zinc-400">Ponle fecha o recordatorio para añadirla</span>;
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = icsFileName(task);
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <button type="button" onClick={download} title="Descarga un evento con alarma; ábrelo y se añade a tu calendario"
+      className={`${fieldBox} flex items-center gap-1.5 text-left text-indigo-600 dark:text-indigo-400`}>
+      Añadir a Outlook
+      <span className="text-xs text-zinc-400">({task.remind_at ? 'a la hora del recordatorio' : 'ese día a las 9:00'})</span>
+    </button>
+  );
+}
+
 function ReminderField({ task }: { task: Task }) {
   const [custom, setCustom] = useState('');
   const now = new Date();
@@ -602,7 +635,7 @@ function ReminderField({ task }: { task: Task }) {
               className="rounded bg-indigo-600 px-2 text-xs text-white disabled:opacity-40">OK</button>
           </div>
           {task.remind_at && <MenuItem onClick={() => { close(); void set(null, 'Recordatorio quitado'); }}><span className="text-zinc-400">Quitar aviso</span></MenuItem>}
-          <p className="px-2 pt-1 text-[11px] text-zinc-400">Avisa mientras la app esté abierta (aunque esté en segundo plano).</p>
+          <p className="px-2 pt-1 text-[11px] text-zinc-400">Aquí solo avisa con la app abierta. Para un aviso seguro, usa «Añadir a Outlook».</p>
         </>
       )}
     </Popover>
@@ -657,19 +690,38 @@ function RelatedNotes({ taskId }: { taskId: string }) {
   );
 }
 
+/**
+ * Descripción fija de la tarea (qué es, criterios…), encima del historial de notas fechadas.
+ * Vacía, se queda en un enlace "+ Descripción" para no ocupar sitio.
+ */
 function NotesField({ task }: { task: Task }) {
   const [value, setValue] = useState(task.notes);
+  const [editing, setEditing] = useState(false);
   const ref = useAutosize(value);
   useEffect(() => setValue(task.notes), [task.notes]);
+  if (!task.notes && !editing) {
+    return (
+      <button type="button" onClick={() => setEditing(true)} className="mb-2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+        + Descripción (qué es, criterios de aceptación…)
+      </button>
+    );
+  }
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      rows={3}
-      placeholder="Qué es, criterios de aceptación, enlaces…"
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => { if (value !== task.notes) void repo.batch('Notas guardadas', () => repo.updateTask(task.id, { notes: value })); }}
-      className="w-full resize-none rounded-md border border-transparent bg-zinc-50 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:bg-zinc-900"
-    />
+    <div className="mb-3">
+      <p className="mb-1 text-[11px] font-medium text-zinc-400">Descripción</p>
+      <textarea
+        ref={ref}
+        autoFocus={editing && !task.notes}
+        value={value}
+        rows={2}
+        placeholder="Qué es, criterios de aceptación, enlaces…"
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (value !== task.notes) void repo.batch('Descripción guardada', () => repo.updateTask(task.id, { notes: value }));
+        }}
+        className="w-full resize-none rounded-md border border-transparent bg-zinc-50 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:bg-zinc-900"
+      />
+    </div>
   );
 }

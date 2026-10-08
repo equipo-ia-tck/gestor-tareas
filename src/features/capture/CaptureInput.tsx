@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { formatDay, formatMinutes } from '../../domain/dates';
@@ -8,8 +8,8 @@ import { fuzzyScore, nameKey, tokenName } from '../../domain/text';
 import type { NewTask } from '../../domain/types';
 import { parseCapture } from '../../parser/parseCapture';
 import { tokenKey, type ParsedTask, type Token, type TokenKind } from '../../parser/types';
-import { useDictation } from '../dictation/useDictation';
 import { submitCapture } from './submitCapture';
+import { navigate } from '../../app/router';
 import { ancestry } from '../../domain/projects';
 import { formatReminder } from '../../domain/reminders';
 
@@ -36,8 +36,6 @@ interface Props {
   /** El texto empieza por ">": pasar a la paleta de comandos. */
   onCommandMode?: (query: string) => void;
   large?: boolean;
-  /** Empezar a dictar nada más abrir (atajo Alt+M). */
-  autoDictate?: boolean;
 }
 
 interface Suggestion {
@@ -46,30 +44,15 @@ interface Suggestion {
 }
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
-export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large, autoDictate }: Props) {
+export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large }: Props) {
   const { tasks, projects, projectMap, today, itemTypes, releases } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [ignore, setIgnore] = useState<string[]>([]);
   const [selected, setSelected] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
-
-  // El dictado añade el texto reconocido a la barra: pasa por el mismo parser y se revisa antes de crear.
-  const textRef = useRef(text);
-  textRef.current = text;
-  const dictation = useDictation((spoken) => {
-    const prev = textRef.current;
-    const next = prev && !/\s$/.test(prev) ? `${prev} ${spoken}` : prev + spoken;
-    textRef.current = next;
-    setText(next);
-    setCaret(next.length);
-    requestAnimationFrame(() => ref.current?.setSelectionRange(next.length, next.length));
-  });
-  const { start: startDictation } = dictation;
-  useEffect(() => {
-    if (autoDictate) startDictation();
-  }, [autoDictate, startDictation]);
 
   const people = useMemo(() => knownPeople(tasks), [tasks]);
   const parsed = useMemo(
@@ -125,6 +108,13 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
       onCommandMode(value.slice(1));
       return;
     }
+    // "/" al principio: buscar en todo (tareas, notas, personas, proyectos).
+    if (value.startsWith('/') && onCommandMode) {
+      onCancel?.();
+      navigate({ view: 'search', q: value.slice(1) });
+      requestAnimationFrame(() => document.getElementById('global-search')?.focus());
+      return;
+    }
     setText(value);
     setCaret(pos);
     setSelected(0);
@@ -153,12 +143,6 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.altKey && e.code === 'KeyM' && dictation.available) {
-      e.preventDefault();
-      e.stopPropagation();
-      dictation.toggle();
-      return;
-    }
     if (showSuggestions) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -189,7 +173,7 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   }
 
   const textSize = large ? 'text-base' : 'text-sm';
-  const box = `${textSize} py-2 pl-3 ${dictation.available ? 'pr-10' : 'pr-3'} leading-6 whitespace-pre-wrap break-words`;
+  const box = `${textSize} py-2 px-3 leading-6 whitespace-pre-wrap break-words`;
 
   return (
     <div className="relative">
@@ -207,29 +191,18 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
           aria-label="Capturar tarea"
           onChange={(e) => change(e.target.value, e.target.selectionStart)}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onKeyDown={onKeyDown}
           className={`${box} relative block w-full resize-none overflow-hidden bg-transparent text-transparent caret-zinc-900 outline-none placeholder:text-zinc-400 dark:caret-zinc-100`}
         />
-        {dictation.available && (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={dictation.toggle}
-            aria-label={dictation.listening ? 'Parar dictado' : 'Dictar tarea'}
-            aria-pressed={dictation.listening}
-            title={dictation.listening ? 'Parar dictado (Alt+M)' : 'Dictar (Alt+M)'}
-            className={`absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-md ${dictation.listening ? 'bg-red-500 text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'}`}
-          >
-            <MicIcon />
-          </button>
-        )}
       </div>
-      {dictation.listening && (
-        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-          ● Escuchando…{dictation.interim && <span className="ml-1 text-zinc-500 italic">{dictation.interim}</span>}
-        </p>
-      )}
-      {dictation.error && !dictation.listening && <p className="mt-1 text-xs text-amber-600">{dictation.error}</p>}
+
+      {focused && !text.trim() && <SyntaxHints onInsert={(snippet) => {
+        const value = text + snippet;
+        change(value, value.length);
+        requestAnimationFrame(() => { ref.current?.focus(); ref.current?.setSelectionRange(value.length, value.length); });
+      }} />}
 
       {showSuggestions && (
         <ul role="listbox" className="absolute z-20 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
@@ -335,18 +308,38 @@ function Chip({ kind, children, onRemove }: { kind: TokenKind; children: ReactNo
   );
 }
 
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="9" y="3" width="6" height="11" rx="3" />
-      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-    </svg>
-  );
-}
-
 function TypeName({ id }: { id: string }) {
   const { itemTypes } = useApp();
   const type = itemTypes.find((t) => t.id === id);
   if (!type) return null;
   return <span className="rounded px-1 text-[10px] font-bold text-white" style={{ background: type.color }}>{type.name}</span>;
+}
+
+const HINTS: { label: string; insert: string; title: string }[] = [
+  { label: 'mañana', insert: 'mañana ', title: 'Fecha: hoy, mañana, el viernes, 15 oct, fin de mes…' },
+  { label: '#proyecto', insert: '#', title: 'Proyecto (o #proyecto/subproyecto)' },
+  { label: '@persona', insert: '@', title: 'Persona' },
+  { label: '!1', insert: '!1 ', title: 'Prioridad: !1 urgente … !4 normal' },
+  { label: '~30m', insert: '~30m ', title: 'Estimación: ~30m, ~2h, ~1h30' },
+  { label: '+etiqueta', insert: '+', title: 'Etiqueta' },
+  { label: 'US-123', insert: 'US-', title: 'ID de Jira: US-123 crea una User Story, TS-55 un Test Scenario' },
+  { label: '^release', insert: '^', title: 'Release' },
+  { label: 'cada lunes', insert: 'cada lunes ', title: 'Recurrencia: cada día, cada lunes, el 1 de cada mes…' },
+  { label: 'recuérdame a las 9', insert: 'recuérdame a las 9 ', title: 'Recordatorio' },
+];
+
+/** Ayuda de sintaxis al empezar a escribir: cada ejemplo se puede pulsar para insertarlo. */
+function SyntaxHints({ onInsert }: { onInsert: (snippet: string) => void }) {
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+      <span className="text-zinc-400">Puedes usar:</span>
+      {HINTS.map((h) => (
+        <button key={h.label} type="button" title={h.title} onMouseDown={(e) => e.preventDefault()} onClick={() => onInsert(h.insert)}
+          className="rounded-full bg-zinc-100 px-2 py-0.5 font-mono text-zinc-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-indigo-950">
+          {h.label}
+        </button>
+      ))}
+      <span className="text-zinc-400">· ; para varias</span>
+    </div>
+  );
 }

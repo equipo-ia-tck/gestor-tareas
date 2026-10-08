@@ -18,6 +18,7 @@ import { doneState, equivalentState, findType, initialState, patchForState, stat
 import { nameKey } from '../domain/text';
 import { extractMentions } from '../domain/markdown';
 import { activityFor } from '../domain/activity';
+import { renameInList, renameMentions } from '../domain/people';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
 import { formatDay, todayISO } from '../domain/dates';
@@ -98,6 +99,11 @@ export interface Repository {
 
   listPeople(): Promise<Person[]>;
   savePerson(person: Person): Promise<void>;
+  /**
+   * Renombra a una persona en tareas, menciones de notas y ficha. Si ya existe otra con el nombre
+   * nuevo, las une (la ficha resultante conserva los datos de las dos).
+   */
+  renamePerson(from: string, to: string): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -268,6 +274,7 @@ export class DexieRepository implements Repository {
       url: null,
       release_id: null,
       remind_at: null,
+      my_day: null,
       ...input,
       type_id: type.id,
       state_id: state.id,
@@ -561,6 +568,40 @@ export class DexieRepository implements Repository {
     await this.db.people.put(after);
     this.record({ table: 'people', key: after.name, before, after }, 'Ficha guardada');
     this.emit();
+  }
+
+  async renamePerson(from: string, to: string) {
+    const target = to.trim();
+    if (!target || nameKey(from) === nameKey(target) && from === target) return;
+    await this.batch(`${from} → ${target}`, async () => {
+      for (const t of await this.db.tasks.toArray()) {
+        if (!t.people.some((p) => nameKey(p) === nameKey(from))) continue;
+        await this.patchTask(t.id, { people: renameInList(t.people, from, target) }, '', false);
+      }
+      for (const n of await this.db.notes.toArray()) {
+        const body = renameMentions(n.body, from, target);
+        if (body !== n.body) await this.updateNote(n.id, { body });
+      }
+      // Fichas: la del nombre nuevo manda; lo que le falte se toma de la antigua.
+      const cards = await this.db.people.toArray();
+      const old = cards.find((c) => nameKey(c.name) === nameKey(from));
+      const dest = cards.find((c) => nameKey(c.name) === nameKey(target) && c !== old);
+      if (old) {
+        await this.db.people.delete(old.name);
+        this.record({ table: 'people', key: old.name, before: old, after: undefined }, '');
+      }
+      if (old || dest) {
+        const merged: Person = {
+          name: dest?.name ?? target,
+          role: dest?.role || old?.role || '',
+          notes: [dest?.notes, old?.notes].filter(Boolean).join('\n'),
+          email: dest?.email || old?.email || '',
+        };
+        await this.db.people.put(merged);
+        this.record({ table: 'people', key: merged.name, before: dest, after: merged }, '');
+      }
+      this.emit();
+    });
   }
 
   // ---------- Etiquetas ----------

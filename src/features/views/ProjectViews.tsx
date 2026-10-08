@@ -1,58 +1,11 @@
-import { useState, type FormEvent } from 'react';
 import { useApp } from '../../app/AppContext';
-import { navigate, routeHref } from '../../app/router';
 import { Section, SmallButton } from '../../components/TaskList';
-import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
-import { isActive } from '../../domain/selectors';
 import { newNote } from '../notes/NotesView';
 import { noteExcerpt, sortNotes } from '../../domain/notes';
 import { formatDay } from '../../domain/dates';
-import { ViewHeader } from './ViewHeader';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { canMoveUnder, flattenTree, MAX_PROJECT_DEPTH, projectTree } from '../../domain/projects';
-
-export function ProjectsView() {
-  const { allProjects, tasks } = useApp();
-  const [name, setName] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
-  const count = (id: string) => tasks.filter((t) => t.project_id === id && isActive(t)).length;
-  const visible = flattenTree(projectTree(allProjects.filter((p) => showArchived || !p.archived)));
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    const p = await repo.createProject(name);
-    setName('');
-    navigate({ view: 'project', id: p.id });
-  }
-
-  return (
-    <>
-      <ViewHeader
-        title="Proyectos"
-        actions={<SmallButton onClick={() => setShowArchived((s) => !s)}>{showArchived ? 'Ocultar archivados' : 'Ver archivados'}</SmallButton>}
-      />
-      <form onSubmit={create} className="mb-5 flex gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nuevo proyecto" />
-        <button className="rounded-md bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-500">Crear</button>
-      </form>
-      <ul>
-        {visible.map(({ project: p, depth }) => (
-          <li key={p.id}>
-            <a href={routeHref({ view: 'project', id: p.id })} style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
-              <span className="size-2.5 rounded-full" style={{ background: p.color }} />
-              <span className={`flex-1 ${p.archived ? 'text-zinc-400' : ''}`}>{p.name}{p.archived && ' (archivado)'}</span>
-              <span className="text-xs text-zinc-400">{count(p.id)}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-      {visible.length === 0 && <p className="px-2 text-sm text-zinc-400">Aún no hay proyectos.</p>}
-    </>
-  );
-}
 
 /** Mover el proyecto dentro de otro (o al nivel superior). */
 export function MoveProject({ id }: { id: string }) {

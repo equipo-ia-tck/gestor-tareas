@@ -78,3 +78,8 @@ export function knownPeople(tasks: Task[]): string[] {
   for (const t of tasks) for (const p of t.people) counts.set(p, (counts.get(p) ?? 0) + 1);
   return [...counts].sort((a, b) => b[1] - a[1]).map(([name]) => name);
 }
+
+/** En "Mi día": pendiente y añadida hoy (cada día empieza vacío). */
+export const inMyDay = (t: Task, today: ISODate) => isActive(t) && t.my_day === today;
+
+export const myDayTasks = (tasks: Task[], today: ISODate) => sortTasks(tasks.filter((t) => inMyDay(t, today)));

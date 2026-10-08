@@ -24,3 +24,30 @@ describe('directorio de personas', () => {
     ]);
   });
 });
+
+describe('renombrar y unir personas', async () => {
+  const { renameInList, renameMentions } = await import('../src/domain/people');
+  const { TasksDB } = await import('../src/data/db');
+  const { DexieRepository } = await import('../src/data/repository');
+
+  it('menciones y listas', () => {
+    expect(renameMentions('hablar con @Diana-Pérez y @diana-perez; @Luis', 'Diana Pérez', 'Diana')).toBe('hablar con @Diana y @Diana; @Luis');
+    expect(renameInList(['Diana Pérez', 'Diana', 'Luis'], 'Diana Pérez', 'Diana')).toEqual(['Diana', 'Luis']);
+  });
+
+  it('une a dos personas en tareas, notas y fichas, y se puede deshacer', async () => {
+    const repo = new DexieRepository(new TasksDB(`ppl-${crypto.randomUUID()}`));
+    const t = await repo.createTask({ title: 'x', people: ['Diana Pérez', 'Luis'] });
+    const n = await repo.createNote({ date: '2026-10-08', body: '@Diana-Pérez pide la demo' });
+    await repo.savePerson({ name: 'Diana Pérez', role: '', notes: 'del calendario', email: 'diana@empresa.com' });
+    await repo.savePerson({ name: 'Diana', role: 'PO', notes: '', email: '' });
+    await repo.renamePerson('Diana Pérez', 'Diana');
+    expect((await repo.getTask(t.id))?.people).toEqual(['Diana', 'Luis']);
+    expect((await repo.getNote(n.id))?.body).toBe('@Diana pide la demo');
+    expect((await repo.getNote(n.id))?.people).toEqual(['Diana']);
+    expect(await repo.listPeople()).toEqual([{ name: 'Diana', role: 'PO', notes: 'del calendario', email: 'diana@empresa.com' }]);
+    await repo.undo();
+    expect((await repo.getTask(t.id))?.people).toEqual(['Diana Pérez', 'Luis']);
+    expect((await repo.listPeople()).map((p) => p.name).sort()).toEqual(['Diana', 'Diana Pérez']);
+  });
+});

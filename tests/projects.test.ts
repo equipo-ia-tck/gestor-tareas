@@ -73,3 +73,15 @@ describe('repositorio', () => {
     expect(await db.people.get('Diana')).toMatchObject({ email: '' });
   });
 });
+
+describe('migración v6 → v7', () => {
+  it('renombra "Tema" a "Para hablar" (solo si no se había cambiado)', async () => {
+    const name = `mig7-${crypto.randomUUID()}`;
+    const v6 = new Dexie(name);
+    v6.version(6).stores({ projects: 'id', tasks: 'id', settings: 'key', meta: 'key', labels: 'name', item_types: 'id', releases: 'id', notes: 'id', people: 'name', activity: 'id' });
+    await v6.table('item_types').add({ id: 'topic', name: 'Tema', short: 'TEMA', color: '#000', order: 3, states: [{ id: 'topic-pending', name: 'Pendiente', color: '#000', category: 'todo' }] });
+    v6.close();
+    const db = new TasksDB(name);
+    expect(await db.item_types.get('topic')).toMatchObject({ name: 'Para hablar', short: 'HABLAR' });
+  });
+});

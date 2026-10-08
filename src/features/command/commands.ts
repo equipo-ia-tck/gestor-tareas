@@ -100,34 +100,34 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'redo', section: 'Editar', title: 'Rehacer', shortcut: '⌘⇧Z', run: () => void repo.redo() },
     { id: 'search', section: 'Ir a', title: 'Buscar tareas', shortcut: '/', keywords: 'encontrar filtrar', run: () => { setTimeout(() => document.getElementById('global-search')?.focus(), 0); } },
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
-    { id: 'go-week', section: 'Ir a', title: 'Ir a Semana', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
+    { id: 'go-week', section: 'Ir a', title: 'Ir a Calendario: semana', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas todo filtros us ts temas vista lista', run: go({ view: 'board' }) },
     { id: 'go-notes', section: 'Ir a', title: 'Ir a Notas', shortcut: 'G N', keywords: 'actas reuniones apuntes', run: go({ view: 'notes' }) },
     { id: 'new-meeting', section: 'Crear', title: 'Nueva acta de reunión', keywords: 'nota reunión daily', run: () => newNote('meeting', env.today).then(() => undefined) },
     { id: 'new-note', section: 'Crear', title: 'Nueva nota', keywords: 'apunte', run: () => newNote('note', env.today).then(() => undefined) },
     {
-      id: 'new-topic', section: 'Crear', title: 'Nuevo tema para hablar con…', keywords: 'pendiente persona conversación',
+      id: 'new-topic', section: 'Crear', title: 'Para hablar con… (nuevo)', keywords: 'pendiente persona conversación',
       input: {
-        placeholder: '@persona tema a tratar',
+        placeholder: '@persona qué tienes que hablar',
         run: async (text) => {
           const m = /@([\p{L}\p{N}_\-.]+)/u.exec(text);
-          if (!m) return env.toast('Escribe @persona y el tema');
+          if (!m) return env.toast('Escribe @persona y lo que quieres hablar');
           const name = m[1].replace(/-/g, ' ');
           const title = text.replace(m[0], '').trim();
           if (!title) return;
-          await repo.batch('Tema añadido', () => repo.createTask({ title, type_id: TOPIC_TYPE_ID, people: [name] }));
+          await repo.batch('Añadido a Para hablar', () => repo.createTask({ title, type_id: TOPIC_TYPE_ID, people: [name] }));
         },
       },
     },
+    { id: 'go-review', section: 'Ir a', title: 'Revisión semanal', shortcut: 'G V', keywords: 'repaso semana planificar gtd', run: go({ view: 'review' }) },
     { id: 'go-log', section: 'Ir a', title: 'Ir a Registro', shortcut: 'G L', keywords: 'hecho pospuesto diario historial semana', run: go({ view: 'log' }) },
-    { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
+    { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario: mes', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
     { id: 'go-releases', section: 'Ir a', title: 'Ir a Releases', shortcut: 'G R', keywords: 'entregas versiones salidas', run: go({ view: 'releases' }) },
     {
       id: 'new-release', section: 'Crear', title: 'Nueva release', keywords: 'versión entrega',
       input: { placeholder: 'Nombre de la release (p. ej. R2.3)', run: async (name) => { if (name.trim()) { await repo.createRelease(name); navigate({ view: 'releases' }); } } },
     },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },
-    { id: 'go-projects', section: 'Ir a', title: 'Ir a Proyectos', shortcut: 'G P', run: go({ view: 'projects' }) },
     { id: 'go-people', section: 'Ir a', title: 'Ir a Personas', shortcut: 'G E', run: go({ view: 'people' }) },
     { id: 'go-settings', section: 'Ir a', title: 'Ir a Copias y ajustes', shortcut: 'G A', keywords: 'backup configuración', run: go({ view: 'settings' }) },
     ...env.projects.map((p): Command => ({

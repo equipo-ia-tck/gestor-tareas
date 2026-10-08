@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { formatDay, formatMinutes } from '../domain/dates';
-import { AlignLeft, ChevronRight, Repeat } from 'lucide-react';
+import { AlignLeft, ChevronRight, Repeat, Sun } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { describeRule } from '../domain/recurrence';
 import type { ISODate, Project, Task } from '../domain/types';
@@ -33,7 +33,7 @@ const INTERACTIVE = 'button, input, select, textarea, a, [role="listbox"]';
 export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: hideAll, contextProjectId, extra }: Props) {
   const hideProject = hideAll || (contextProjectId !== undefined && task.project_id === contextProjectId);
   const { selected, focused, editing, click, startEdit, stopEdit, targetsFor } = useSelection();
-  const { toggleDone, remove, update } = useTaskActions();
+  const { toggleDone, remove, update, toggleMyDay } = useTaskActions();
   const { itemTypes, labelColors, detailId } = useApp();
   const type = findType(itemTypes, task.type_id);
   const state = stateOf(itemTypes, task);
@@ -98,6 +98,7 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
           </div>
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+          {task.my_day === today && !done && <span className="inline-flex items-center gap-0.5 text-[11px] text-amber-600"><Sun className="size-3" />Mi día</span>}
           {showState && <StatePill state={state} />}
           <ExternalChip task={task} type={type} />
           <ReleaseChip releaseId={task.release_id} />
@@ -121,6 +122,11 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
       )}
       <div className="flex shrink-0 items-center gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
         {extra}
+        <button aria-label={task.my_day === today ? 'Quitar de Mi día' : 'Añadir a Mi día'} title={task.my_day === today ? 'Quitar de Mi día (A)' : 'Añadir a Mi día (A)'}
+          onClick={() => void toggleMyDay(isSelected ? targetsFor(task.id) : [task], today)}
+          className={`rounded p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 ${task.my_day === today ? 'text-amber-500' : 'text-zinc-400 hover:text-amber-500'}`}>
+          <Sun className="size-4" fill={task.my_day === today ? 'currentColor' : 'none'} />
+        </button>
         <button aria-label="Abrir detalle" title="Abrir detalle (E)" onClick={() => onEdit(task)}
           className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200">
           <ChevronRight className="size-4" />

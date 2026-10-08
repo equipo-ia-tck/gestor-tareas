@@ -149,6 +149,8 @@ export interface Task {
   release_id: string | null;
   /** Fecha y hora del aviso (ISO). Se pone a null al atenderlo. */
   remind_at: ISODateTime | null;
+  /** Día en que se añadió a "Mi día" (como en Microsoft To Do). Solo cuenta si es hoy. */
+  my_day: ISODate | null;
   recurrence_rule: RecurrenceRule | null;
   /** Enlaza las ocurrencias de una misma tarea recurrente. */
   series_id: string | null;
@@ -170,7 +172,8 @@ export interface Settings {
   last_backup_at: ISODateTime | null;
   ui: {
     summary_dismissed_on: ISODate | null;
-    dictation_enabled: boolean;
+    /** Último día en que se completó la revisión semanal. */
+    last_review_on: ISODate | null;
   };
   /** Vistas guardadas de "Todo" (filtros con nombre). */
   saved_views: SavedView[];
@@ -204,7 +207,7 @@ export const DEFAULT_SETTINGS: Settings = {
   capacity_minutes: 360,
   workdays: [1, 2, 3, 4, 5],
   last_backup_at: null,
-  ui: { summary_dismissed_on: null, dictation_enabled: false },
+  ui: { summary_dismissed_on: null, last_review_on: null },
   saved_views: [],
 };
 

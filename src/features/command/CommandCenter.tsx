@@ -8,11 +8,10 @@ import { CaptureInput } from '../capture/CaptureInput';
 import { useSelection } from '../selection/SelectionContext';
 import { buildCommands, type Command } from './commands';
 import { DistributePreview } from '../maintenance/DistributePreview';
-import { isDictationSupported } from '../dictation/speech';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
 type Mode =
-  | { kind: 'capture'; defaults?: Partial<NewTask>; dictate?: boolean }
+  | { kind: 'capture'; defaults?: Partial<NewTask> }
   | { kind: 'palette'; query?: string }
   | { kind: 'shortcuts' }
   | { kind: 'distribute' };
@@ -29,8 +28,8 @@ export const isEditable = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
 const GOTO: Record<string, Parameters<typeof navigate>[0]> = {
-  h: { view: 'today' }, s: { view: 'week' }, b: { view: 'inbox' }, t: { view: 'board' }, c: { view: 'calendar' }, r: { view: 'releases' }, n: { view: 'notes' }, l: { view: 'log' },
-  p: { view: 'projects' }, e: { view: 'people' }, a: { view: 'settings' },
+  h: { view: 'today' }, s: { view: 'week' }, b: { view: 'inbox' }, t: { view: 'board' }, c: { view: 'calendar' }, r: { view: 'releases' }, n: { view: 'notes' }, l: { view: 'log' }, v: { view: 'review' },
+  e: { view: 'people' }, a: { view: 'settings' },
 };
 
 export function CommandCenterProvider({ children }: { children: ReactNode }) {
@@ -39,9 +38,6 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => setMode(null), []);
   const api = useMemo(() => ({ open, close }), [open, close]);
   const pendingG = useRef(0);
-  const { settings } = useApp();
-  const dictationOn = useRef(false);
-  dictationOn.current = settings.ui.dictation_enabled && isDictationSupported();
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -49,12 +45,6 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
       const key = e.key.toLowerCase();
       if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); setMode({ kind: 'capture' }); return; }
       if (mod && e.shiftKey && key === 'p') { e.preventDefault(); setMode({ kind: 'palette' }); return; }
-      // Alt+M: dictar (si está activado). Dentro de la barra de captura lo gestiona la propia barra.
-      if (e.altKey && !mod && e.code === 'KeyM' && !isEditable(e.target) && dictationOn.current) {
-        e.preventDefault();
-        setMode({ kind: 'capture', dictate: true });
-        return;
-      }
       if (mod || e.altKey || isEditable(e.target) || document.querySelector('[role="dialog"]')) return;
 
       if (Date.now() - pendingG.current < 1200 && GOTO[key]) {
@@ -84,13 +74,12 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
                 large
                 autoFocus
                 defaults={mode.defaults}
-                autoDictate={mode.dictate}
                 onDone={close}
                 onCancel={close}
                 onCommandMode={(query) => setMode({ kind: 'palette', query })}
               />
               <p className="mt-2 px-1 text-xs text-zinc-400">
-                Enter para crear · Shift+Enter o ; para varias · <kbd>&gt;</kbd> para comandos · Esc para cerrar
+                Enter para crear · Shift+Enter o ; para varias · <kbd>&gt;</kbd> comandos · / buscar · Esc para cerrar
               </p>
             </div>
           )}

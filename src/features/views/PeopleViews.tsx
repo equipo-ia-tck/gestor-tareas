@@ -1,5 +1,8 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { CheckSquare, FileText, MessageCircle, MessageSquare, Plus, Quote, Users } from 'lucide-react';
+import { CheckSquare, FileText, MessageCircle, MessageSquare, Plus, Quote, UserCog, Users } from 'lucide-react';
+import { MenuItem, Popover } from '../../components/ui/Popover';
+import { fuzzyScore } from '../../domain/text';
+import { navigate } from '../../app/router';
 import { teamsChatUrl } from '../../domain/teams';
 import { useApp } from '../../app/AppContext';
 import { routeHref } from '../../app/router';
@@ -36,7 +39,7 @@ export function PeopleView() {
               </div>
               <div className="text-right text-xs text-zinc-500">
                 <p>{p.tasks} tarea{p.tasks === 1 ? '' : 's'}{p.notes ? ` · ${p.notes} nota${p.notes === 1 ? '' : 's'}` : ''}</p>
-                {topics(p.name) > 0 && <p className="text-amber-600">{topics(p.name)} tema{topics(p.name) === 1 ? '' : 's'}</p>}
+                {topics(p.name) > 0 && <p className="text-amber-600">{topics(p.name)} para hablar</p>}
               </div>
             </a>
           </li>
@@ -73,6 +76,7 @@ export function PersonView({ name }: { name: string }) {
             <MessageCircle className="size-4" />Chat en Teams
           </a>
         )}
+        <RenamePerson name={name} />
         <button type="button" onClick={() => void newNote('meeting', today, { people: [name], title: `Reunión con ${name}` })}
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <Users className="size-4" />Nueva reunión
@@ -81,7 +85,7 @@ export function PersonView({ name }: { name: string }) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0">
-          <Section title={<span className="inline-flex items-center gap-1.5"><MessageSquare className="size-3.5 text-amber-500" />Temas pendientes · {topics.length}</span>}>
+          <Section title={<span className="inline-flex items-center gap-1.5"><MessageSquare className="size-3.5 text-amber-500" />Para hablar · {topics.length}</span>}>
             <TopicAdd name={name} />
             <TaskList {...list} tasks={topics} empty="Nada pendiente de hablar." />
             {talked.length > 0 && <p className="px-2 pt-1 text-xs text-zinc-400">Hablados: {talked.slice(0, 5).map((t) => t.title).join(' · ')}{talked.length > 5 ? '…' : ''}</p>}
@@ -134,15 +138,57 @@ function MentionActions({ name, text, noteTitle, projectId }: { name: string; te
   const title = text.replace(/^@[\p{L}\p{N}_\-.]+[:,]?\s*/u, '').replace(/(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu, (_, n: string) => n.replace(/-/g, ' ')).trim();
   const exists = tasks.find((t) => nameKey(t.title) === nameKey(title) && t.people.some((p) => samePerson(p, name)));
   if (!title) return null;
-  if (exists) return <span className="mr-2 text-[11px] text-emerald-600">✓ {exists.type_id === TOPIC_TYPE_ID ? 'Es un tema' : 'Ya es una tarea'}</span>;
-  const create = (topic: boolean) => repo.batch(topic ? 'Tema añadido' : 'Tarea creada', () => repo.createTask({
+  if (exists) return <span className="mr-2 text-[11px] text-emerald-600">✓ {exists.type_id === TOPIC_TYPE_ID ? 'Está en Para hablar' : 'Ya es una tarea'}</span>;
+  const create = (topic: boolean) => repo.batch(topic ? 'Añadido a Para hablar' : 'Tarea creada', () => repo.createTask({
     title, people: [name], type_id: topic ? TOPIC_TYPE_ID : undefined, project_id: topic ? null : projectId, notes: `De: ${noteTitle || 'nota'}`,
   }));
   return (
     <span className="mr-2 inline-flex gap-1 opacity-60 group-hover:opacity-100">
       <button type="button" onClick={() => void create(false)} className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300">→ Tarea</button>
-      <button type="button" onClick={() => void create(true)} className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300">→ Tema</button>
+      <button type="button" onClick={() => void create(true)} className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300">→ Para hablar</button>
     </span>
+  );
+}
+
+/** Renombrar a la persona o unirla con otra (p. ej. "Diana Pérez" del calendario con "Diana"). */
+function RenamePerson({ name }: { name: string }) {
+  const { tasks, notes, peopleCards } = useApp();
+  const [value, setValue] = useState('');
+  const others = peopleDirectory(tasks, notes, peopleCards).filter((p) => nameKey(p.name) !== nameKey(name));
+  const matches = value.trim() ? others.filter((p) => fuzzyScore(value, p.name) !== null).slice(0, 6) : others.slice(0, 6);
+  const exact = others.find((p) => nameKey(p.name) === nameKey(value));
+  async function apply(to: string, close: () => void) {
+    if (!to.trim()) return;
+    await repo.renamePerson(name, to.trim());
+    close();
+    setValue('');
+    navigate({ view: 'person', name: to.trim() });
+  }
+  return (
+    <Popover align="right" width="w-72" trigger={(toggle) => (
+      <button type="button" onClick={toggle} className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
+        <UserCog className="size-4" />Renombrar o unir…
+      </button>
+    )}>
+      {(close) => (
+        <div className="p-1">
+          <input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="Nuevo nombre o persona con la que unir"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void apply(exact?.name ?? value, close); } }}
+            className="mb-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+          <p className="px-1 pb-1 text-[11px] text-zinc-400">Unir con:</p>
+          {matches.map((p) => (
+            <MenuItem key={p.name} onClick={() => void apply(p.name, close)}>
+              <Avatar name={p.name} size={18} /><span className="flex-1 truncate">{p.name}</span>
+              <span className="text-[11px] text-zinc-400">{p.tasks} tareas</span>
+            </MenuItem>
+          ))}
+          {value.trim() && !exact && (
+            <MenuItem onClick={() => void apply(value, close)}>Renombrar a <strong>{value.trim()}</strong></MenuItem>
+          )}
+          <p className="px-1 pt-1 text-[11px] text-zinc-400">Cambia el nombre en sus tareas, menciones de notas y ficha. Se puede deshacer.</p>
+        </div>
+      )}
+    </Popover>
   );
 }
 
@@ -184,13 +230,13 @@ function TopicAdd({ name }: { name: string }) {
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!text.trim()) return;
-    await repo.batch('Tema añadido', () => repo.createTask({ title: text.trim(), type_id: TOPIC_TYPE_ID, people: [name] }));
+    await repo.batch('Añadido a Para hablar', () => repo.createTask({ title: text.trim(), type_id: TOPIC_TYPE_ID, people: [name] }));
     setText('');
   }
   return (
     <form onSubmit={add} className="mb-1 flex items-center gap-2 px-2">
       <Plus className="size-4 text-zinc-400" />
-      <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Tema para hablar con ${name}…`}
+      <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Algo que hablar con ${name}…`}
         className="w-full bg-transparent py-1.5 text-sm outline-none placeholder:text-zinc-400" />
     </form>
   );

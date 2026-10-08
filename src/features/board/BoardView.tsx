@@ -113,7 +113,7 @@ export function BoardView() {
       <div className="mb-5 flex flex-wrap items-center gap-1.5 text-sm">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
-          <input value={filter.text} onChange={(e) => set({ text: e.target.value })} placeholder="Buscar…"
+          <input value={filter.text} onChange={(e) => set({ text: e.target.value })} placeholder="Filtrar…"
             className="w-44 rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
         </div>
         <Multi label="Estado" selected={filter.categories} onChange={(v) => set({ categories: v as StateCategory[] })}

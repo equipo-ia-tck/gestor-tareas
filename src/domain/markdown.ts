@@ -27,7 +27,18 @@ export type Block =
   | (Base & { type: 'hr' })
   | (Base & { type: 'blank' });
 
-const TASK_MARKER = /\s*\[\[t:([\w-]+)\]\]\s*$/;
+/**
+ * Enlace de una acción con su tarea. Puede estar en cualquier punto de la línea (si se escribe
+ * detrás de él, el enlace no se pierde); en el editor se dibuja invisible.
+ */
+const TASK_MARKER = /\s*\[\[t:([\w-]+)\]\]/;
+const TASK_MARKERS = /\s*\[\[t:[\w-]+\]\]/g;
+
+/** Separa el texto de una acción de su enlace a tarea (esté donde esté). */
+function splitMarker(text: string): { body: string; taskId: string | null } {
+  const m = TASK_MARKER.exec(text);
+  return { body: text.replace(TASK_MARKERS, '').replace(/\s+$/, ''), taskId: m?.[1] ?? null };
+}
 export const MENTION_RE = /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu;
 
 const INLINE_RE = new RegExp(
@@ -78,9 +89,8 @@ export function parseMarkdown(text: string): Block[] {
     if (h) return { type: 'heading', level: h[1].length as 1 | 2 | 3, inline: parseInline(h[2]), text: h[2], line, indent };
     const task = /^[-*+]\s+\[([ xX])\]\s?(.*)$/.exec(s);
     if (task) {
-      const marker = TASK_MARKER.exec(task[2]);
-      const body = marker ? task[2].slice(0, marker.index) : task[2];
-      return { type: 'task', checked: task[1] !== ' ', inline: parseInline(body), taskId: marker?.[1] ?? null, line, indent };
+      const { body, taskId } = splitMarker(task[2]);
+      return { type: 'task', checked: task[1] !== ' ', inline: parseInline(body), taskId, line, indent };
     }
     const bullet = /^[-*+]\s+(.*)$/.exec(s);
     if (bullet) return { type: 'bullet', inline: parseInline(bullet[1]), line, indent };
@@ -116,9 +126,8 @@ export function actionItems(text: string): ActionItem[] {
   return text.split('\n').flatMap((raw, line) => {
     const m = /^\s*[-*+]\s+\[([ xX])\]\s?(.*)$/.exec(raw);
     if (!m) return [];
-    const marker = TASK_MARKER.exec(m[2]);
-    const body = (marker ? m[2].slice(0, marker.index) : m[2]).trim();
-    return body ? [{ line, text: body, checked: m[1] !== ' ', taskId: marker?.[1] ?? null }] : [];
+    const { body, taskId } = splitMarker(m[2]);
+    return body.trim() ? [{ line, text: body.trim(), checked: m[1] !== ' ', taskId }] : [];
   });
 }
 
@@ -126,7 +135,7 @@ export function actionItems(text: string): ActionItem[] {
 export function setTaskMarker(text: string, line: number, taskId: string): string {
   const lines = text.split('\n');
   if (lines[line] === undefined) return text;
-  lines[line] = `${lines[line].replace(TASK_MARKER, '').trimEnd()} [[t:${taskId}]]`;
+  lines[line] = `${lines[line].replace(TASK_MARKERS, '').trimEnd()} [[t:${taskId}]]`;
   return lines.join('\n');
 }
 
@@ -151,7 +160,7 @@ export function sectionOf(text: string, line: number): string | null {
 /** Texto plano de una línea (para resúmenes y búsqueda): sin marcas ni marcadores de tarea. */
 export function plainLine(raw: string): string {
   return raw
-    .replace(TASK_MARKER, '')
+    .replace(TASK_MARKERS, '')
     .replace(/^\s*(#{1,3}|[-*+](\s+\[[ xX]\])?|\d+[.)]|>)\s*/, '')
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/`([^`]+)`/g, '$1')

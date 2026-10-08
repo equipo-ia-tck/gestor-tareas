@@ -111,3 +111,15 @@ export function dailySummary(tasks: Task[], today: ISODate, settings: Settings):
     overloaded: load > capacity,
   };
 }
+
+/**
+ * ¿Toca la revisión semanal? De viernes a lunes, si no se ha hecho desde el viernes anterior
+ * (así la del viernes cuenta para el fin de semana y el lunes siguiente).
+ */
+export function reviewDue(lastReview: ISODate | null, today: ISODate): boolean {
+  const wd = weekdayOf(today);
+  if (![5, 6, 0, 1].includes(wd)) return false;
+  // Viernes de referencia: el más reciente (hoy si es viernes).
+  const friday = addDays(today, -((wd + 2) % 7));
+  return !lastReview || lastReview < friday;
+}

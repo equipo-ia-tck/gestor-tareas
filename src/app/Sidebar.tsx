@@ -1,14 +1,15 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, CalendarDays, ChevronDown, ChevronRight, FolderOpen, History, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
+import { repo } from '../data/services';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
 import { peopleDirectory } from '../domain/people';
 import { dropHighlight, useTaskDrop } from '../hooks/useTaskDrop';
 import { routeHref, type Route } from './router';
-import { inboxTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
+import { inboxTasks, myDayTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
 import { isActive } from '../domain/selectors';
 
 function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropTasks, indent = 0 }: {
@@ -34,11 +35,40 @@ function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropT
   );
 }
 
-const Heading = ({ href, children }: { href: string; children: ReactNode }) => (
-  <a href={href} className="mt-5 mb-1 block px-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-600 dark:hover:text-zinc-200">
-    {children}
-  </a>
+const Heading = ({ href, children, action }: { href?: string; children: ReactNode; action?: ReactNode }) => (
+  <div className="mt-5 mb-1 flex items-center px-2">
+    {href
+      ? <a href={href} className="flex-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-600 dark:hover:text-zinc-200">{children}</a>
+      : <span className="flex-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase">{children}</span>}
+    {action}
+  </div>
 );
+
+/** "+" junto a Proyectos: crea un proyecto y lo abre. */
+function NewProjectButton() {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    if (name.trim()) {
+      const p = await repo.createProject(name.trim());
+      window.location.hash = routeHref({ view: 'project', id: p.id });
+    }
+    setName('');
+    setOpen(false);
+  }
+  return open ? (
+    <form onSubmit={create} className="absolute inset-x-2 z-10 mt-6">
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nuevo proyecto"
+        onBlur={() => { if (!name.trim()) setOpen(false); }} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+        className="w-full rounded-md border border-indigo-400 bg-white px-2 py-1 text-sm outline-none dark:bg-zinc-900" />
+    </form>
+  ) : (
+    <button type="button" onClick={() => setOpen(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
+      <Plus className="size-3.5" />
+    </button>
+  );
+}
 
 /** Proyecto en la barra lateral, con sus subproyectos plegables. */
 function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
@@ -70,6 +100,46 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
         </NavItem>
       </div>
       {!collapsed && node.children.map((c) => <ProjectNav key={c.project.id} node={c} route={route} />)}
+    </>
+  );
+}
+
+/** Proyectos archivados (plegados): para consultarlos o desarchivarlos. */
+function ArchivedProjects() {
+  const { allProjects } = useApp();
+  const [open, setOpen] = usePersistentState('sidebar-archived', false);
+  const archived = allProjects.filter((p) => p.archived).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (!archived.length) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(!open)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+        {open ? '▾' : '▸'} Archivados ({archived.length})
+      </button>
+      {open && archived.map((p) => (
+        <a key={p.id} href={routeHref({ view: 'project', id: p.id })} className="block truncate py-0.5 pr-2 pl-6 text-xs text-zinc-400 hover:underline">{p.name}</a>
+      ))}
+    </>
+  );
+}
+
+/** Vistas de uso ocasional, plegadas para no ocupar sitio. */
+function MoreSection({ route, releases }: { route: Route; releases: number }) {
+  const [open, setOpen] = usePersistentState('sidebar-more', false);
+  const active = ['log', 'releases', 'review'].includes(route.view);
+  const show = open || active;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="mt-5 mb-1 flex items-center gap-1 px-2 text-left text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-600 dark:hover:text-zinc-200">
+        {show ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}Más
+      </button>
+      {show && (
+        <>
+          <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>
+          <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={route.view === 'releases'} count={releases}>Releases</NavItem>
+          <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>
+        </>
+      )}
     </>
   );
 }
@@ -109,25 +179,25 @@ export function Sidebar({ route }: { route: Route }) {
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { onQuery(''); e.currentTarget.blur(); } }}
-          placeholder="Buscar  /"
+          placeholder="Buscar todo  /"
           aria-label="Buscar tareas"
           className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
         />
       </form>
-      <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={tasksDueOn(tasks, today).length + overdueTasks(tasks, today).length}
+      <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
-      <NavItem icon={CalendarDays} href={routeHref({ view: 'week' })} active={is('week')}>Semana</NavItem>
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
         onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>
       <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>
+      <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
-      <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar')}>Calendario</NavItem>
-      <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={is('releases')}
-        count={releases.filter((r) => r.status === 'planned').length}>Releases</NavItem>
-      <NavItem icon={History} href={routeHref({ view: 'log' })} active={is('log')}>Registro</NavItem>
 
-      <Heading href={routeHref({ view: 'projects' })}><FolderOpen className="mr-1.5 inline size-3.5" />Proyectos</Heading>
+      <div className="relative">
+        <Heading action={<NewProjectButton />}><FolderOpen className="mr-1.5 inline size-3.5" />Proyectos</Heading>
+      </div>
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
+      {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
+      <ArchivedProjects />
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
 
       <Heading href={routeHref({ view: 'people' })}><Users className="mr-1.5 inline size-3.5" />Personas</Heading>
@@ -142,6 +212,8 @@ export function Sidebar({ route }: { route: Route }) {
           {showAllPeople ? 'Ver menos' : `Ver las ${allPeople.length}`}
         </button>
       )}
+
+      <MoreSection route={route} releases={releases.filter((r) => r.status === 'planned').length} />
 
       <div className="mt-auto pt-4">
         <NavItem icon={Settings} href={routeHref({ view: 'settings' })} active={is('settings')}>Copias y ajustes</NavItem>

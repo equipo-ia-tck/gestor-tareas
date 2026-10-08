@@ -7,6 +7,7 @@ import { CalendarView } from '../features/calendar/CalendarView';
 import { ReleasesView } from '../features/releases/ReleasesView';
 import { NotesView } from '../features/notes/NotesView';
 import { LogView } from '../features/log/LogView';
+import { ReviewView } from '../features/review/ReviewView';
 import { ReminderCenter } from '../features/reminders/ReminderCenter';
 import { routeHref, useRoute, type Route } from './router';
 import { Sidebar } from './Sidebar';
@@ -16,28 +17,26 @@ import { HistoryBridge } from '../features/history/HistoryBridge';
 import { BulkBar } from '../features/selection/BulkBar';
 import { SelectionProvider, useSelection } from '../features/selection/SelectionContext';
 import { SearchView } from '../features/views/SearchView';
-import { DailySummary } from '../features/summary/DailySummary';
 import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
 import { PeopleView, PersonView } from '../features/views/PeopleViews';
-import { ProjectsView } from '../features/views/ProjectViews';
 import { ProjectView } from '../features/project/ProjectPage';
 import { TodayView } from '../features/views/TodayView';
-import { WeekView } from '../features/views/WeekView';
 
 function View({ route }: { route: Route }) {
   switch (route.view) {
     case 'today': return <TodayView />;
-    case 'week': return <WeekView />;
+    case 'week': return <CalendarView initial="week" />;
     case 'board': return <BoardView />;
     case 'all': return <BoardView />; // la antigua vista "Todo" ahora es el Tablero
     case 'releases': return <ReleasesView />;
     case 'notes': return <NotesView id={route.id} />;
     case 'log': return <LogView />;
+    case 'review': return <ReviewView />;
     case 'calendar': return <CalendarView />;
+    case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
     case 'inbox': return <InboxView />;
-    case 'projects': return <ProjectsView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
     case 'people': return <PeopleView />;
     case 'person': return <PersonView key={route.name} name={route.name} />;
@@ -58,7 +57,6 @@ function Main({ route }: { route: Route }) {
       <div className={`mx-auto px-6 py-6 pb-28 max-sm:px-4 ${wide ? 'max-w-none' : 'max-w-4xl'}`}>
         <BackupReminder />
         <ReminderCenter />
-        <DailySummary />
         <WideContext.Provider value={setWide}>
           <View route={route} />
         </WideContext.Provider>

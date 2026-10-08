@@ -34,7 +34,7 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
     ],
   },
   {
-    id: TOPIC_TYPE_ID, name: 'Tema', short: 'TEMA', color: '#f59e0b', order: 3,
+    id: TOPIC_TYPE_ID, name: 'Para hablar', short: 'HABLAR', color: '#f59e0b', order: 3,
     states: [
       { id: 'topic-pending', name: 'Pendiente', color: '#f59e0b', category: 'todo' },
       { id: 'topic-done', name: 'Hablado', color: '#22c55e', category: 'done' },

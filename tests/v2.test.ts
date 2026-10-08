@@ -29,7 +29,7 @@ describe('migración v1 → v2', () => {
   });
 
   it('una base de datos nueva trae los tipos por defecto', async () => {
-    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'TEMA']);
+    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'HABLAR']);
   });
 });
 
@@ -131,7 +131,7 @@ describe('copias', () => {
   it('exporta e importa tipos y etiquetas', async () => {
     await repo.setLabelColor('casa', '#111111');
     const snap = await repo.exportSnapshot();
-    expect(snap.schema_version).toBe(6);
+    expect(snap.schema_version).toBe(7);
     const other = new DexieRepository(new TasksDB(`v2-${crypto.randomUUID()}`));
     const r = parseBackup(JSON.stringify(snap));
     if (r.ok) await other.replaceAll(r.backup);

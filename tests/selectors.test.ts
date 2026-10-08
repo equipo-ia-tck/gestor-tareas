@@ -69,3 +69,12 @@ describe('selectors', () => {
     expect(inboxTasks([t, makeTask({ project_id: 'x' })])).toEqual([t]);
   });
 });
+
+describe('Mi día', () => {
+  it('solo cuenta lo añadido hoy y pendiente', async () => {
+    const { inMyDay } = await import('../src/domain/selectors');
+    expect(inMyDay(makeTask({ my_day: today }), today)).toBe(true);
+    expect(inMyDay(makeTask({ my_day: '2026-10-04' }), today)).toBe(false); // de ayer: el día empieza vacío
+    expect(inMyDay(makeTask({ my_day: today, status: 'done' }), today)).toBe(false);
+  });
+});

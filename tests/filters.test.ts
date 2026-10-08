@@ -67,7 +67,7 @@ describe('agrupar', () => {
   const labels = (by: TaskFilter['groupBy']) => groupTasks(pending, by, ctx).map((g) => `${g.label}:${g.tasks.length}`);
 
   it('por tipo, en el orden de los tipos', () => {
-    expect(labels('type')).toEqual(['Tarea:1', 'User Story:1', 'Test Scenario:1', 'Tema:1']);
+    expect(labels('type')).toEqual(['Tarea:1', 'User Story:1', 'Test Scenario:1', 'Para hablar:1']);
   });
 
   it('por proyecto con ruta y "Sin proyecto" al final', () => {
@@ -80,6 +80,6 @@ describe('agrupar', () => {
 
   it('por fecha y por estado', () => {
     expect(labels('due')).toEqual(['Atrasadas:1', 'Hoy:1', 'Sin fecha:2']);
-    expect(labels('state')).toEqual(['Por hacer:1', 'US · En QA:1', 'TS · Fallido:1', 'TEMA · Pendiente:1']);
+    expect(labels('state')).toEqual(['Por hacer:1', 'US · En QA:1', 'TS · Fallido:1', 'HABLAR · Pendiente:1']);
   });
 });

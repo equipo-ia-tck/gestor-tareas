@@ -11,7 +11,8 @@ export function OverdueBlock() {
   const { tasks, today, projectMap, editTask } = useApp();
   const { reschedule, remove } = useTaskActions();
   const { open } = useCommandCenter();
-  const overdue = overdueTasks(tasks, today);
+  // Las atrasadas que ya elegiste para Mi día no se repiten aquí.
+  const overdue = overdueTasks(tasks, today).filter((t) => t.my_day !== today);
   if (!overdue.length) return null;
 
   return (

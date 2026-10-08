@@ -92,7 +92,7 @@ export function NotesView({ id }: { id?: string }) {
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar…"
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar páginas…"
               className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
           </div>
         </div>
@@ -341,7 +341,7 @@ function AttendeeTopics({ people }: { people: string[] }) {
   const topics = tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'todo' && t.people.some((p) => people.some((a) => nameKey(a) === nameKey(p))));
   if (!people.length) return null;
   return (
-    <SidePanel icon={<MessageSquare className="size-4" />} title="Temas pendientes con los asistentes">
+    <SidePanel icon={<MessageSquare className="size-4" />} title="Para hablar con los asistentes">
       {!topics.length && <p className="text-xs text-zinc-400">Ninguno. Añádelos desde la ficha de cada persona.</p>}
       <ul className="space-y-1">
         {topics.map((t) => (

@@ -18,7 +18,7 @@ src/
               maintenance.ts (repartir, obsoletas, resumen del día, siguiente ocurrencia), search.ts.
               Funciones puras y testeadas, sin React ni Dexie.
   parser/     parseCapture(texto, ctx) => ParsedTask[]: patterns.ts (expresiones regulares en español + respaldo chrono),
-              fields.ts (campos editables), spoken.ts (dictado → sintaxis)
+              fields.ts (campos editables)
   data/       db.ts (Dexie y migraciones), repository.ts (interfaz Repository + DexieRepository),
               backup.ts (validar, exportar, recordatorio), fsAutosave.ts (File System Access), services.ts (instancias únicas)
   hooks/      useData (useLiveQuery sobre el repositorio), useTaskActions (acciones con aviso "Deshacer")
@@ -115,17 +115,9 @@ Todo en `domain/maintenance.ts`, con funciones puras y tests (`tests/maintenance
   carga frente a capacidad y aviso de sobrecarga. Al cerrarlo se guarda `settings.ui.summary_dismissed_on`, así que no
   vuelve ese día. El comando "Ver resumen del día" lo reabre.
 
-## Dictado y PWA (fase 5)
+## PWA (fase 5)
 
-- **Dictado** (`features/dictation/`): Web Speech API en `es-ES`, sin escucha continua (se para tras una pausa) y con
-  resultados provisionales visibles. Desactivado por defecto (`settings.ui.dictation_enabled`); para activarlo hay que
-  confirmar un aviso de privacidad. Si el navegador no lo soporta, ni el botón ni Alt+M aparecen.
-- El texto dictado se **añade** a la barra de captura (no crea la tarea directamente): pasa por el mismo `parseCapture`
-  y se revisa con los chips. Antes, `parser/spoken.ts` traduce lo hablado a la sintaxis de captura ("prioridad uno" → !1,
-  "proyecto X" → #X, "media hora" → ~30m; "dentro de dos horas" se deja como plazo).
-- **Alt+M** (`e.code === 'KeyM'`, para que funcione aunque Option+M escriba "µ" en Mac): desde fuera abre la captura y
-  empieza a dictar; dentro de la barra, activa o para el dictado. Se descartaron Cmd/Ctrl+Shift+D/M/J porque son atajos
-  del navegador.
+- **Dictado**: se quitó en la fase 14 (enviaba el audio fuera y no se usaba).
 - **PWA** con `vite-plugin-pwa` (`generateSW`, `registerType: 'autoUpdate'`): precachea todo el bundle e iconos, con
   `navigateFallback: index.html` (las rutas van por hash). Los iconos PNG (192, 512 y maskable) salen de `public/icon.svg`.
   En desarrollo no se registra el service worker: para probar sin conexión, `npm run build && npm run preview`.
@@ -310,6 +302,30 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   En la ficha, cada línea de "Lo que dijo o se habló" tiene "→ Tarea" y "→ Tema" (con la persona y el proyecto de la nota;
   se quita el "@Persona:" inicial). No se crean tareas automáticamente a partir de las menciones, para no generar ruido.
 
+## Fase 14: auditoría (menos pantallas, más hábitos)
+
+- **Barra lateral**: Hoy · Bandeja · Tablero · Calendario · Notas; proyectos (con "+" para crear y archivados plegados),
+  personas y "Más" plegado (Revisión semanal, Releases, Registro). Se eliminó la pantalla Proyectos (`#/projects` → Hoy).
+- **Calendario** con modo Semana/Mes (`calendar-mode` en localStorage); `#/week` abre el calendario en modo semana.
+- **Resumen del día** dentro de Hoy, no encima de todas las vistas.
+- **Mi día** (`Task.my_day: ISODate | null`, sin índice ni migración: zod pone `null`): lista elegida a mano para hoy, que
+  no cambia la fecha. Caduca sola porque solo cuenta si `my_day === today`. Tecla A, sol en la fila y en el panel, y destino
+  de arrastre. "Para hoy" y Atrasadas no repiten lo que ya está en Mi día.
+- **Para hablar**: el tipo Tema se renombra (migración v7, solo si conserva el nombre original). `SCHEMA_VERSION = 7`.
+- **Marcadores `[[t:id]]`**: se reconocen en cualquier punto de la línea y en el editor se pintan transparentes, así
+  escribir detrás no rompe el enlace.
+- **Renombrar o unir personas** (`repo.renamePerson`): un lote que cambia tareas, menciones en notas (`renameMentions`) y
+  fichas (gana la de destino; las notas se concatenan).
+- **Búsqueda única** (`SearchView`): tareas, notas, personas y proyectos. Los cuadros de Tablero y Notas son "Filtrar…".
+  "/" al principio de la captura va a la búsqueda.
+- **Outlook** (`domain/icsExport.ts`): "Añadir a Outlook" descarga un `.ics` con alarma (a la hora del recordatorio, o a las
+  9:00 del día). Es el modo de tener avisos con la app cerrada sin servidor.
+- **Pistas de sintaxis**: con la captura vacía y enfocada salen chips que insertan cada token.
+- **Revisión semanal** (`features/review/ReviewView.tsx`, `#/review`, `G V`): pasos Bandeja → Atrasadas → Cómo fue la semana
+  → Para hablar por persona → La semana que viene → Sin tocar. "Revisión hecha" guarda `settings.ui.last_review_on`;
+  `reviewDue` muestra un aviso en Hoy de viernes a lunes si no se ha hecho desde el viernes.
+- **Pendiente (a propósito)**: copia automática en OneDrive; la usuaria la configurará cuando tenga la herramienta definitiva.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -326,6 +342,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 11: notas fechadas por elemento (en panel, proyecto y Notas) y Teams (enlace, compartir, chat e importar .ics)
 - [x] Fase 12: clic abre el panel, semana de lunes a domingo, todo en el Tablero, notas con diseño OneNote
 - [x] Fase 13: pantalla de proyecto con resumen por subproyecto, personas de las notas en la barra lateral, desplegables sin recortes
+- [x] Fase 14: auditoría: barra lateral simplificada, Mi día, revisión semanal, búsqueda única, Outlook, unir personas, sin dictado
 
 ## Fases
 
@@ -333,7 +350,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 2: captura con sintaxis rápida, paleta de comandos y atajos
 - [x] Fase 3: edición en línea, arrastrar y soltar, selección múltiple y deshacer global
 - [x] Fase 4: recurrentes, mantenimiento automático y resumen del día
-- [x] Fase 5: dictado y PWA offline
+- [x] Fase 5: dictado (retirado en la fase 14) y PWA offline
 
 ## Comprobaciones antes de cada commit
 

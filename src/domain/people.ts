@@ -31,3 +31,19 @@ export function peopleDirectory(tasks: Task[], notes: Note[], cards: Person[]): 
     .map(({ name, tasks: t, notes: n }) => ({ name, tasks: t, notes: n }))
     .sort((a, b) => b.tasks - a.tasks || b.notes - a.notes || a.name.localeCompare(b.name, 'es'));
 }
+
+/** Cambia las menciones @de por @a en un texto (sin importar mayúsculas, tildes ni guiones). */
+export function renameMentions(body: string, from: string, to: string): string {
+  const target = `@${to.trim().replace(/\s+/g, '-')}`;
+  return body.replace(/(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu, (m, token: string) =>
+    (nameKey(token) === nameKey(from) ? target : m));
+}
+
+/** Lista de personas de una tarea con `de` sustituida por `a` (sin duplicados). */
+export function renameInList(people: string[], from: string, to: string): string[] {
+  const out: string[] = [];
+  for (const p of people.map((x) => (nameKey(x) === nameKey(from) ? to : x))) {
+    if (!out.some((o) => nameKey(o) === nameKey(p))) out.push(p);
+  }
+  return out;
+}

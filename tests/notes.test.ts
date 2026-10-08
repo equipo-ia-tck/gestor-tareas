@@ -119,3 +119,12 @@ describe('páginas (orden manual)', () => {
     expect(sortPages([a, c]).map((n) => n.id)).toEqual(['a', 'c']);
   });
 });
+
+describe('enlace de acción en cualquier posición', () => {
+  it('se reconoce aunque se escriba detrás', () => {
+    const text = '- [ ] enviar acta [[t:t1]] a Diana';
+    expect(actionItems(text)[0]).toMatchObject({ text: 'enviar acta a Diana', taskId: 't1' });
+    expect(setTaskMarker(text, 0, 't2')).toBe('- [ ] enviar acta a Diana [[t:t2]]');
+    expect(plainLine(text)).toBe('enviar acta a Diana');
+  });
+});

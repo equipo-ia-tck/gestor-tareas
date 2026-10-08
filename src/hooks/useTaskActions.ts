@@ -36,6 +36,14 @@ export function useTaskActions() {
         for (const id of ids) await repo.updateTask(id, patch);
       });
     },
+    /** Añade o quita de "Mi día" (si alguna no está, las añade todas). */
+    async toggleMyDay(tasks: Task[], today: ISODate) {
+      if (!tasks.length) return;
+      const add = tasks.some((t) => t.my_day !== today);
+      await repo.batch(add ? n(tasks.length, 'Añadida a Mi día', 'añadidas a Mi día') : n(tasks.length, 'Quitada de Mi día', 'quitadas de Mi día'), async () => {
+        for (const t of tasks) await repo.updateTask(t.id, { my_day: add ? today : null });
+      });
+    },
     async update(tasks: Task[], patch: TaskPatch, label = 'Tarea actualizada') {
       if (!tasks.length) return;
       await repo.batch(tasks.length === 1 ? label : `${tasks.length} tareas actualizadas`, async () => {

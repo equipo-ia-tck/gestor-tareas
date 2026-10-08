@@ -41,6 +41,7 @@ export const taskSchema = z.object({
   url: z.string().nullable().default(null),
   release_id: z.string().nullable().default(null),
   remind_at: isoDateTime.nullable().default(null),
+  my_day: isoDate.nullable().default(null),
   recurrence_rule: recurrenceSchema.nullable().default(null),
   series_id: z.string().nullable().default(null),
   sort_order: z.number().default(0),
@@ -76,7 +77,7 @@ export const settingsSchema = z.object({
   ui: z
     .object({
       summary_dismissed_on: isoDate.nullable().default(null),
-      dictation_enabled: z.boolean().default(false),
+      last_review_on: isoDate.nullable().default(null),
     })
     .default(DEFAULT_SETTINGS.ui),
   saved_views: z.array(z.object({ id: z.string(), name: z.string(), filter: taskFilterSchema })).default([]),

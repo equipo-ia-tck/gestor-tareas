@@ -219,7 +219,8 @@ function inline(text: string): ReactNode[] {
   for (const m of text.matchAll(re)) {
     out.push(text.slice(pos, m.index));
     const t = m[0];
-    const cls = t.startsWith('[[') ? 'text-zinc-300 dark:text-zinc-600'
+    // El enlace con la tarea ([[t:…]]) no se ve: ocupa su sitio pero es transparente.
+    const cls = t.startsWith('[[') ? 'text-transparent'
       : t.startsWith('**') ? 'text-zinc-900 dark:text-white bg-yellow-100/60 dark:bg-yellow-900/30'
       : t.startsWith('`') ? 'text-rose-600'
       : t.startsWith('@') ? 'text-sky-600 dark:text-sky-400'

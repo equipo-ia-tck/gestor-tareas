@@ -110,3 +110,14 @@ describe('fechas', () => {
     expect(nextMonday('2026-10-09')).toBe('2026-10-12');
   });
 });
+
+describe('revisión semanal', () => {
+  it('toca de viernes a lunes si no se ha hecho desde el viernes', async () => {
+    const { reviewDue } = await import('../src/domain/maintenance');
+    expect(reviewDue(null, '2026-10-07')).toBe(false); // miércoles
+    expect(reviewDue(null, '2026-10-09')).toBe(true); // viernes
+    expect(reviewDue('2026-10-09', '2026-10-12')).toBe(false); // hecha el viernes, lunes siguiente
+    expect(reviewDue('2026-10-08', '2026-10-12')).toBe(true); // hecha el jueves: no cuenta
+    expect(reviewDue('2026-10-02', '2026-10-10')).toBe(true); // de la semana anterior
+  });
+});

@@ -165,6 +165,7 @@ export function SelectionProvider({ resetKey, children }: { resetKey: string; ch
         case 'd': return handled(() => setEditing({ id: f, field: 'date' }));
         case 'm': return handled(() => setEditing({ id: f, field: 'project' }));
         case 't': return handled(() => void actions.reschedule(ts, today));
+        case 'a': return handled(() => void actions.toggleMyDay(ts, today));
         case 'T': return handled(() => void actions.reschedule(ts, addDays(today, 1)));
         case '1': case '2': case '3': case '4':
           return handled(() => void actions.update(ts, { priority: Number(key) as Priority }, `Prioridad ${key}`));

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { WeekView } from '../views/WeekView';
 import { ChevronLeft, ChevronRight, Rocket } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -16,7 +17,27 @@ const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const MAX_VISIBLE = 4;
 
 /** Calendario mensual con vencimientos y releases. Arrastrar una tarea a otro día cambia su fecha. */
-export function CalendarView() {
+/** Calendario con dos vistas: Semana (lunes a domingo, en lista) y Mes (cuadrícula). */
+export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
+  const [mode, setMode] = usePersistentState<'week' | 'month'>('calendar-mode', initial ?? 'week');
+  // Si se llega desde #/week o G S, se abre la semana.
+  useEffect(() => { if (initial) setMode(initial); }, [initial]); // setMode guarda en localStorage
+  return (
+    <>
+      <div className="mb-3 inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+        {(['week', 'month'] as const).map((m) => (
+          <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
+            className={`rounded-md px-3 py-1 text-sm ${mode === m ? 'bg-white font-medium shadow-sm dark:bg-zinc-900' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
+            {m === 'week' ? 'Semana' : 'Mes'}
+          </button>
+        ))}
+      </div>
+      {mode === 'week' ? <WeekView /> : <MonthView />}
+    </>
+  );
+}
+
+function MonthView() {
   useWideLayout(true);
   const { tasks, releases, today } = useApp();
   const [month, setMonth] = usePersistentState<ISODate>('calendar-month', today);

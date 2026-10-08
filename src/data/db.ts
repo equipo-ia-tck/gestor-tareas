@@ -8,7 +8,7 @@ export interface KeyValue {
 }
 
 /** Versión lógica del esquema; se incluye en las copias de seguridad. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export class TasksDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
@@ -88,6 +88,13 @@ export class TasksDB extends Dexie {
         await tx.table('projects').toCollection().modify((p: Project) => { p.parent_id ??= null; });
         await tx.table('notes').toCollection().modify((n: Note) => { n.task_id ??= null; n.meeting_url ??= null; });
         await tx.table('people').toCollection().modify((p: Person) => { p.email ??= ''; });
+      });
+    // v7: el tipo "Tema" pasa a llamarse "Para hablar" (si no lo había renombrado la usuaria) y "Mi día".
+    this.version(7)
+      .stores({})
+      .upgrade(async (tx) => {
+        const topic = await tx.table('item_types').get(TOPIC_TYPE.id);
+        if (topic && topic.name === 'Tema') await tx.table('item_types').update(TOPIC_TYPE.id, { name: TOPIC_TYPE.name, short: TOPIC_TYPE.short });
       });
     // Base de datos nueva: se crea directamente en la última versión y no pasa por upgrade.
     this.on('populate', (tx) => {
