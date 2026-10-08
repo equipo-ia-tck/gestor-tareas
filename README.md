@@ -28,6 +28,8 @@ Tu app vive siempre en **http://localhost:4173**. Para arrancarla (o actualizarl
 npm start
 ```
 
+Si la app ya estaba en marcha, `npm start` solo compila y te avisa de que recargues la página.
+
 La primera vez, instálala desde **Copias y ajustes → Instalar app**. Después ábrela desde el Dock: funciona aunque la
 terminal esté cerrada. Solo hace falta volver a ejecutar `npm start` cuando haya cambios nuevos en el código.
 
@@ -48,7 +50,7 @@ Abre la dirección que indique la terminal (normalmente http://localhost:5173).
 
 | Comando | Qué hace |
 | --- | --- |
-| `npm start` | **Tu app**: compila y la sirve en http://localhost:4173 |
+| `npm start` | **Tu app**: compila y la sirve en http://localhost:4173 (si ya está en marcha, solo compila) |
 | `npm run dev` | Solo para desarrollar (localhost:5173, datos aparte) |
 | `npm test` | Ejecuta los tests (Vitest) |
 | `npm run typecheck` | Comprueba los tipos de TypeScript |
