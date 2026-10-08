@@ -5,9 +5,10 @@ import { useApp } from './AppContext';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
+import { peopleDirectory } from '../domain/people';
 import { dropHighlight, useTaskDrop } from '../hooks/useTaskDrop';
 import { routeHref, type Route } from './router';
-import { inboxTasks, overdueTasks, peopleIndex, tasksDueOn } from '../domain/selectors';
+import { inboxTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
 import { isActive } from '../domain/selectors';
 
 function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropTasks, indent = 0 }: {
@@ -76,7 +77,11 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
 export function Sidebar({ route }: { route: Route }) {
   const { tasks, projects, today, releases } = useApp();
   const is = (v: Route['view']) => route.view === v;
-  const people = peopleIndex(tasks).slice(0, 8);
+  const { notes, peopleCards } = useApp();
+  // Todas las personas: con tareas, mencionadas en notas o con ficha.
+  const allPeople = peopleDirectory(tasks, notes, peopleCards);
+  const [showAllPeople, setShowAllPeople] = usePersistentState('sidebar-all-people', false);
+  const people = showAllPeople ? allPeople : allPeople.slice(0, 10);
   const { moveIds } = useTaskActions();
   const [query, setQuery] = useState(route.view === 'search' ? route.q : '');
 
@@ -127,11 +132,16 @@ export function Sidebar({ route }: { route: Route }) {
 
       <Heading href={routeHref({ view: 'people' })}><Users className="mr-1.5 inline size-3.5" />Personas</Heading>
       {people.map((p) => (
-        <NavItem key={p.name} href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.count}
+        <NavItem key={p.name} href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.tasks}
           lead={<Avatar name={p.name} size={18} />}>
           {p.name}
         </NavItem>
       ))}
+      {allPeople.length > 10 && (
+        <button type="button" onClick={() => setShowAllPeople(!showAllPeople)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          {showAllPeople ? 'Ver menos' : `Ver las ${allPeople.length}`}
+        </button>
+      )}
 
       <div className="mt-auto pt-4">
         <NavItem icon={Settings} href={routeHref({ view: 'settings' })} active={is('settings')}>Copias y ajustes</NavItem>

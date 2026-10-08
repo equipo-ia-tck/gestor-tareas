@@ -21,7 +21,8 @@ import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
 import { PeopleView, PersonView } from '../features/views/PeopleViews';
-import { ProjectView, ProjectsView } from '../features/views/ProjectViews';
+import { ProjectsView } from '../features/views/ProjectViews';
+import { ProjectView } from '../features/project/ProjectPage';
 import { TodayView } from '../features/views/TodayView';
 import { WeekView } from '../features/views/WeekView';
 
@@ -52,7 +53,7 @@ function Main({ route }: { route: Route }) {
     <main
       className="min-w-0 overflow-y-auto"
       // Clic en una zona vacía: se quita la selección.
-      onClick={(e) => { if (!(e.target as HTMLElement).closest('[data-task-id], button, a, input, textarea, select, [role="toolbar"], aside')) clear(); }}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('[data-task-id], button, a, input, textarea, select, [role="toolbar"], aside, [data-popover]')) clear(); }}
     >
       <div className={`mx-auto px-6 py-6 pb-28 max-sm:px-4 ${wide ? 'max-w-none' : 'max-w-4xl'}`}>
         <BackupReminder />

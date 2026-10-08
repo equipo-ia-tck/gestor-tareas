@@ -211,7 +211,6 @@ function AddCard({ add }: { add: ColumnDef['add'] }) {
   );
 }
 
-/** Pestañas de tipo (Tarea / US / TS) con el número de elementos pendientes de cada uno. */
 export function TypeTabs({ value, onChange, tasks }: { value: string; onChange: (id: string) => void; tasks: Task[] }) {
   const { itemTypes } = useApp();
   return (

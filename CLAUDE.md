@@ -291,6 +291,23 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - **Teams en tiempo real**: no disponible sin un registro de app en el Entra ID de la empresa (Microsoft Graph). Además,
   el enlace ICS publicado de Outlook no se puede leer desde el navegador por CORS sin un servidor intermedio.
 
+## Fase 13: pantalla de proyecto, personas y desplegables
+
+- **Desplegables** (`components/ui/Popover.tsx`): se dibujan en un portal con `position: fixed` por encima de todo, así no
+  los recorta ningún panel con scroll (el calendario del panel lateral salía cortado). Se recolocan para caber en pantalla
+  (desplazamiento horizontal y apertura hacia arriba) al abrir, al hacer scroll o al cambiar de tamaño (ResizeObserver).
+  Llevan `data-popover`, que `Main` excluye al quitar la selección con un clic fuera.
+- **Proyecto** (`features/project/ProjectPage.tsx`): tres modos (`project-view:<id>`). **Resumen** (por defecto): cifras del
+  proyecto entero (pendientes, en curso, bloqueadas, atrasadas, hechas en 7 días, notas) y una tarjeta por subproyecto
+  directo, más "General" con lo que cuelga del propio proyecto. Cada tarjeta suma sus descendientes y muestra avance,
+  estados, sub-subproyectos, tareas abiertas (atrasadas primero, completar, abrir, arrastrar a otra tarjeta), alta rápida
+  con la sintaxis de captura y las últimas notas. **Lista**: agrupada por subproyecto con su ruta. **Tablero**: todos los
+  tipos (`CategoryBoard`) o los estados de un tipo. Debajo, notas por elemento y actas del proyecto (con subproyectos).
+- **Personas** (`domain/people.ts`, `peopleDirectory`): une las personas de las tareas, las mencionadas con @ en notas y las
+  que tienen ficha (por `nameKey`). Se usa en la barra lateral (todas; a partir de 10, "Ver las N") y en la vista Personas.
+  En la ficha, cada línea de "Lo que dijo o se habló" tiene "→ Tarea" y "→ Tema" (con la persona y el proyecto de la nota;
+  se quita el "@Persona:" inicial). No se crean tareas automáticamente a partir de las menciones, para no generar ruido.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -306,6 +323,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 10: subproyectos, vista "Todo" con filtros y vistas guardadas, selector de fecha con calendario
 - [x] Fase 11: notas fechadas por elemento (en panel, proyecto y Notas) y Teams (enlace, compartir, chat e importar .ics)
 - [x] Fase 12: clic abre el panel, semana de lunes a domingo, todo en el Tablero, notas con diseño OneNote
+- [x] Fase 13: pantalla de proyecto con resumen por subproyecto, personas de las notas en la barra lateral, desplegables sin recortes
 
 ## Fases
 
