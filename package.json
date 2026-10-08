@@ -4,6 +4,7 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
+    "start": "npm run build && vite preview --port 4173 --strictPort",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

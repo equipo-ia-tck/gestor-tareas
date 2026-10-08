@@ -131,6 +131,8 @@ Todo en `domain/maintenance.ts`, con funciones puras y tests (`tests/maintenance
   En desarrollo no se registra el service worker: para probar sin conexión, `npm run build && npm run preview`.
 - **Instalación**: `app/install.ts` guarda `beforeinstallprompt` al arrancar y la tarjeta de ajustes ofrece "Instalar app".
 - **Ojo**: IndexedDB va por origen. Desarrollo (5173), preview (4173) y producción tienen datos separados.
+  **La app de la usuaria es la de 4173** (`npm start` = build + preview en el puerto 4173 fijo). El 5173 es solo para
+  desarrollar y probar cambios; no hay que pedirle que lo abra.
 
 ## Atajos (fase 2)
 

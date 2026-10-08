@@ -20,7 +20,20 @@ App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, 
 - **Fechas** con calendario mensual (semanas, carga por día) o escribiendo "vie", "15 oct"…
 - **Tus datos**: todo en el navegador, sin conexión, con copias JSON y copia automática en archivo.
 
-## Arrancar en local
+## Usarla (una sola dirección)
+
+Tu app vive siempre en **http://localhost:4173**. Para arrancarla (o actualizarla tras cambios):
+
+```bash
+npm start
+```
+
+La primera vez, instálala desde **Copias y ajustes → Instalar app**. Después ábrela desde el Dock: funciona aunque la
+terminal esté cerrada. Solo hace falta volver a ejecutar `npm start` cuando haya cambios nuevos en el código.
+
+> `localhost:5173` (`npm run dev`) es solo para desarrollar: tiene sus propios datos de prueba y no hace falta abrirlo.
+
+## Arrancar en local (desarrollo)
 
 Requisitos: Node 20 o superior.
 
@@ -35,7 +48,8 @@ Abre la dirección que indique la terminal (normalmente http://localhost:5173).
 
 | Comando | Qué hace |
 | --- | --- |
-| `npm run dev` | Servidor de desarrollo con recarga en caliente |
+| `npm start` | **Tu app**: compila y la sirve en http://localhost:4173 |
+| `npm run dev` | Solo para desarrollar (localhost:5173, datos aparte) |
 | `npm test` | Ejecuta los tests (Vitest) |
 | `npm run typecheck` | Comprueba los tipos de TypeScript |
 | `npm run build` | Compila la versión de producción en `dist/` |
