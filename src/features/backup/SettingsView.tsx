@@ -27,7 +27,8 @@ export function SettingsView() {
   const { settings } = useApp();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<{ backup: Backup; summary: BackupSummary } | null>(null);
+  const [pending, setPending] = useState<{ backup: Backup; summary: BackupSummary; merge: boolean } | null>(null);
+  const mergeMode = useRef(false);
   const [importError, setImportError] = useState<string | null>(null);
   const persisted = usePersistence();
   const fsState = useAutosaveState();
@@ -36,13 +37,19 @@ export function SettingsView() {
     if (!file) return;
     setImportError(null);
     const result = parseBackup(await file.text());
-    if (result.ok) setPending({ backup: result.backup, summary: result.summary });
+    if (result.ok) setPending({ backup: result.backup, summary: result.summary, merge: mergeMode.current });
     else setImportError(result.error);
     if (fileInput.current) fileInput.current.value = '';
   }
 
   async function confirmImport() {
     if (!pending) return;
+    if (pending.merge) {
+      const r = await repo.mergeBackup(pending.backup);
+      setPending(null);
+      toast(`Añadido: ${r.tasks} tareas, ${r.notes} notas, ${r.projects} proyectos y ${r.people} personas${r.skipped ? ` (${r.skipped} ya estaban)` : ''}`);
+      return;
+    }
     // Copia de seguridad previa en memoria: si algo sale mal, se puede deshacer.
     const before = await repo.exportSnapshot();
     await repo.replaceAll(pending.backup);
@@ -67,9 +74,11 @@ export function SettingsView() {
         </p>
         <div className="flex flex-wrap gap-2">
           <Button primary onClick={() => void downloadBackup(repo)}>Exportar copia (JSON)</Button>
-          <Button onClick={() => fileInput.current?.click()}>Importar copia…</Button>
+          <Button onClick={() => { mergeMode.current = false; fileInput.current?.click(); }}>Importar copia…</Button>
+          <Button onClick={() => { mergeMode.current = true; fileInput.current?.click(); }}>Añadir desde archivo…</Button>
           <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
         </div>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">«Importar» sustituye todo; «Añadir» suma lo del archivo a lo que ya tienes, sin borrar ni duplicar.</p>
         {importError && <p className="mt-2 text-sm text-red-600">{importError}</p>}
       </Card>
 
@@ -118,18 +127,21 @@ export function SettingsView() {
       </Card>
 
       {pending && (
-        <Modal title="¿Sobrescribir con esta copia?" onClose={() => setPending(null)}>
+        <Modal title={pending.merge ? '¿Añadir este contenido?' : '¿Sobrescribir con esta copia?'} onClose={() => setPending(null)}>
           <ul className="mb-4 space-y-1 text-sm">
             <li>Fecha de la copia: <strong>{new Date(pending.summary.exportedAt).toLocaleString('es-ES')}</strong></li>
             <li>Proyectos: <strong>{pending.summary.projects}</strong></li>
             <li>Tareas: <strong>{pending.summary.totalTasks}</strong> ({pending.summary.activeTasks} pendientes, {pending.summary.doneTasks} completadas)</li>
+            <li>Notas: <strong>{pending.backup.notes.length}</strong> · Personas: <strong>{pending.backup.people.length}</strong></li>
           </ul>
-          <p className="mb-4 text-sm text-amber-700 dark:text-amber-400">
-            Se reemplazarán todos los datos actuales. Podrás deshacerlo justo después.
+          <p className={`mb-4 text-sm ${pending.merge ? 'text-zinc-600 dark:text-zinc-400' : 'text-amber-700 dark:text-amber-400'}`}>
+            {pending.merge
+              ? 'Se añade a lo que ya tienes; lo que ya exista (mismo proyecto, persona, ID de US o título de nota) no se duplica. Se deshace con Cmd/Ctrl+Z.'
+              : 'Se reemplazarán todos los datos actuales. Podrás deshacerlo justo después.'}
           </p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setPending(null)}>Cancelar</Button>
-            <Button primary onClick={() => void confirmImport()}>Importar y sobrescribir</Button>
+            <Button primary onClick={() => void confirmImport()}>{pending.merge ? 'Añadir' : 'Importar y sobrescribir'}</Button>
           </div>
         </Modal>
       )}

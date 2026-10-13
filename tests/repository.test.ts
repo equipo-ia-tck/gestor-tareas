@@ -176,3 +176,49 @@ describe('recurrentes', () => {
     expect(await repo.listTasks()).toHaveLength(2);
   });
 });
+
+describe('Añadir desde archivo (mergeBackup)', () => {
+  const file = (over: object = {}) => parseBackup(JSON.stringify({
+    app: 'gestor-tareas', schema_version: 7, exported_at: '2026-10-13T08:00:00.000Z', settings: {},
+    projects: [
+      { id: 'p1', name: 'Pagos', color: '#16a34a', parent_id: null, archived: false, created_at: '2026-10-13T08:00:00.000Z' },
+      { id: 'p2', name: 'Bizum', color: '#16a34a', parent_id: 'p1', archived: false, created_at: '2026-10-13T08:00:00.000Z' },
+    ],
+    tasks: [
+      { id: 't1', project_id: 'p2', title: 'Alta Bizum', due_date: null, priority: 1, estimated_minutes: null, status: 'todo',
+        type_id: 'us', state_id: 'us-qa', external_id: 'US1764574', people: ['Mike'],
+        created_at: '2026-10-13T08:00:00.000Z', updated_at: '2026-10-13T08:00:00.000Z', completed_at: null, last_touched_at: '2026-10-13T08:00:00.000Z' },
+    ],
+    notes: [{ id: 'n1', title: 'Bizum', body: 'Con @Mike', kind: 'note', date: '2026-09-28', project_id: 'p1', task_id: null,
+      created_at: '2026-09-28T12:00:00.000Z', updated_at: '2026-09-28T12:00:00.000Z' }],
+    people: [{ name: 'Mike', role: 'Valida las US' }],
+    ...over,
+  }));
+
+  it('suma sin borrar, reutiliza proyectos y personas y se deshace de una vez', async () => {
+    const mine = await repo.createTask({ title: 'mía' });
+    const pagos = await repo.createProject('pagos');
+    await repo.savePerson({ name: 'mike', role: '', notes: 'ya estaba', email: '' });
+    const parsed = file();
+    if (!parsed.ok) throw new Error(parsed.error);
+
+    const r = await repo.mergeBackup(parsed.backup);
+    expect(r).toMatchObject({ projects: 1, tasks: 1, notes: 1, people: 0 });
+    const tasks = await repo.listTasks();
+    expect(tasks.map((t) => t.id)).toContain(mine.id);
+    const us = tasks.find((t) => t.external_id === 'US1764574')!;
+    expect(us).toMatchObject({ type_id: 'us', state_id: 'us-qa' });
+    const bizum = (await repo.listProjects()).find((p) => p.name === 'Bizum')!;
+    expect(bizum.parent_id).toBe(pagos.id);
+    expect(us.project_id).toBe(bizum.id);
+    expect(await repo.listPeople()).toEqual([{ name: 'mike', role: 'Valida las US', notes: 'ya estaba', email: '' }]);
+
+    // Importar otra vez no duplica nada.
+    expect(await repo.mergeBackup(parsed.backup)).toMatchObject({ projects: 0, tasks: 0, notes: 0, skipped: 2 });
+
+    await repo.undo();
+    await repo.undo();
+    expect((await repo.listTasks()).map((t) => t.id)).toEqual([mine.id]);
+    expect(await repo.listNotes()).toHaveLength(0);
+  });
+});

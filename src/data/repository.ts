@@ -112,6 +112,12 @@ export interface Repository {
 
   exportSnapshot(): Promise<Backup>;
   replaceAll(backup: Backup): Promise<void>;
+  /**
+   * Añade el contenido de una copia sin borrar nada (un solo "Deshacer"). Reutiliza lo que ya existe:
+   * proyectos por nombre dentro del mismo padre, personas por nombre, tareas por ID externo (o título y
+   * proyecto) y notas por título, proyecto y elemento.
+   */
+  mergeBackup(backup: Backup): Promise<MergeResult>;
 
   getMeta<T>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
@@ -125,6 +131,8 @@ export interface Repository {
   /** Se llama tras cada cambio en los datos que deben respaldarse. */
   onChange(listener: () => void): () => void;
 }
+
+export interface MergeResult { projects: number; tasks: number; notes: number; people: number; skipped: number }
 
 const now = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID();
@@ -722,6 +730,87 @@ export class DexieRepository implements Repository {
     this.undoStack = [];
     this.redoStack = [];
     this.emit();
+  }
+
+  async mergeBackup(backup: Backup): Promise<MergeResult> {
+    const res: MergeResult = { projects: 0, tasks: 0, notes: 0, people: 0, skipped: 0 };
+    const total = backup.tasks.length + backup.notes.length;
+    await this.batch(`Importado: ${total} elementos`, async () => {
+      // Proyectos: padres antes que hijos; se reutiliza el que tenga el mismo nombre bajo el mismo padre.
+      const projectIds = new Map<string, string>();
+      const existing = await this.db.projects.toArray();
+      let pending = backup.projects;
+      while (pending.length) {
+        const ready = pending.filter((p) => !p.parent_id || projectIds.has(p.parent_id) || !pending.some((q) => q.id === p.parent_id));
+        if (!ready.length) break;
+        for (const p of ready) {
+          const parent = p.parent_id ? projectIds.get(p.parent_id) ?? null : null;
+          const match = existing.find((e) => nameKey(e.name) === nameKey(p.name) && (e.parent_id ?? null) === parent);
+          if (match) projectIds.set(p.id, match.id);
+          else {
+            const created = await this.createProject(p.name, { color: p.color, parent_id: parent });
+            existing.push(created);
+            projectIds.set(p.id, created.id);
+            res.projects++;
+          }
+        }
+        pending = pending.filter((p) => !ready.includes(p));
+      }
+      const mapProject = (id: string | null) => (id ? projectIds.get(id) ?? null : null);
+
+      const releaseIds = new Map<string, string>();
+      const releases = await this.db.releases.toArray();
+      for (const r of backup.releases) {
+        const match = releases.find((e) => nameKey(e.name) === nameKey(r.name));
+        const { id: _id, name, created_at: _c, ...fields } = r;
+        releaseIds.set(r.id, match?.id ?? (await this.createRelease(name, { ...fields, project_id: mapProject(r.project_id) })).id);
+      }
+
+      for (const label of backup.labels) {
+        if (!(await this.findLabel(label.name))) await this.setLabelColor(label.name, label.color);
+      }
+
+      // Personas: se completa lo que falte en la ficha existente.
+      const people = await this.db.people.toArray();
+      for (const p of backup.people) {
+        const match = people.find((e) => nameKey(e.name) === nameKey(p.name));
+        if (!match) { await this.savePerson(p); res.people++; continue; }
+        const merged = { ...match, role: match.role || p.role, email: match.email || p.email, notes: match.notes || p.notes };
+        if (JSON.stringify(merged) !== JSON.stringify(match)) await this.savePerson(merged);
+      }
+
+      const types = await this.listItemTypes();
+      const tasks = await this.listTasks();
+      const taskIds = new Map<string, string>();
+      for (const t of backup.tasks.filter((x) => !x.deleted_at)) {
+        const project_id = mapProject(t.project_id);
+        const ext = t.external_id?.trim().toUpperCase();
+        const match = tasks.find((e) => ext ? e.external_id?.trim().toUpperCase() === ext
+          : nameKey(e.title) === nameKey(t.title) && e.project_id === project_id && e.type_id === t.type_id);
+        if (match) { taskIds.set(t.id, match.id); res.skipped++; continue; }
+        const { id: _id, created_at: _c, updated_at: _u, last_touched_at: _l, ...fields } = t;
+        const created = await this.createTask({
+          ...fields,
+          type_id: types.some((x) => x.id === t.type_id) ? t.type_id : DEFAULT_TYPE_ID,
+          project_id,
+          release_id: t.release_id ? releaseIds.get(t.release_id) ?? null : null,
+        });
+        tasks.push(created);
+        taskIds.set(t.id, created.id);
+        res.tasks++;
+      }
+
+      const notes = await this.listNotes();
+      for (const n of backup.notes.filter((x) => !x.deleted_at)) {
+        const project_id = mapProject(n.project_id);
+        const task_id = n.task_id ? taskIds.get(n.task_id) ?? null : null;
+        if (notes.some((e) => nameKey(e.title) === nameKey(n.title) && e.project_id === project_id && e.task_id === task_id)) { res.skipped++; continue; }
+        const { id: _id, created_at: _c, updated_at: _u, people: _p, ...fields } = n;
+        notes.push(await this.createNote({ ...fields, project_id, task_id }));
+        res.notes++;
+      }
+    });
+    return res;
   }
 
   // ---------- Meta (local al dispositivo) ----------

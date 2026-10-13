@@ -324,6 +324,10 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - **Revisión semanal** (`features/review/ReviewView.tsx`, `#/review`, `G V`): pasos Bandeja → Atrasadas → Cómo fue la semana
   → Para hablar por persona → La semana que viene → Sin tocar. "Revisión hecha" guarda `settings.ui.last_review_on`;
   `reviewDue` muestra un aviso en Hoy de viernes a lunes si no se ha hecho desde el viernes.
+- **Añadir desde archivo** (`repo.mergeBackup`, Ajustes): suma una copia sin borrar, en un solo "Deshacer". Reutiliza
+  proyectos (nombre bajo el mismo padre), personas (completa la ficha), tareas (ID externo, o título + proyecto + tipo) y
+  notas (título + proyecto + elemento), así que importar dos veces no duplica. Se usó para pasar el cuaderno de OneNote
+  (`importar/`, fuera de git: son datos de trabajo).
 - **Pendiente (a propósito)**: copia automática en OneDrive; la usuaria la configurará cuando tenga la herramienta definitiva.
 
 ### Más adelante
