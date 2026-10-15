@@ -51,11 +51,14 @@ export function NotesView({ id }: { id?: string }) {
 
   // Las notas de un elemento pertenecen al proyecto de ese elemento (aunque se mueva).
   const sectionOf = (n: Note) => (n.task_id ? tasks.find((t) => t.id === n.task_id)?.project_id ?? n.project_id : n.project_id) ?? NONE;
-  // Al abrir una nota concreta, su sección queda seleccionada.
-  const section = current ? sectionOf(current) : stored;
-  // Solo al cambiar de nota (no en cada cambio de su contenido).
+  // Al abrir una nota concreta (también desde fuera de Notas), su sección queda seleccionada.
   const currentSection = current ? sectionOf(current) : null;
-  useEffect(() => { if (currentSection) setSection(currentSection); }, [currentSection]); // setSection es estable en la práctica
+  const [synced, setSynced] = useState(currentSection);
+  if (currentSection !== synced) {
+    setSynced(currentSection);
+    if (currentSection) setSection(currentSection);
+  }
+  const section = stored;
 
   const words = fold(query).split(/\s+/).filter(Boolean);
   const inSection = notes.filter((n) => (section === ALL || sectionOf(n) === section) && (!words.length || matchesNote(n, words)));
@@ -63,6 +66,15 @@ export function NotesView({ id }: { id?: string }) {
   const itemNotes = sortNotes(inSection.filter((n) => n.task_id));
   const sectionProject = section !== ALL && section !== NONE ? projectMap.get(section) : undefined;
   const count = (key: string) => notes.filter((n) => sectionOf(n) === key).length;
+
+  /** Como en OneNote: al elegir otra sección se abre su primera página. */
+  const selectSection = (key: string) => {
+    setSection(key);
+    if (current && (key === ALL || sectionOf(current) === key)) return;
+    const inKey = notes.filter((n) => !n.task_id && (key === ALL || sectionOf(n) === key));
+    const first = (key === ALL ? sortNotes(inKey) : sortPages(inKey))[0];
+    navigate(first ? { view: 'notes', id: first.id } : { view: 'notes' });
+  };
 
   const addPage = (kind: NoteKind) => void newNote(kind, today, { project_id: sectionProject?.id ?? null });
 
@@ -72,13 +84,13 @@ export function NotesView({ id }: { id?: string }) {
       <nav aria-label="Secciones" className="flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40">
         <h2 className="px-3 pt-3 pb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones</h2>
         <div className="flex-1 overflow-y-auto pb-2">
-          <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => setSection(ALL)} />
+          <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => selectSection(ALL)} />
           {flattenTree(projectTree(projects)).map(({ project: p, depth }) => (
-            <SectionRow key={p.id} label={p.name} color={p.color} depth={depth} active={section === p.id} count={count(p.id)} onClick={() => setSection(p.id)} />
+            <SectionRow key={p.id} label={p.name} color={p.color} depth={depth} active={section === p.id} count={count(p.id)} onClick={() => selectSection(p.id)} />
           ))}
-          {count(NONE) > 0 && <SectionRow label="Sin sección" color="#d4d4d8" active={section === NONE} count={count(NONE)} onClick={() => setSection(NONE)} />}
+          {count(NONE) > 0 && <SectionRow label="Sin sección" color="#d4d4d8" active={section === NONE} count={count(NONE)} onClick={() => selectSection(NONE)} />}
         </div>
-        <AddSection parent={sectionProject} onCreated={(pid) => setSection(pid)} />
+        <AddSection parent={sectionProject} onCreated={(pid) => selectSection(pid)} />
       </nav>
 
       {/* Páginas */}
