@@ -335,6 +335,38 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   email en su ficha. Una línea cuyo campo queda vacío desaparece. Plan de integraciones en `docs/integraciones.md`.
 - **Pendiente (a propósito)**: copia automática en OneDrive; la usuaria la configurará cuando tenga la herramienta definitiva.
 
+## Fase 15: versión para el equipo (servidor y cuentas)
+
+Decisión de la usuaria (21 oct 2026): para todo el equipo; todo privado salvo lo que menciona a un compañero; solo con
+conexión; inicio de sesión provisional hasta que WPP permita "Entrar con Microsoft".
+
+- **Servidor** (`servidor/`, TypeScript ejecutado por Node 24 sin compilar: nada de parameter properties ni enums, imports
+  con `.ts`): `index.ts` sirve `dist/` y la API en `localhost:4173` (sustituye a `vite preview`; `npm start` lo arranca);
+  `api.ts` (cuentas, sesiones, push/pull, sin HTTP para poder probarla); `visibility.ts` (quién ve qué, funciones puras).
+  Base de datos `node:sqlite` en `servidor/datos/equipo.sqlite` (fuera de Git; `GESTOR_DATOS` cambia la carpeta). Sin
+  dependencias nuevas.
+- **Cuentas provisionales**: usuario + contraseña (scrypt) y sesión en cookie `gestor_sesion` (30 días). Para crear cuenta
+  hace falta el **código del equipo**, que se genera al primer arranque, sale en la terminal y en Ajustes → Equipo.
+- **Quién ve qué**: tablas con dueño (`tasks`, `notes`, `projects`, `releases`) son del creador; una tarea con el
+  compañero en `people` o una nota que le menciona se le comparte, junto con su proyecto (y padres) y su release. El
+  compañero se reconoce por nombre completo, de pila o usuario (`isUser`; en la app, `domain/sharing.ts`). Tablas
+  personales por dueño: `settings`, `people` (fichas), `activity`. Globales del equipo: `item_types`, `labels`. En tareas,
+  `my_day` y `remind_at` son de cada persona (tabla `overlays`). Quien recibe algo compartido puede editarlo; lo ajeno que
+  no ve se rechaza. Si deja de verlo, le llega como borrado.
+- **Sincronización** (`src/data/sync.ts`): Dexie sigue siendo la base de la app (deshacer, registro y vistas sin cambios).
+  Los hooks de Dexie apuntan cada cambio local y se suben con un debounce de 400 ms; cada 5 s (y al volver a la ventana)
+  se piden los cambios desde la última versión (`sync-cursor` en `meta`). Lo que viene del servidor se escribe en una
+  transacción marcada (`__fromSync`) para no volver a subirlo, y no pisa claves pendientes de subir. Si se ha subido algo
+  durante una petición de cambios, la respuesta se descarta. `replaceAll` (importar) no pasa por los hooks: después se
+  llama a `sync().afterReplace(clavesDeAntes)`.
+- **Entrada** (`app/AuthGate.tsx`): sin servidor → "No se puede conectar"; sin sesión → Entrar / Crear cuenta. La primera
+  vez en un navegador con datos de antes de tener cuenta y la cuenta vacía, pregunta si subirlos; si no, se guarda una
+  copia en `servidor/datos/copias/` antes de vaciar. Cambiar de cuenta vacía el navegador. Cerrar sesión sube lo
+  pendiente y vacía el navegador.
+- En la app: estado de guardado y usuario en la barra lateral, "De X · Compartida con Y" en el panel de la tarea,
+  Ajustes → Equipo (miembros, código, cerrar sesión). `npm run dev` (5173) usa la API de 4173 por proxy.
+- Pendiente: alojarlo en un sitio común (hasta entonces cada ordenador tiene su servidor) y "Entrar con Microsoft".
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -352,6 +384,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 - [x] Fase 12: clic abre el panel, semana de lunes a domingo, todo en el Tablero, notas con diseño OneNote
 - [x] Fase 13: pantalla de proyecto con resumen por subproyecto, personas de las notas en la barra lateral, desplegables sin recortes
 - [x] Fase 14: auditoría: barra lateral simplificada, Mi día, revisión semanal, búsqueda única, Outlook, unir personas, sin dictado
+- [x] Fase 15: versión para el equipo: servidor propio, cuentas provisionales, privado salvo mención y sincronización
 
 ## Fases
 

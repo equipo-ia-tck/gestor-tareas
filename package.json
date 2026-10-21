@@ -7,10 +7,11 @@
     "start": "node scripts/start.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "node servidor/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "servidor": "node servidor/index.ts"
   },
   "dependencies": {
     "chrono-node": "^2.10.2",

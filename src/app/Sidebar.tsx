@@ -3,6 +3,7 @@ import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, Histor
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
+import { useSync } from '../data/sync';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
@@ -216,8 +217,25 @@ export function Sidebar({ route }: { route: Route }) {
       <MoreSection route={route} releases={releases.filter((r) => r.status === 'planned').length} />
 
       <div className="mt-auto pt-4">
+        <SyncBadge />
         <NavItem icon={Settings} href={routeHref({ view: 'settings' })} active={is('settings')}>Copias y ajustes</NavItem>
       </div>
     </nav>
+  );
+}
+
+/** Quién ha entrado y si los cambios están guardados en el servidor. */
+function SyncBadge() {
+  const { user, status } = useSync();
+  if (!user) return null;
+  const label = { ok: 'Guardado', saving: 'Guardando…', offline: 'Sin conexión: los cambios esperan' }[status];
+  const dot = { ok: 'bg-emerald-500', saving: 'bg-amber-400', offline: 'bg-red-500' }[status];
+  return (
+    <div className="mb-1 flex items-center gap-2 px-2 py-1 text-xs text-zinc-500" title={label}>
+      <Avatar name={user.name} size={18} />
+      <span className="min-w-0 flex-1 truncate">{user.name}</span>
+      <span className={`size-2 shrink-0 rounded-full ${dot}`} />
+      <span className={status === 'offline' ? 'text-red-600 dark:text-red-400' : ''}>{status === 'offline' ? 'Sin conexión' : label}</span>
+    </div>
   );
 }

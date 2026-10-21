@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, Users as Users2, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
 import { TaskNotes } from '../features/notes/TaskNotes';
 import { MessageButton } from '../features/templates/MessageComposer';
+import { useSync } from '../data/sync';
+import { shareInfo } from '../domain/sharing';
 import { projectPath } from '../domain/projects';
 import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
@@ -102,6 +104,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         </div>
 
         <TitleField task={task} />
+        <SharingLine task={task} />
 
         {/* Propiedades */}
         <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-1 text-sm">
@@ -581,6 +584,21 @@ function StepText({ item, onSave }: { item: ChecklistItem; onSave: (text: string
       onBlur={() => { if (value.trim() && value !== item.text) onSave(value.trim()); else setValue(item.text); }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(item.text); e.currentTarget.blur(); } }}
       className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${item.done ? 'text-zinc-400 line-through' : ''}`} />
+  );
+}
+
+/** De quién es la tarea y con quién se comparte (por mencionar a compañeros en «Personas»). */
+function SharingLine({ task }: { task: Task }) {
+  const { user, team, owners } = useSync();
+  const info = shareInfo(task.people, owners[`tasks:${task.id}`], user, team);
+  if (!info.owner && !info.with.length) return null;
+  return (
+    <p className="mt-1 flex items-center gap-1.5 text-xs text-sky-700 dark:text-sky-400">
+      <Users2 className="size-3.5" />
+      {info.owner && <>De {info.owner.name}</>}
+      {info.owner && info.with.length > 0 && ' · '}
+      {info.with.length > 0 && <>Compartida con {info.with.map((u) => u.name).join(', ')}</>}
+    </p>
   );
 }
 

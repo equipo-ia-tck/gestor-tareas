@@ -1,0 +1,124 @@
+// Servidor del equipo: sirve la app compilada (dist/) y la API (/api) en http://localhost:4173.
+// Los datos se guardan en servidor/datos/equipo.sqlite (fuera de Git).
+// Uso: `npm start` (compila y arranca). Para abrirlo a la red local: GESTOR_HOST=0.0.0.0 npm start.
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join, normalize, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { Api, ApiError, type Change } from './api.ts';
+
+const ROOT = resolve(import.meta.dirname, '..');
+const DIST = join(ROOT, 'dist');
+const DATA = process.env.GESTOR_DATOS ? resolve(process.env.GESTOR_DATOS) : join(ROOT, 'servidor', 'datos');
+const PORT = Number(process.env.PORT ?? 4173);
+const HOSTS = process.env.GESTOR_HOST ? [process.env.GESTOR_HOST] : ['127.0.0.1', '::1'];
+const COOKIE = 'gestor_sesion';
+
+mkdirSync(join(DATA, 'copias'), { recursive: true });
+const api = new Api(new DatabaseSync(join(DATA, 'equipo.sqlite')));
+
+const TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+};
+
+const send = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+  res.end(JSON.stringify(body));
+};
+
+const cookieOf = (req: IncomingMessage) =>
+  /(?:^|;\s*)gestor_sesion=([a-f0-9]+)/.exec(req.headers.cookie ?? '')?.[1];
+const sessionCookie = (token: string, maxAge = 30 * 86_400) =>
+  `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 50 * 1024 * 1024) throw new ApiError(413, 'Demasiados datos de golpe.');
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new ApiError(400, 'La petición no es JSON válido.');
+  }
+}
+
+async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
+  const route = `${req.method} ${url.pathname}`;
+  if (route === 'POST /api/register' || route === 'POST /api/login') {
+    const body = await readJson(req);
+    const { user, token } = route === 'POST /api/register' ? api.register(body) : api.login(body);
+    return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(token) });
+  }
+  if (route === 'POST /api/logout') {
+    api.logout(cookieOf(req));
+    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
+  }
+  const user = api.userForToken(cookieOf(req));
+  if (!user) throw new ApiError(401, 'Inicia sesión.');
+  switch (route) {
+    case 'GET /api/me':
+      return send(res, 200, { user, team: api.team(), teamCode: api.teamCode });
+    case 'GET /api/pull':
+      return send(res, 200, { ...api.pull(user, Number(url.searchParams.get('since') ?? 0) || 0), team: api.team() });
+    case 'POST /api/push': {
+      const body = await readJson(req);
+      return send(res, 200, api.push(user, Array.isArray(body.changes) ? (body.changes as Change[]) : []));
+    }
+    case 'POST /api/snapshot': {
+      // Copia de seguridad de lo que había en el navegador antes de vaciarlo (por si acaso).
+      const body = await readJson(req);
+      const file = join(DATA, 'copias', `${user.login}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+      writeFileSync(file, JSON.stringify(body, null, 2));
+      return send(res, 200, { ok: true });
+    }
+  }
+  throw new ApiError(404, 'No existe.');
+}
+
+function serveStatic(res: ServerResponse, url: URL) {
+  if (!existsSync(DIST)) {
+    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('La app no está compilada. Ejecuta `npm start`.');
+  }
+  const path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
+  let file = join(DIST, path);
+  if (!file.startsWith(DIST) || !existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
+  const name = file.slice(DIST.length);
+  // index.html y el service worker siempre frescos; los archivos con hash, en caché para siempre.
+  const cache = name.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+  res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': cache });
+  res.end(readFileSync(file));
+}
+
+const server = (req: IncomingMessage, res: ServerResponse) => {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (!url.pathname.startsWith('/api/')) return serveStatic(res, url);
+  handleApi(req, res, url).catch((e: unknown) => {
+    if (e instanceof ApiError) return send(res, e.status, { error: e.message });
+    console.error(e);
+    send(res, 500, { error: 'Error del servidor. Mira la terminal.' });
+  });
+};
+
+let started = 0;
+for (const host of HOSTS) {
+  createServer(server)
+    .on('error', (e: NodeJS.ErrnoException) => {
+      if (host === '::1' && e.code === 'EADDRNOTAVAIL') return; // sin IPv6: basta con 127.0.0.1
+      console.error(`No se pudo abrir el puerto ${PORT} en ${host}: ${e.message}`);
+      process.exitCode = 1;
+    })
+    .listen(PORT, host, () => {
+      if (started++) return;
+      console.log(`\n✓ Gestor del equipo en http://localhost:${PORT}`);
+      console.log(`  Código del equipo para crear cuentas: ${api.teamCode}`);
+      console.log('  Deja esta ventana abierta mientras uséis la app.\n');
+    });
+}

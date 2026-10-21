@@ -6,6 +6,7 @@ import { useToast } from '../../components/Toast';
 import { downloadBackup, parseBackup, type BackupSummary } from '../../data/backup';
 import type { Backup } from '../../domain/schemas';
 import { autosave, repo } from '../../data/services';
+import { sync, useSync } from '../../data/sync';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
 import { usePersistence } from './usePersistence';
@@ -52,9 +53,15 @@ export function SettingsView() {
     }
     // Copia de seguridad previa en memoria: si algo sale mal, se puede deshacer.
     const before = await repo.exportSnapshot();
+    const keys = await sync().keys();
     await repo.replaceAll(pending.backup);
+    await sync().afterReplace(keys);
     setPending(null);
-    toast('Copia importada', { label: 'Deshacer', run: () => repo.replaceAll(before) });
+    toast('Copia importada', { label: 'Deshacer', run: async () => {
+      const k = await sync().keys();
+      await repo.replaceAll(before);
+      await sync().afterReplace(k);
+    } });
   }
 
   function toggleWorkday(d: number) {
@@ -66,6 +73,8 @@ export function SettingsView() {
   return (
     <>
       <ViewHeader title="Copias y ajustes" />
+
+      <TeamCard />
 
       <Card title="Copia de seguridad">
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
@@ -232,6 +241,31 @@ function InstallCard() {
       {!installed && !canInstall && (
         <p className="text-xs text-zinc-400">Si tu navegador lo permite, verás el icono de instalar en la barra de direcciones (en Safari: Archivo → Añadir al Dock).</p>
       )}
+    </Card>
+  );
+}
+
+function TeamCard() {
+  const { user, team, teamCode } = useSync();
+  return (
+    <Card title="Equipo">
+      <p className="mb-2 text-sm text-zinc-500 dark:text-zinc-400">
+        Todo lo tuyo es privado. Una tarea o nota se comparte con un compañero cuando le mencionas (en «Personas» o con @).
+        «Mi día», los recordatorios, las fichas de persona y los ajustes son siempre solo tuyos.
+      </p>
+      <ul className="mb-3 flex flex-wrap gap-1.5 text-sm">
+        {team.map((u) => (
+          <li key={u.id} className="rounded-full bg-zinc-100 px-2.5 py-0.5 dark:bg-zinc-800">
+            {u.name}{u.id === user?.id ? ' (tú)' : ''} <span className="text-xs text-zinc-400">@{u.login}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-sm">
+        Para que un compañero cree su cuenta: código del equipo <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-semibold dark:bg-zinc-800">{teamCode}</code>
+      </p>
+      <button type="button" onClick={() => void sync().logout()} className="mt-3 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
+        Cerrar sesión
+      </button>
     </Card>
   );
 }

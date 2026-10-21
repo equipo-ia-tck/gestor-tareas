@@ -15,13 +15,20 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "preview",
-        "--",
-        "--port",
-        "4173",
-        "--strictPort"
+        "servidor"
       ],
       "port": 4173
+    },
+    {
+      "name": "equipo-prueba",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4180",
+        "GESTOR_DATOS=servidor/datos-prueba",
+        "node",
+        "servidor/index.ts"
+      ],
+      "port": 4180
     }
   ]
 }

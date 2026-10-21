@@ -24,22 +24,31 @@ App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, 
   persona, carga de la semana que viene y tareas olvidadas.
 - **Teclado**: J/K, Enter, E, C, D, T, A (Mi día), M, 1–4, Supr; `?` muestra todos los atajos. Deshacer global con Cmd/Ctrl+Z.
 - **Fechas** con calendario mensual (semanas, carga por día) o escribiendo "vie", "15 oct"…
-- **Tus datos**: todo en el navegador, sin conexión, con copias JSON y copia automática en archivo.
+- **Equipo**: cada uno entra con su cuenta. Todo es privado salvo lo que menciona a un compañero (en «Personas» o con
+  @ en una nota), que se le comparte. «Mi día», recordatorios, fichas y ajustes son siempre de cada uno.
+- **Mensajes de entrega**: plantillas en `plantillas/` (guías y validaciones de etiquetado) que se rellenan con la tarea.
 
 ## Usarla (una sola dirección)
 
-Tu app vive siempre en **http://localhost:4173**. Para arrancarla (o actualizarla tras cambios):
+La app vive en **http://localhost:4173**, servida por el servidor del equipo (`servidor/`). Para arrancarlo (o
+actualizar tras cambios):
 
 ```bash
 npm start
 ```
 
-Si la app ya estaba en marcha, `npm start` solo compila y te avisa de que recargues la página.
+- La terminal muestra el **código del equipo**: hace falta para crear cuenta (pestaña «Crear cuenta»).
+- Si el servidor ya estaba en marcha, `npm start` solo compila y te avisa de que recargues. Si han cambiado archivos de
+  `servidor/`, para el servidor con Ctrl+C y vuelve a ejecutar `npm start`.
+- Solo funciona con el servidor en marcha: deja la terminal abierta.
+- Los datos del equipo se guardan en `servidor/datos/equipo.sqlite` (fuera de Git). Haz copia de esa carpeta.
+- La primera vez que entras en un navegador que ya tenía datos de antes, la app te ofrece subirlos a tu cuenta.
 
-La primera vez, instálala desde **Copias y ajustes → Instalar app**. Después ábrela desde el Dock: funciona aunque la
-terminal esté cerrada. Solo hace falta volver a ejecutar `npm start` cuando haya cambios nuevos en el código.
+Hasta que haya un servidor de empresa, cada persona que lo arranque en su ordenador tiene su propio servidor (datos
+aparte). Para compartir de verdad hay que alojarlo en un sitio común (pendiente de WPP).
 
-> `localhost:5173` (`npm run dev`) es solo para desarrollar: tiene sus propios datos de prueba y no hace falta abrirlo.
+> `localhost:5173` (`npm run dev`) es solo para desarrollar: usa el servidor de 4173 para la API (tiene que estar en
+> marcha) y no hace falta abrirlo.
 
 ## Arrancar en local (desarrollo)
 
@@ -56,7 +65,8 @@ Abre la dirección que indique la terminal (normalmente http://localhost:5173).
 
 | Comando | Qué hace |
 | --- | --- |
-| `npm start` | **Tu app**: compila y la sirve en http://localhost:4173 (si ya está en marcha, solo compila) |
+| `npm start` | **La app**: compila y arranca el servidor del equipo en http://localhost:4173 (si ya está en marcha, solo compila) |
+| `npm run servidor` | Arranca el servidor sin compilar |
 | `npm run dev` | Solo para desarrollar (localhost:5173, datos aparte) |
 | `npm test` | Ejecuta los tests (Vitest) |
 | `npm run typecheck` | Comprueba los tipos de TypeScript |
