@@ -5,12 +5,16 @@ import { stateOf } from './workflows';
  * Plantillas de mensajes (entregar una US, pedir una validación…). Viven como archivos Markdown en
  * `plantillas/` del repositorio, así se editan y versionan en Git entre todos.
  *
- * Formato: una cabecera opcional entre `---` con `nombre:` y `tipos:` (abreviaturas o ids de tipo,
- * separados por comas; sin `tipos`, vale para todos) y después el texto con campos entre llaves.
+ * Formato: una cabecera opcional entre `---` con `nombre:`, `grupo:` y `tipos:` (abreviaturas o ids de
+ * tipo, separados por comas; sin `tipos`, vale para todos) y después el texto con campos entre llaves.
+ * Los campos `{?Etiqueta}` no salen de la tarea: se preguntan al preparar el mensaje. Con `{?Etiqueta|campo}`
+ * toman por defecto un campo de la tarea (p. ej. `{?Responsable del delivery|para}` = las personas de la tarea).
  */
 export interface MessageTemplate {
   id: string;
   name: string;
+  /** Para agrupar en el desplegable ("Guías de etiquetado (US)"). */
+  group: string;
   /** Ids o abreviaturas de tipo (en minúsculas). Vacío = cualquier tipo. */
   types: string[];
   body: string;
@@ -26,9 +30,24 @@ export function parseTemplate(id: string, raw: string): MessageTemplate {
   return {
     id,
     name: meta.nombre || id,
+    group: meta.grupo ?? '',
     types: (meta.tipos ?? '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean),
     body: (m ? raw.slice(m[0].length) : raw).trim(),
   };
+}
+
+const PROMPT = /\{\?([^{}|]+)(?:\|(\w+))?\}/g;
+
+export interface TemplatePrompt { label: string; from: string | null }
+
+/** Campos que hay que preguntar (`{?Link a la guía}`), sin repetir y en orden de aparición. */
+export function promptsOf(tpl: MessageTemplate): TemplatePrompt[] {
+  const out = new Map<string, TemplatePrompt>();
+  for (const m of tpl.body.matchAll(PROMPT)) {
+    const label = m[1].trim();
+    if (!out.has(label)) out.set(label, { label, from: m[2] ?? null });
+  }
+  return [...out.values()];
 }
 
 export const templatesFor = (templates: MessageTemplate[], type: ItemType) =>
@@ -50,8 +69,9 @@ const joinNames = (names: string[]) =>
  * Rellena la plantilla con los datos de la tarea. Campos: {id} {titulo} {tipo} {estado} {proyecto}
  * {enlace} {fecha} {para} {hecho} {pendiente} {pasos} {descripcion}. Una línea cuyo campo queda vacío
  * se quita entera (así "Enlace: {enlace}" desaparece si no hay enlace).
+ * Los campos preguntados sin respuesta se quedan como `<Etiqueta>`, para que se vea el hueco.
  */
-export function fillTemplate(tpl: MessageTemplate, task: Task, ctx: TemplateContext): string {
+export function fillTemplate(tpl: MessageTemplate, task: Task, ctx: TemplateContext, answers: Record<string, string> = {}): string {
   const steps = task.checklist;
   const values: Record<string, string> = {
     id: task.external_id ?? '',
@@ -69,6 +89,8 @@ export function fillTemplate(tpl: MessageTemplate, task: Task, ctx: TemplateCont
   };
   const field = /\{(\w+)\}/g;
   return tpl.body
+    .replace(PROMPT, (_, label: string, from?: string) =>
+      answers[label.trim()]?.trim() || (from && values[from]) || `<${label.trim()}>`)
     .split('\n')
     .filter((line) => [...line.matchAll(field)].every(([, k]) => !(k in values) || values[k] !== ''))
     .map((line) => line.replace(field, (all, k: string) => (k in values ? values[k] : all)))

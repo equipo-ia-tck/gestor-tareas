@@ -330,7 +330,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   (`importar/`, fuera de git: son datos de trabajo).
 - **Plantillas de mensajes** (`plantillas/*.md`, `domain/templates.ts`, `features/templates/MessageComposer.tsx`): archivos
   del repositorio con cabecera `nombre:`/`tipos:` y campos `{id}`, `{titulo}`, `{hecho}`, `{pendiente}`… Se cargan al
-  compilar con `import.meta.glob`, así se editan y versionan en Git. «Mensaje» en el panel rellena la plantilla, se puede
+  compilar con `import.meta.glob`, así se editan y versionan en Git. Los huecos `{?Etiqueta}` (o `{?Etiqueta|campo}`, con valor por defecto) se preguntan en el preparador, con sugerencias de enlaces o de personas por rol, y el campo `grupo:` agrupa el desplegable. «Mensaje» en el panel rellena la plantilla, se puede
   retocar y se copia o se abre en un chat de Teams (enlace profundo, sin permisos) con las personas de la tarea que tienen
   email en su ficha. Una línea cuyo campo queda vacío desaparece. Plan de integraciones en `docs/integraciones.md`.
 - **Pendiente (a propósito)**: copia automática en OneDrive; la usuaria la configurará cuando tenga la herramienta definitiva.

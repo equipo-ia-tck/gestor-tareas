@@ -7,8 +7,9 @@ import { useToast } from '../../components/Toast';
 import { projectPath } from '../../domain/projects';
 import { externalUrl } from '../../domain/releases';
 import { teamsChatUrl } from '../../domain/teams';
-import { fillTemplate, parseTemplate, templatesFor } from '../../domain/templates';
-import { nameKey } from '../../domain/text';
+import { fillTemplate, parseTemplate, promptsOf, templatesFor, type MessageTemplate } from '../../domain/templates';
+import { fold, nameKey } from '../../domain/text';
+import { peopleDirectory } from '../../domain/people';
 import type { Task } from '../../domain/types';
 import { findType } from '../../domain/workflows';
 
@@ -17,7 +18,7 @@ const files = import.meta.glob('/plantillas/*.md', { query: '?raw', import: 'def
 export const MESSAGE_TEMPLATES = Object.entries(files)
   .filter(([path]) => !path.endsWith('/README.md'))
   .map(([path, raw]) => parseTemplate(path.split('/').pop()!.replace(/\.md$/, ''), raw))
-  .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  .sort((a, b) => a.id.localeCompare(b.id, 'es'));
 
 /** Prepara un mensaje a partir de una plantilla y lo copia o lo abre en un chat de Teams. */
 export function MessageButton({ task, className }: { task: Task; className: string }) {
@@ -36,17 +37,42 @@ export function MessageButton({ task, className }: { task: Task; className: stri
 }
 
 function Composer({ task, close }: { task: Task; close: () => void }) {
-  const { itemTypes, projectMap, peopleCards } = useApp();
+  const { itemTypes, projectMap, peopleCards, tasks, notes } = useApp();
   const toast = useToast();
   const type = findType(itemTypes, task.type_id);
   const options = templatesFor(MESSAGE_TEMPLATES, type);
   const [templateId, setTemplateId] = useState(options[0].id);
-  const fill = (id: string) => fillTemplate(options.find((t) => t.id === id) ?? options[0], task, {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const template = options.find((t) => t.id === templateId) ?? options[0];
+  const fill = (tpl: MessageTemplate, a: Record<string, string>) => fillTemplate(tpl, task, {
     type,
     projectPath: task.project_id ? projectPath(task.project_id, projectMap) : undefined,
     link: externalUrl(task, type),
-  });
-  const [text, setText] = useState(() => fill(templateId));
+  }, a);
+  const [text, setText] = useState(() => fill(template, answers));
+  const prompts = promptsOf(template);
+  const answer = (label: string, value: string) => {
+    const next = { ...answers, [label]: value };
+    setAnswers(next);
+    setText(fill(template, next));
+  };
+  const pick = (id: string) => {
+    setTemplateId(id);
+    setText(fill(options.find((t) => t.id === id) ?? options[0], answers));
+  };
+
+  // Sugerencias para cada hueco: enlaces de la tarea para los de tipo enlace; personas (primero las de ese rol).
+  const link = externalUrl(task, type);
+  const directory = peopleDirectory(tasks, notes, peopleCards);
+  const suggestions = (label: string) => {
+    if (/link|enlace|documento/i.test(label)) return [link, task.url].filter((x): x is string => !!x);
+    if (/n[uú]mero/i.test(label)) return [];
+    const words = fold(label).split(/[^a-z]+/).filter((w) => w.length > 1);
+    const roleOf = (n: string) => fold(peopleCards.find((p) => nameKey(p.name) === nameKey(n))?.role ?? '');
+    const score = (n: string) => words.filter((w) => roleOf(n).includes(w)).length;
+    return [...new Set([...task.people, ...directory.map((p) => p.name)])].sort((a, b) => score(b) - score(a));
+  };
+  const groups = [...new Set(options.map((t) => t.group))];
 
   const people = task.people.map((name) => ({ name, email: peopleCards.find((p) => nameKey(p.name) === nameKey(name))?.email ?? '' }));
   const missing = people.filter((p) => !p.email);
@@ -66,10 +92,26 @@ function Composer({ task, close }: { task: Task; close: () => void }) {
   return (
     <div className="space-y-2 p-2 text-sm">
       {options.length > 1 && (
-        <select value={templateId} aria-label="Plantilla" onChange={(e) => { setTemplateId(e.target.value); setText(fill(e.target.value)); }}
+        <select value={templateId} aria-label="Plantilla" onChange={(e) => pick(e.target.value)}
           className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900">
-          {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {groups.map((g) => {
+            const items = options.filter((t) => t.group === g).map((t) => <option key={t.id} value={t.id}>{t.name}</option>);
+            return g ? <optgroup key={g} label={g}>{items}</optgroup> : items;
+          })}
         </select>
+      )}
+      {prompts.length > 0 && (
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
+          {prompts.map((p) => (
+            <label key={p.label} className="contents">
+              <span className="text-xs text-zinc-500">{p.label}</span>
+              <input value={answers[p.label] ?? ''} onChange={(e) => answer(p.label, e.target.value)} list={`sug-${p.label}`}
+                placeholder={p.from ? 'Las personas de la tarea' : 'Escribe o elige…'}
+                className="min-w-0 rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+              <datalist id={`sug-${p.label}`}>{suggestions(p.label).map((v) => <option key={v} value={v} />)}</datalist>
+            </label>
+          ))}
+        </div>
       )}
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={12} aria-label="Mensaje"
         className="w-full resize-y rounded-md border border-zinc-200 bg-white p-2 font-sans text-sm leading-relaxed dark:border-zinc-700 dark:bg-zinc-900" />

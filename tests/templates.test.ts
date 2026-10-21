@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillTemplate, parseTemplate, templatesFor } from '../src/domain/templates';
+import { fillTemplate, parseTemplate, promptsOf, templatesFor } from '../src/domain/templates';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
 
@@ -39,5 +39,15 @@ describe('plantillas de mensajes', () => {
     );
     expect(fillTemplate(tpl, t, { type: us, link: 'https://rally/x', recipients: ['Ana'] })).toContain('Hola Ana:');
     expect(fillTemplate(tpl, t, { type: us, link: 'https://rally/x' })).toContain('Enlace: https://rally/x');
+  });
+
+  it('pregunta los huecos y usa las personas de la tarea por defecto', () => {
+    const t2 = parseTemplate('defect', '---\ngrupo: Validaciones\n---\nHola {?PO IT|para},\nHe creado el defect {?Número de defect}.\ncc {?Analista}, {?PO IT|para}');
+    expect(t2.group).toBe('Validaciones');
+    expect(promptsOf(t2)).toEqual([{ label: 'PO IT', from: 'para' }, { label: 'Número de defect', from: null }, { label: 'Analista', from: null }]);
+    const task = makeTask({ people: ['Mike'] });
+    expect(fillTemplate(t2, task, { type: us })).toBe('Hola Mike,\nHe creado el defect <Número de defect>.\ncc <Analista>, Mike');
+    expect(fillTemplate(t2, makeTask(), { type: us }, { 'Número de defect': 'DE125701', Analista: 'Ana' }))
+      .toBe('Hola <PO IT>,\nHe creado el defect DE125701.\ncc Ana, <PO IT>');
   });
 });

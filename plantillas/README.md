@@ -7,8 +7,9 @@ Cabecera (opcional):
 
 ```
 ---
-nombre: Entrega de US
-tipos: us          # abreviaturas o ids de tipo separados por comas; sin «tipos» vale para todos
+grupo: Guías de etiquetado (US)   # para agrupar en el desplegable
+nombre: Owner · Solicita validación de guía
+tipos: us                          # abreviaturas o ids de tipo separados por comas; sin «tipos» vale para todos
 ---
 ```
 
@@ -27,3 +28,12 @@ Campos que se rellenan solos:
 | `{descripcion}` | Descripción de la tarea |
 
 Si un campo queda vacío, su línea entera desaparece del mensaje.
+
+**Huecos que se preguntan** al preparar el mensaje (no salen de la tarea): `{?Link a la guía}`, `{?Número de defect}`,
+`{?PO IT}`… Cada uno aparece como una casilla, con sugerencias (enlaces de la tarea, o personas ordenadas por su rol
+en la ficha). Si se deja vacío, el mensaje muestra `<Link a la guía>` para que se vea.
+
+Con `{?Etiqueta|campo}` el hueco toma por defecto un campo de la tarea: `Hola {?Responsable del delivery|para},`
+saluda a las personas de la tarea si no se escribe otro nombre.
+
+Las plantillas actuales son los mensajes oficiales de guías y validaciones de etiquetado (de Confluence).
