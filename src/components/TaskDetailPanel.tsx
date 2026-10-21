@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, CalendarPlus, Sun, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
 import { TaskNotes } from '../features/notes/TaskNotes';
+import { MessageButton } from '../features/templates/MessageComposer';
 import { projectPath } from '../domain/projects';
 import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
@@ -107,6 +108,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
           <Prop icon={<AlarmClock className="size-4" />} label="Recordatorio"><ReminderField task={task} /></Prop>
           <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>
+          <Prop icon={<MessageSquare className="size-4" />} label="Mensaje"><MessageButton task={task} className={fieldBox} /></Prop>
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
           <Prop icon={<Rocket className="size-4" />} label="Release"><ReleaseField task={task} /></Prop>
           <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>
