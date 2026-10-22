@@ -80,7 +80,7 @@ export class Api {
     const name = String(input.name ?? '').trim();
     const password = String(input.password ?? '');
     if (String(input.code ?? '').trim().toUpperCase() !== this.teamCode) throw new ApiError(403, 'El código del equipo no es correcto.');
-    if (!/^[a-z0-9._-]{2,40}$/.test(login)) throw new ApiError(400, 'El usuario solo puede tener letras sin tildes, números, puntos o guiones.');
+    if (!/^[a-z0-9._@+-]{2,80}$/.test(login)) throw new ApiError(400, 'El usuario puede ser tu email o un nombre sin espacios ni tildes.');
     if (!name) throw new ApiError(400, 'Escribe tu nombre (es el que se usa al mencionarte).');
     if (password.length < 8) throw new ApiError(400, 'La contraseña tiene que tener al menos 8 caracteres.');
     if (this.db.prepare('SELECT 1 FROM users WHERE login = ?').get(login)) throw new ApiError(409, 'Ese usuario ya existe.');

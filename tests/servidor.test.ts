@@ -18,6 +18,8 @@ describe('servidor del equipo', () => {
     expect(() => api.register({ login: 'x', name: 'X', password: 'contraseña-larga', code: 'MAL' })).toThrow(/código/);
     const marta = signup('marta', 'Marta García');
     expect(() => signup('marta', 'Otra')).toThrow(/ya existe/);
+    expect(signup('Marta.Garcia@vml.com', 'Marta G').login).toBe('marta.garcia@vml.com');
+    expect(() => signup('con espacios', 'X')).toThrow(/email/);
     expect(() => api.login({ login: 'marta', password: 'otra-cosa' })).toThrow(/incorrectos/);
     const { token } = api.login({ login: 'MARTA', password: 'contraseña-larga' });
     expect(api.userForToken(token)?.id).toBe(marta.id);

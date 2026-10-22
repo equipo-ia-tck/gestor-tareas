@@ -101,7 +101,7 @@ function LoginForm({ onDone }: { onDone: () => void }) {
       )}
       <label className="block space-y-1" htmlFor="auth-login">
         <span className="text-zinc-600 dark:text-zinc-400">Usuario</span>
-        <input {...field('login')} required autoComplete="username" autoCapitalize="none" className={input} />
+        <input {...field('login')} required autoComplete="username" autoCapitalize="none" placeholder="Tu email del trabajo" className={input} />
       </label>
       <label className="block space-y-1" htmlFor="auth-password">
         <span className="text-zinc-600 dark:text-zinc-400">Contraseña</span>
@@ -112,7 +112,7 @@ function LoginForm({ onDone }: { onDone: () => void }) {
         <label className="block space-y-1" htmlFor="auth-code">
           <span className="text-zinc-600 dark:text-zinc-400">Código del equipo</span>
           <input {...field('code')} required autoCapitalize="characters" placeholder="ABCD-1234" className={input} />
-          <span className="block text-xs text-zinc-500">Sale en la terminal donde se arrancó el servidor, y en Ajustes de quien ya tiene cuenta.</span>
+          <span className="block text-xs text-zinc-500">Una clave del equipo para que solo vosotros podáis crear cuenta. Sale en la terminal del servidor («Código del equipo para crear cuentas») y en Ajustes → Equipo de quien ya tiene cuenta.</span>
         </label>
       )}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
