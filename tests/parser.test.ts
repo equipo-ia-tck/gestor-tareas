@@ -340,4 +340,12 @@ describe('subproyectos en la captura (fase 10)', () => {
     expect(p10('revisar #caixa/sprint-15')).toEqual({ id: null, name: 'sprint 15', parent_id: 'c' });
     expect(p10('revisar #otro')).toEqual({ id: null, name: 'otro', parent_id: null });
   });
+
+  it('reconoce los IDs de Rally sin guion y pone el tipo', () => {
+    const types = [{ id: 'us', name: 'User Story', short: 'US', color: '', states: [], order: 1 }, { id: 'ts', name: 'Test Scenario', short: 'TS', color: '', states: [], order: 2 }];
+    const us = parseCapture('US1764574 Alta Bizum', { ...ctx, types } as never)[0];
+    expect(us).toMatchObject({ external_id: 'US1764574', type_id: 'us', title: 'Alta Bizum' });
+    expect(parseCapture('TS92615 transferencias', { ...ctx, types } as never)[0]).toMatchObject({ external_id: 'TS92615', type_id: 'ts' });
+    expect(parseCapture('revisar COVID19 y US12', { ...ctx, types } as never)[0].external_id).toBeNull();
+  });
 });

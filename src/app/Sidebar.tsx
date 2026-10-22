@@ -46,8 +46,8 @@ const Heading = ({ href, children, action }: { href?: string; children: ReactNod
 );
 
 /** "+" junto a Proyectos: crea un proyecto y lo abre. */
-function NewProjectButton() {
-  const [open, setOpen] = useState(false);
+/** "+" del título Proyectos; el cuadro para escribir el nombre aparece en su propia línea, debajo. */
+function NewProjectForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('');
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -55,19 +55,14 @@ function NewProjectButton() {
       const p = await repo.createProject(name.trim());
       window.location.hash = routeHref({ view: 'project', id: p.id });
     }
-    setName('');
-    setOpen(false);
+    onDone();
   }
-  return open ? (
-    <form onSubmit={create} className="absolute inset-x-2 z-10 mt-6">
-      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nuevo proyecto"
-        onBlur={() => { if (!name.trim()) setOpen(false); }} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+  return (
+    <form onSubmit={create} className="mb-1 px-2">
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del proyecto y Enter"
+        onBlur={() => { if (!name.trim()) onDone(); }} onKeyDown={(e) => { if (e.key === 'Escape') onDone(); }}
         className="w-full rounded-md border border-indigo-400 bg-white px-2 py-1 text-sm outline-none dark:bg-zinc-900" />
     </form>
-  ) : (
-    <button type="button" onClick={() => setOpen(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
-      <Plus className="size-3.5" />
-    </button>
   );
 }
 
@@ -147,6 +142,7 @@ function MoreSection({ route, releases }: { route: Route; releases: number }) {
 
 export function Sidebar({ route }: { route: Route }) {
   const { tasks, projects, today, releases } = useApp();
+  const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
   const { notes, peopleCards } = useApp();
   // Todas las personas: con tareas, mencionadas en notas o con ficha.
@@ -194,9 +190,12 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
 
-      <div className="relative">
-        <Heading action={<NewProjectButton />}><FolderOpen className="mr-1.5 inline size-3.5" />Proyectos</Heading>
-      </div>
+      <Heading action={
+        <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
+          <Plus className="size-3.5" />
+        </button>
+      }><FolderOpen className="mr-1.5 inline size-3.5" />Proyectos</Heading>
+      {addingProject && <NewProjectForm onDone={() => setAddingProject(false)} />}
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
       {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
       <ArchivedProjects />

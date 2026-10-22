@@ -9,3 +9,45 @@
     @apply outline-2 outline-offset-1 outline-indigo-500;
   }
 }
+
+/* ---- Editor de notas con formato (TipTap) ---- */
+.note-editor {
+  min-height: 16rem;
+  outline: none;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding: 0.25rem 0.25rem 2rem;
+}
+.note-editor > * + * { margin-top: 0.35rem; }
+.note-editor h1 { font-size: 1.5rem; font-weight: 700; margin-top: 1rem; }
+.note-editor h2 { font-size: 1.2rem; font-weight: 650; margin-top: 0.9rem; }
+.note-editor h3 { font-size: 1.05rem; font-weight: 600; margin-top: 0.75rem; }
+.note-editor ul:not([data-type='taskList']) { list-style: disc; padding-left: 1.4rem; }
+.note-editor ol { list-style: decimal; padding-left: 1.6rem; }
+.note-editor li > p { margin: 0; }
+.note-editor ul[data-type='taskList'] { list-style: none; padding-left: 0.1rem; }
+.note-editor ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.note-editor ul[data-type='taskList'] li > label { margin-top: 0.3rem; user-select: none; }
+.note-editor ul[data-type='taskList'] li > label input { width: 1rem; height: 1rem; accent-color: var(--color-emerald-600); cursor: pointer; }
+.note-editor ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
+.note-editor ul[data-type='taskList'] li[data-checked='true'] > div { color: var(--color-zinc-400); text-decoration: line-through; }
+.note-editor blockquote { border-left: 3px solid var(--color-zinc-300); padding-left: 0.75rem; color: var(--color-zinc-600); }
+.note-editor hr { border: 0; border-top: 1px solid var(--color-zinc-200); margin: 1rem 0; }
+.note-editor code { font-family: ui-monospace, monospace; font-size: 0.85em; background: var(--color-zinc-100); border-radius: 0.25rem; padding: 0.05rem 0.3rem; color: var(--color-rose-600); }
+.note-editor a { color: var(--color-indigo-600); text-decoration: underline; }
+.note-editor .note-mention { color: var(--color-sky-700); background: var(--color-sky-50); border-radius: 0.25rem; padding: 0 0.1rem; }
+.note-editor .note-project { color: var(--color-violet-700); }
+.note-editor .note-key { color: var(--color-cyan-700); font-family: ui-monospace, monospace; font-size: 0.9em; }
+.note-editor .note-tasklink { margin-left: 0.25rem; font-size: 0.75rem; color: var(--color-indigo-500); }
+.note-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--color-zinc-400);
+}
+@media (prefers-color-scheme: dark) {
+  .note-editor blockquote { border-color: var(--color-zinc-600); color: var(--color-zinc-400); }
+  .note-editor hr { border-color: var(--color-zinc-700); }
+  .note-editor code { background: var(--color-zinc-800); color: var(--color-rose-400); }
+  .note-editor a { color: var(--color-indigo-400); }
+  .note-editor .note-mention { color: var(--color-sky-300); background: color-mix(in oklab, var(--color-sky-900) 40%, transparent); }
+  .note-editor .note-project { color: var(--color-violet-300); }
+  .note-editor .note-key { color: var(--color-cyan-300); }
+}

@@ -13,7 +13,7 @@ export function ItemNotes({ taskIds }: { taskIds: Set<string> }) {
   const groups = notesByTask(taskIds, notes);
   const total = groups.reduce((s, g) => s + g.notes.length, 0);
   return (
-    <Section title={<span className="inline-flex items-center gap-1.5"><MessageSquareText className="size-3.5" />Notas por elemento · {total}</span>} collapsible defaultOpen={total > 0}>
+    <Section title={<span className="inline-flex items-center gap-1.5"><MessageSquareText className="size-3.5" />Notas por elemento · {total}</span>} collapsible defaultOpen={total > 0} prominent>
       {!groups.length && <p className="px-2 py-2 text-sm text-zinc-400">Las notas que añadas en el panel de una US, TS o tarea aparecerán aquí, agrupadas por elemento.</p>}
       <div className="space-y-3">
         {groups.map(({ taskId, notes: list }) => {

@@ -1,6 +1,9 @@
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { DateButton } from '../../components/ui/DatePicker';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+
+// El editor con formato pesa: se carga al abrir una nota, no al arrancar la app.
+const NoteEditor = lazy(() => import('./NoteEditor').then((m) => ({ default: m.NoteEditor })));
 import { FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -15,13 +18,12 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { fold, nameKey } from '../../domain/text';
 import { TOPIC_TYPE_ID, type Note, type NoteKind, type Project } from '../../domain/types';
 import { stateOf } from '../../domain/workflows';
-import { createTasksFromActions, toggleAction } from './noteActions';
+import { createTasksFromActions } from './noteActions';
 import { IcsImport } from './IcsImport';
 import { MeetingLink, ShareMeeting } from './MeetingTools';
 import { taskLabel } from './TaskNotes';
 import { TypeBadge } from '../../components/ui/Badges';
 import { findType } from '../../domain/workflows';
-import { NoteEditor } from './NoteEditor';
 
 /** Crea una nota o un acta (con plantilla) y la abre. */
 export async function newNote(kind: NoteKind, today: string, fields: Partial<Note> = {}) {
@@ -81,7 +83,8 @@ export function NotesView({ id }: { id?: string }) {
     <div className="grid h-[calc(100dvh-7rem)] min-h-[480px] grid-cols-[210px_250px_1fr] overflow-hidden rounded-xl border border-zinc-200 bg-white max-lg:h-auto max-lg:grid-cols-1 dark:border-zinc-800 dark:bg-zinc-950">
       {/* Secciones */}
       <nav aria-label="Secciones" className="flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40">
-        <h2 className="px-3 pt-3 pb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones</h2>
+        <h2 className="px-3 pt-3 pb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones</h2>
+        <AddSection parent={sectionProject} onCreated={(pid) => selectSection(pid)} />
         <div className="flex-1 overflow-y-auto pb-2">
           <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => selectSection(ALL)} />
           {flattenTree(projectTree(projects)).map(({ project: p, depth }) => (
@@ -89,7 +92,6 @@ export function NotesView({ id }: { id?: string }) {
           ))}
           {count(NONE) > 0 && <SectionRow label="Sin sección" color="#d4d4d8" active={section === NONE} count={count(NONE)} onClick={() => selectSection(NONE)} />}
         </div>
-        <AddSection parent={sectionProject} onCreated={(pid) => selectSection(pid)} />
       </nav>
 
       {/* Páginas */}
@@ -100,6 +102,14 @@ export function NotesView({ id }: { id?: string }) {
               {section === ALL ? 'Todas las notas' : section === NONE ? 'Sin sección' : sectionProject?.name}
             </h2>
             <IcsImport />
+          </div>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => addPage('note')} className="flex flex-1 items-center justify-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:border-indigo-900 dark:bg-zinc-900 dark:text-indigo-400 dark:hover:bg-indigo-950">
+              <Plus className="size-4" />Agregar página
+            </button>
+            <button type="button" onClick={() => addPage('meeting')} title="Nueva acta de reunión" className="flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+              <Users className="size-4" />Acta
+            </button>
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
@@ -118,14 +128,6 @@ export function NotesView({ id }: { id?: string }) {
           {!pages.length && !itemNotes.length && (
             <p className="px-3 py-4 text-sm text-zinc-400">{words.length ? 'Nada coincide.' : 'Sección vacía. Añade una página o un acta.'}</p>
           )}
-        </div>
-        <div className="flex gap-1 border-t border-zinc-200 p-2 dark:border-zinc-800">
-          <button type="button" onClick={() => addPage('note')} className="flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950">
-            <Plus className="size-4" />Agregar página
-          </button>
-          <button type="button" onClick={() => addPage('meeting')} title="Nueva acta de reunión" className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            <Users className="size-4" />Acta
-          </button>
         </div>
       </div>
 
@@ -172,13 +174,15 @@ function AddSection({ parent, onCreated }: { parent?: Project; onCreated: (id: s
   }
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1 border-t border-zinc-200 px-3 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:border-zinc-800 dark:text-indigo-400 dark:hover:bg-indigo-950">
-        <Plus className="size-4" />Agregar sección
-      </button>
+      <div className="px-2 pb-2">
+        <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center justify-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:border-indigo-900 dark:bg-zinc-900 dark:text-indigo-400 dark:hover:bg-indigo-950">
+          <Plus className="size-4" />Agregar sección
+        </button>
+      </div>
     );
   }
   return (
-    <form onSubmit={create} className="space-y-1 border-t border-zinc-200 p-2 dark:border-zinc-800">
+    <form onSubmit={create} className="space-y-1 px-2 pb-2">
       <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre de la sección"
         onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
         className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
@@ -281,11 +285,7 @@ function NotePage({ note }: { note: Note }) {
 
       {/* El lateral (acciones, temas de los asistentes) solo en actas o si la nota tiene acciones. */}
       <div className={`grid gap-6 ${showSide ? '2xl:grid-cols-[1fr_260px]' : ''}`}>
-        <NoteEditor
-          note={note}
-          onToggle={(line, taskId) => void toggleAction(note, line, taskId, taskMap)}
-          onMakeTask={(line) => void createTasksFromActions(note, ctx, actions.find((a) => a.line === line))}
-        />
+        <Suspense fallback={<p className="text-sm text-zinc-400">Abriendo el editor…</p>}><NoteEditor note={note} /></Suspense>
         {showSide && <div className="space-y-5 text-sm">
           <SidePanel icon={<ListChecks className="size-4" />} title={`Acciones · ${actions.filter((a) => (a.taskId ? taskMap.get(a.taskId)?.status === 'done' : a.checked)).length}/${actions.length}`}>
             {actions.length === 0 && <p className="text-xs text-zinc-400">Escribe acciones con <code>- [ ] …</code> (admiten @persona, fechas y !1).</p>}

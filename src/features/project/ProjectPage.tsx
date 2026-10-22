@@ -1,10 +1,10 @@
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { AlertTriangle, Check, CheckCircle2, Clock, FileText, LayoutGrid, List, KanbanSquare, Plus } from 'lucide-react';
+import { AlertTriangle, Archive, Check, CheckCircle2, Clock, FileText, LayoutGrid, List, KanbanSquare, Pencil, Plus, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { routeHref } from '../../app/router';
 import { QuickAdd } from '../../components/QuickAdd';
-import { Section, SmallButton, TaskList } from '../../components/TaskList';
+import { ActionButton, Section, TaskList } from '../../components/TaskList';
 import { AvatarStack, PriorityFlag, StatePill, TypeBadge } from '../../components/ui/Badges';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
@@ -32,7 +32,8 @@ export function ProjectView({ id }: { id: string }) {
   const { tasks, notes, allProjects, projectMap, today } = useApp();
   const project = projectMap.get(id);
   const [mode, setMode] = usePersistentState<Mode>(`project-view:${id}`, 'summary');
-  useWideLayout(mode !== 'list');
+  // Siempre a todo el ancho: al cambiar de modo, la cabecera y sus botones no se mueven.
+  useWideLayout(true);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
 
@@ -81,8 +82,8 @@ export function ProjectView({ id }: { id: string }) {
             <ModeSwitch value={mode} onChange={setMode} />
             <ProjectSpace id={id} />
             <MoveProject id={id} />
-            <SmallButton onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</SmallButton>
-            <SmallButton onClick={toggleArchive}>{project.archived ? 'Desarchivar' : 'Archivar'}</SmallButton>
+            <ActionButton icon={<Pencil className="size-3.5" />} onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</ActionButton>
+            <ActionButton icon={<Archive className="size-3.5" />} onClick={toggleArchive}>{project.archived ? 'Desarchivar' : 'Archivar'}</ActionButton>
           </>
         }
       />
@@ -115,29 +116,66 @@ function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
   );
 }
 
-/** Cifras del proyecto completo (con subproyectos). */
+type StatKey = 'pending' | 'doing' | 'blocked' | 'late' | 'done' | 'notes';
+
+/** Cifras del proyecto completo (con subproyectos). Al pulsar una, se ven debajo cuáles son. */
 function Stats({ tasks, notes, today }: { tasks: Task[]; notes: Note[]; today: string }) {
-  const { itemTypes } = useApp();
+  const { itemTypes, projectMap, editTask } = useApp();
+  const [open, setOpen] = useState<StatKey | null>(null);
   const active = tasks.filter(isActive);
-  const cat = (c: string) => active.filter((t) => stateOf(itemTypes, t).category === c).length;
-  const late = active.filter((t) => t.due_date && t.due_date < today).length;
+  const byCat = (c: string) => active.filter((t) => stateOf(itemTypes, t).category === c);
   const weekAgo = addDays(today, -6);
-  const doneWeek = tasks.filter((t) => t.status === 'done' && t.completed_at && t.completed_at.slice(0, 10) >= weekAgo).length;
-  const tile = (icon: ReactNode, label: string, value: number, cls = '') => (
-    <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-      <div className="flex items-center gap-1.5 text-xs text-zinc-500">{icon}{label}</div>
+  const groups: Record<Exclude<StatKey, 'notes'>, Task[]> = {
+    pending: active,
+    doing: byCat('doing'),
+    blocked: byCat('blocked'),
+    late: active.filter((t) => t.due_date && t.due_date < today),
+    done: tasks.filter((t) => t.status === 'done' && t.completed_at && t.completed_at.slice(0, 10) >= weekAgo),
+  };
+  const labels: Record<StatKey, string> = {
+    pending: 'Pendientes', doing: 'En curso', blocked: 'Bloqueadas', late: 'Atrasadas', done: 'Hechas (7 días)', notes: 'Notas',
+  };
+  const tile = (key: StatKey, icon: ReactNode, value: number, cls = '') => (
+    <button type="button" aria-pressed={open === key} onClick={() => setOpen(open === key ? null : key)} title={`Ver ${labels[key].toLowerCase()}`}
+      className={`rounded-lg border px-3 py-2 text-left transition-colors ${open === key
+        ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500 dark:bg-indigo-950/40'
+        : 'border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900'}`}>
+      <div className="flex items-center gap-1.5 text-xs text-zinc-500">{icon}{labels[key]}</div>
       <div className={`text-xl font-semibold tabular-nums ${cls}`}>{value}</div>
-    </div>
+    </button>
   );
   return (
-    <div className="mb-5 grid grid-cols-3 gap-2 sm:grid-cols-6">
-      {tile(<Clock className="size-3.5" />, 'Pendientes', active.length)}
-      {tile(<span className="size-2 rounded-full bg-blue-500" />, 'En curso', cat('doing'))}
-      {tile(<span className="size-2 rounded-full bg-red-500" />, 'Bloqueadas', cat('blocked'), cat('blocked') ? 'text-red-600' : '')}
-      {tile(<AlertTriangle className="size-3.5" />, 'Atrasadas', late, late ? 'text-amber-600' : '')}
-      {tile(<CheckCircle2 className="size-3.5 text-emerald-500" />, 'Hechas (7 días)', doneWeek)}
-      {tile(<FileText className="size-3.5" />, 'Notas', notes.length)}
-    </div>
+    <>
+      <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {tile('pending', <Clock className="size-3.5" />, groups.pending.length)}
+        {tile('doing', <span className="size-2 rounded-full bg-blue-500" />, groups.doing.length)}
+        {tile('blocked', <span className="size-2 rounded-full bg-red-500" />, groups.blocked.length, groups.blocked.length ? 'text-red-600' : '')}
+        {tile('late', <AlertTriangle className="size-3.5" />, groups.late.length, groups.late.length ? 'text-amber-600' : '')}
+        {tile('done', <CheckCircle2 className="size-3.5 text-emerald-500" />, groups.done.length)}
+        {tile('notes', <FileText className="size-3.5" />, notes.length)}
+      </div>
+      {open && (
+        <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-900 dark:bg-indigo-950/20">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">{labels[open]} · {open === 'notes' ? notes.length : groups[open].length}</h3>
+            <button type="button" onClick={() => setOpen(null)} title="Cerrar" className="rounded p-1 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+          </div>
+          {open === 'notes' ? (
+            notes.length ? (
+              <ul className="space-y-1 text-sm">
+                {sortNotes(notes).map((n) => (
+                  <li key={n.id}><a href={routeHref({ view: 'notes', id: n.id })} className="hover:underline">{n.title || 'Sin título'}</a>
+                    <span className="ml-2 text-xs text-zinc-500">{formatDay(n.date, today)}</span></li>
+                ))}
+              </ul>
+            ) : <p className="text-sm text-zinc-500">No hay notas.</p>
+          ) : (
+            <TaskList tasks={sortTasks(groups[open])} today={today} projects={projectMap} onEdit={editTask} empty="No hay ninguna." />
+          )}
+        </div>
+      )}
+      {!open && <div className="mb-2" />}
+    </>
   );
 }
 

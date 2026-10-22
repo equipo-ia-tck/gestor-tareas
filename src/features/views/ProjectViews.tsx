@@ -1,5 +1,6 @@
 import { useApp } from '../../app/AppContext';
-import { Section, SmallButton } from '../../components/TaskList';
+import { ActionButton, Section } from '../../components/TaskList';
+import { FolderInput, Lock, Plus, Users } from 'lucide-react';
 import { repo } from '../../data/services';
 import { newNote } from '../notes/NotesView';
 import { noteExcerpt, sortNotes } from '../../domain/notes';
@@ -17,7 +18,7 @@ export function MoveProject({ id }: { id: string }) {
   const move = (parent: string | null, label: string) =>
     void repo.batch(parent ? `Movido dentro de ${label}` : 'Movido al nivel superior', () => repo.updateProject(id, { parent_id: parent }));
   return (
-    <Popover align="right" width="w-64" trigger={(toggle) => <SmallButton onClick={toggle}>Mover…</SmallButton>}>
+    <Popover align="right" width="w-64" trigger={(toggle) => <ActionButton icon={<FolderInput className="size-3.5" />} onClick={toggle}>Mover…</ActionButton>}>
       {(close) => (
         <div className="max-h-72 overflow-y-auto">
           {project.parent_id && <MenuItem onClick={() => { close(); move(null, ''); }}><span className="text-zinc-500">↑ Nivel superior</span></MenuItem>}
@@ -46,17 +47,16 @@ export function ProjectSpace({ id }: { id: string }) {
   const space = spaces.find((s) => s.id === current);
   const label = current ? space?.name ?? 'Espacio compartido' : 'Personal';
   if (project.parent_id) {
-    return <span className="px-2 text-xs text-zinc-400" title="Los subproyectos están en el espacio de su proyecto principal">{label}</span>;
+    return <span className="inline-flex items-center gap-1 px-2 text-sm text-zinc-500" title="Los subproyectos están en el espacio de su proyecto principal">{current ? <Users className="size-3.5" /> : <Lock className="size-3.5" />}{label}</span>;
   }
   const set = (spaceId: string | null, name: string) =>
     void repo.batch(spaceId ? `Proyecto en ${name}` : 'Proyecto personal', () => repo.updateProject(id, { space_id: spaceId }));
   return (
     <Popover align="right" width="w-72" trigger={(toggle) => (
-      <SmallButton onClick={toggle}>
-        <span className="inline-flex items-center gap-1.5">
-          {space && <span className="size-2 rounded-full" style={{ background: space.color }} />}{label}
-        </span>
-      </SmallButton>
+      <ActionButton onClick={toggle} title="Quién puede ver este proyecto"
+        icon={space ? <span className="size-2.5 rounded-full" style={{ background: space.color }} /> : <Lock className="size-3.5" />}>
+        {label}
+      </ActionButton>
     )}>
       {(close) => (
         <div className="text-sm">
@@ -83,7 +83,8 @@ export function ProjectNotes({ projectIds, projectId }: { projectIds: Set<string
   return (
     <Section
       title={`Notas y actas · ${mine.length}`}
-      aside={<SmallButton onClick={() => void newNote('meeting', today, { project_id: projectId })}>+ Acta</SmallButton>}
+      aside={<ActionButton icon={<Plus className="size-3.5" />} onClick={() => void newNote('meeting', today, { project_id: projectId })}>Nueva acta</ActionButton>}
+      prominent
       collapsible
       defaultOpen={mine.length > 0}
     >

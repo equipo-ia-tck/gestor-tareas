@@ -27,8 +27,10 @@ export function TaskList({ tasks, empty, extra, ...rest }: Props) {
   );
 }
 
-export function Section({ title, aside, children, collapsible, defaultOpen = true, onDropTasks }: {
+export function Section({ title, aside, children, collapsible, defaultOpen = true, onDropTasks, prominent }: {
   title: ReactNode;
+  /** Cabecera más visible (bloques principales de una página, como las notas de un proyecto). */
+  prominent?: boolean;
   aside?: ReactNode;
   children: ReactNode;
   collapsible?: boolean;
@@ -40,9 +42,11 @@ export function Section({ title, aside, children, collapsible, defaultOpen = tru
   const { over, dropProps } = useTaskDrop(onDropTasks);
   return (
     <section className={`mb-6 ${over ? dropHighlight : ''}`} {...dropProps}>
-      <header className="mb-1 flex items-baseline justify-between gap-3 border-b border-zinc-200 px-2 pb-1 dark:border-zinc-700">
+      <header className={prominent
+        ? 'mb-2 flex items-center justify-between gap-3 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-800/70'
+        : 'mb-1 flex items-baseline justify-between gap-3 border-b border-zinc-200 px-2 pb-1 dark:border-zinc-700'}>
         <h3
-          className={`text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400 ${collapsible ? 'cursor-pointer select-none' : ''}`}
+          className={`${prominent ? 'text-sm font-semibold text-zinc-800 dark:text-zinc-100' : 'text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400'} ${collapsible ? 'cursor-pointer select-none' : ''}`}
           onClick={collapsible ? () => setOpen((o) => !o) : undefined}
         >
           {collapsible && <span className="mr-1 inline-block w-3">{open ? '▾' : '▸'}</span>}
@@ -54,6 +58,18 @@ export function Section({ title, aside, children, collapsible, defaultOpen = tru
     </section>
   );
 }
+
+/** Botón de acción visible (con borde e icono), para las acciones de una página. */
+export const ActionButton = ({ onClick, children, title, icon }: { onClick: () => void; children: ReactNode; title?: string; icon?: ReactNode }) => (
+  <button
+    type="button"
+    title={title}
+    onClick={onClick}
+    className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm text-zinc-700 shadow-sm hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+  >
+    {icon}{children}
+  </button>
+);
 
 export const SmallButton = ({ onClick, children, title }: { onClick: () => void; children: ReactNode; title?: string }) => (
   <button

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { formatDay, formatMinutes } from '../../domain/dates';
@@ -35,6 +35,8 @@ interface Props {
   /** El texto empieza por ">": pasar a la paleta de comandos. */
   onCommandMode?: (query: string) => void;
   large?: boolean;
+  /** Texto que se escribe en la captura desde fuera (p. ej. un ejemplo de la guía). Cambia `n` para repetirlo. */
+  seed?: { text: string; n: number } | null;
 }
 
 interface Suggestion {
@@ -43,7 +45,7 @@ interface Suggestion {
 }
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
-export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large }: Props) {
+export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large, seed }: Props) {
   const { projects, projectMap, today, itemTypes, releases, mentionables } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -52,6 +54,12 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!seed) return;
+    setText(seed.text);
+    setCaret(seed.text.length);
+    requestAnimationFrame(() => { ref.current?.focus(); ref.current?.setSelectionRange(seed.text.length, seed.text.length); });
+  }, [seed]);
 
   const people = mentionables;
   const parsed = useMemo(

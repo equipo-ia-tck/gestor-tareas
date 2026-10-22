@@ -392,6 +392,26 @@ Decisión de la usuaria (22 oct 2026): una sola instancia y una cuenta por perso
 - El panel de la tarea muestra "Espacio X · De Y · Compartida con Z". Ajustes → Espacios (`SpacesCard`) sustituye a Equipo.
 - Prueba local: configuración `equipo-prueba` de `.claude/launch.json` (puerto 4180, datos en `servidor/datos-prueba`).
 
+## Fase 17: notas con formato y retoques de interfaz
+
+Petición de la usuaria (22 oct 2026).
+
+- **Editor de notas con formato** (`features/notes/NoteEditor.tsx`, TipTap 3: `@tiptap/react`, `starter-kit`,
+  `extension-list` para las casillas, `extensions` para el placeholder): ya no se ve el Markdown. Las notas se **siguen
+  guardando en Markdown** (`richText.ts`: `markdownToHtml` al cargar y `docToMarkdown` al escribir, con tests), así que
+  acciones, menciones, "quién dijo qué", búsqueda y copias no cambian. `[[t:id]]` es un nodo `taskLink` (un "↗"); marcar
+  la casilla de una acción enlazada completa o reabre la tarea; las casillas enlazadas se cargan con el estado real de la
+  tarea. @personas, #proyectos e IDs se colorean con decoraciones; "@" abre sugerencias (`mentionables`). Atajos de
+  TipTap: "## ", "- ", "1. ", "[] ", **negrita**… Se carga bajo demanda (`lazy`) para no engordar el arranque. Estilos en
+  `index.css` (`.note-editor`).
+- **Proyecto**: siempre a todo el ancho (la cabecera no se mueve al cambiar Resumen/Lista/Tablero); acciones como
+  `ActionButton` (con borde e icono); las cifras se pulsan y muestran sus tareas (o notas) debajo; secciones de notas con
+  `Section prominent`.
+- **Bandeja**: `CaptureGuide` con la sintaxis y ejemplos que se escriben en la captura (`seed` de `CaptureInput`).
+- **Captura**: también reconoce IDs de Rally sin guion (`US1764574`, `TS92615`, `DE…`, `TA…`, `TC…`, `F…`).
+- **Notas**: "Agregar sección", "Agregar página" y "Acta" arriba de sus columnas. **Barra lateral**: el nombre del proyecto
+  nuevo se escribe en su propia línea (no tapa la lista).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -411,6 +431,7 @@ Decisión de la usuaria (22 oct 2026): una sola instancia y una cuenta por perso
 - [x] Fase 14: auditoría: barra lateral simplificada, Mi día, revisión semanal, búsqueda única, Outlook, unir personas, sin dictado
 - [x] Fase 15: versión para el equipo: servidor propio, cuentas provisionales, privado salvo mención y sincronización
 - [x] Fase 16: espacios de equipo (miembros, invitaciones, proyectos compartidos, filtro por espacio, menciones exactas)
+- [x] Fase 17: notas con formato (sin Markdown a la vista), proyecto más claro, guía de captura, IDs de Rally
 
 ## Fases
 

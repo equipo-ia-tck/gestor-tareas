@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useApp } from '../../app/AppContext';
+import { CaptureGuide } from '../capture/CaptureGuide';
 import { QuickAdd } from '../../components/QuickAdd';
 import { SmallButton, TaskList } from '../../components/TaskList';
 import { addDays } from '../../domain/dates';
@@ -10,11 +12,13 @@ export function InboxView() {
   const { tasks, today, projectMap, editTask } = useApp();
   const { reschedule } = useTaskActions();
   const inbox = inboxTasks(tasks);
+  const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
 
   return (
     <>
       <ViewHeader title="Bandeja" subtitle="Tareas sin fecha ni proyecto" />
-      <QuickAdd />
+      <QuickAdd seed={seed} />
+      <CaptureGuide onExample={(text) => setSeed({ text, n: Date.now() })} />
       <TaskList
         tasks={inbox}
         today={today}
