@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Bold, CheckSquare, Heading2, List, Pencil, Eye } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
-import { knownPeople } from '../../domain/selectors';
 import { fuzzyScore, tokenName } from '../../domain/text';
 import type { Note } from '../../domain/types';
 import { Markdown } from './Markdown';
@@ -18,7 +17,7 @@ export function NoteEditor({ note, onToggle, onMakeTask }: {
   onToggle: (line: number, taskId: string | null) => void;
   onMakeTask: (line: number) => void;
 }) {
-  const { tasks } = useApp();
+  const { mentionables } = useApp();
   const [editing, setEditing] = useState(!note.body.trim());
   const [text, setText] = useState(note.body);
   const [caret, setCaret] = useState(0);
@@ -59,7 +58,7 @@ export function NoteEditor({ note, onToggle, onMakeTask }: {
   }, [text, editing]);
 
   // ---- Autocompletado de @persona
-  const people = useMemo(() => knownPeople(tasks), [tasks]);
+  const people = mentionables;
   const trigger = /(?:^|\s)@([\p{L}\p{N}_\-.]*)$/u.exec(text.slice(0, caret));
   const suggestions = trigger ? people.filter((p) => fuzzyScore(trigger[1], p) !== null).slice(0, 5) : [];
   const [sel, setSel] = useState(0);

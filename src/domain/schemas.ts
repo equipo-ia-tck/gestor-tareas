@@ -17,6 +17,7 @@ export const projectSchema = z.object({
   name: z.string().min(1),
   color: z.string(),
   parent_id: z.string().nullable().default(null),
+  space_id: z.string().nullable().optional(),
   archived: z.boolean(),
   created_at: isoDateTime,
 });

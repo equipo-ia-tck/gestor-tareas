@@ -12,7 +12,6 @@ import { actionItems } from '../../domain/markdown';
 import { defaultNoteTitle, matchesNote, meetingTemplate, noteExcerpt, reorderPages, sortNotes, sortPages } from '../../domain/notes';
 import { ancestry, flattenTree, MAX_PROJECT_DEPTH, projectPath, projectTree } from '../../domain/projects';
 import { usePersistentState } from '../../hooks/usePersistentState';
-import { knownPeople } from '../../domain/selectors';
 import { fold, nameKey } from '../../domain/text';
 import { TOPIC_TYPE_ID, type Note, type NoteKind, type Project } from '../../domain/types';
 import { stateOf } from '../../domain/workflows';
@@ -240,11 +239,11 @@ function PageList({ pages, activeId, reorderable }: { pages: Note[]; activeId?: 
 }
 
 function NotePage({ note }: { note: Note }) {
-  const { tasks, projects, today, itemTypes, releases } = useApp();
+  const { tasks, projects, today, itemTypes, releases, mentionables } = useApp();
   const [title, setTitle] = useState(note.title);
   useEffect(() => setTitle(note.title), [note.title]);
   const taskMap = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
-  const ctx = { today, projects, people: knownPeople(tasks), types: itemTypes, releases };
+  const ctx = { today, projects, people: mentionables, types: itemTypes, releases };
   const actions = actionItems(note.body);
   const unlinked = actions.filter((a) => !a.taskId);
   const showSide = note.kind === 'meeting' || actions.length > 0;

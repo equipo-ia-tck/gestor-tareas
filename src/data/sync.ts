@@ -1,6 +1,7 @@
 import type { Table, Transaction } from 'dexie';
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
+import type { Space } from '../domain/spaces';
 import type { TasksDB } from './db';
 
 /**
@@ -21,8 +22,13 @@ interface PulledChange extends Change { owner: string | null }
 export interface SyncState {
   status: SyncStatus;
   user: TeamUser | null;
+  /** Todas las cuentas del servidor (para mencionar a cualquiera). */
   team: TeamUser[];
-  teamCode: string;
+  /** Espacios de los que soy miembro. */
+  spaces: Space[];
+  isAdmin: boolean;
+  /** Código de administración del servidor (solo para quien administra). */
+  adminCode: string | null;
   /** Dueño de cada registro compartido ("tasks:<id>" → id de usuario). */
   owners: Record<string, string>;
 }
@@ -51,7 +57,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 type SyncTx = Transaction & { __fromSync?: boolean };
 
 export class SyncClient {
-  private state: SyncState = { status: 'ok', user: null, team: [], teamCode: '', owners: {} };
+  private state: SyncState = { status: 'ok', user: null, team: [], spaces: [], isAdmin: false, adminCode: null, owners: {} };
   private listeners = new Set<() => void>();
   private dirty = new Map<string, { table: SyncTable; key: string }>();
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,8 +82,8 @@ export class SyncClient {
   /** Usuario con sesión abierta, o null si hay que entrar. Lanza un error si el servidor no responde. */
   async me(): Promise<TeamUser | null> {
     try {
-      const r = await call<{ user: TeamUser; team: TeamUser[]; teamCode: string }>('GET', '/api/me');
-      this.set({ user: r.user, team: r.team, teamCode: r.teamCode });
+      const r = await call<{ user: TeamUser; team: TeamUser[]; spaces: Space[]; isAdmin: boolean; adminCode: string | null }>('GET', '/api/me');
+      this.set({ user: r.user, team: r.team, spaces: r.spaces, isAdmin: r.isAdmin, adminCode: r.adminCode });
       return r.user;
     } catch (e) {
       if (e instanceof AuthError) return null;
@@ -104,6 +110,23 @@ export class SyncClient {
     await this.db.meta.bulkDelete(['sync-user', 'sync-cursor', 'sync-owners']);
     location.reload();
   }
+
+  // ---------- Espacios ----------
+
+  /** Acciones sobre espacios; al cambiar lo que veo, la siguiente sincronización lo trae todo de nuevo. */
+  private async spaceAction(path: string, body: unknown = {}) {
+    const r = await call<{ spaces: Space[] }>('POST', path, body);
+    this.set({ spaces: r.spaces });
+    await this.flush();
+    await this.pull();
+    return r.spaces;
+  }
+  createSpace = (name: string, color: string) => this.spaceAction('/api/spaces', { name, color });
+  joinSpace = (code: string) => this.spaceAction('/api/spaces/join', { code });
+  updateSpace = (id: string, patch: { name?: string; color?: string; newCode?: boolean }) => this.spaceAction(`/api/spaces/${id}/update`, patch);
+  leaveSpace = (id: string) => this.spaceAction(`/api/spaces/${id}/remove`, {});
+  removeMember = (id: string, userId: string) => this.spaceAction(`/api/spaces/${id}/remove`, { userId });
+  setRole = (id: string, userId: string, role: 'admin' | 'member') => this.spaceAction(`/api/spaces/${id}/role`, { userId, role });
 
   // ---------- Primer acceso en este navegador ----------
 
@@ -256,12 +279,22 @@ export class SyncClient {
     const pushesBefore = this.pushes;
     try {
       const since = Number((await this.db.meta.get('sync-cursor'))?.value ?? 0);
-      const r = await call<{ version: number; changes: PulledChange[]; team: TeamUser[] }>('GET', `/api/pull?since=${since}`);
+      const r = await call<{ version: number; reset: boolean; changes: PulledChange[]; team: TeamUser[]; spaces: Space[] }>('GET', `/api/pull?since=${since}`);
       // Si mientras tanto se ha subido algo, esta respuesta puede traer una versión anterior: se repite luego.
       if (this.pushes !== pushesBefore) return;
-      const owners = { ...this.state.owners };
+      const owners = r.reset ? {} : { ...this.state.owners };
       await this.db.transaction('rw', [...SYNC_TABLES.map((t) => this.table(t)), this.db.meta], async (tx) => {
         (tx as SyncTx).__fromSync = true;
+        // Ha cambiado lo que puedo ver (espacios): llega todo de nuevo y sobra lo que ya no está.
+        if (r.reset) {
+          const received = new Set(r.changes.map((c) => `${c.table}:${c.key}`));
+          for (const t of ['tasks', 'notes', 'projects', 'releases'] as const) {
+            for (const k of await this.table(t).toCollection().primaryKeys()) {
+              const id = `${t}:${String(k)}`;
+              if (!received.has(id) && !this.dirty.has(id)) await this.table(t).delete(String(k));
+            }
+          }
+        }
         for (const c of r.changes) {
           const id = `${c.table}:${c.key}`;
           if (this.dirty.has(id)) continue; // lo local pendiente de subir manda
@@ -272,7 +305,7 @@ export class SyncClient {
         await this.db.meta.put({ key: 'sync-cursor', value: r.version });
         await this.db.meta.put({ key: 'sync-owners', value: owners });
       });
-      this.set({ team: r.team, owners, status: this.dirty.size ? this.state.status : 'ok' });
+      this.set({ team: r.team, spaces: r.spaces, owners, status: this.dirty.size ? this.state.status : 'ok' });
     } catch (e) {
       if (e instanceof AuthError) return location.reload();
       this.set({ status: 'offline' });

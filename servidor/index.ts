@@ -63,10 +63,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   const user = api.userForToken(cookieOf(req));
   if (!user) throw new ApiError(401, 'Inicia sesión.');
   switch (route) {
-    case 'GET /api/me':
-      return send(res, 200, { user, team: api.team(), teamCode: api.teamCode });
+    case 'GET /api/me': {
+      const admin = api.isAdmin(user);
+      return send(res, 200, { user, team: api.team(), spaces: api.spaces(user), isAdmin: admin, adminCode: admin ? api.teamCode : null });
+    }
     case 'GET /api/pull':
-      return send(res, 200, { ...api.pull(user, Number(url.searchParams.get('since') ?? 0) || 0), team: api.team() });
+      return send(res, 200, {
+        ...api.pull(user, Number(url.searchParams.get('since') ?? 0) || 0), team: api.team(), spaces: api.spaces(user),
+      });
+    case 'POST /api/spaces':
+      return send(res, 200, { spaces: api.createSpace(user, await readJson(req)) });
+    case 'POST /api/spaces/join':
+      return send(res, 200, { spaces: api.joinSpace(user, await readJson(req)) });
     case 'POST /api/push': {
       const body = await readJson(req);
       return send(res, 200, api.push(user, Array.isArray(body.changes) ? (body.changes as Change[]) : []));
@@ -78,6 +86,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       writeFileSync(file, JSON.stringify(body, null, 2));
       return send(res, 200, { ok: true });
     }
+  }
+  // Acciones sobre un espacio: /api/spaces/<id>/<acción>
+  const m = /^POST \/api\/spaces\/([\w-]+)\/(update|remove|role)$/.exec(route);
+  if (m) {
+    const body = await readJson(req);
+    const spaces = m[2] === 'update' ? api.updateSpace(user, m[1], body) : m[2] === 'remove' ? api.removeMember(user, m[1], body) : api.setRole(user, m[1], body);
+    return send(res, 200, { spaces });
   }
   throw new ApiError(404, 'No existe.');
 }
@@ -118,7 +133,8 @@ for (const host of HOSTS) {
     .listen(PORT, host, () => {
       if (started++) return;
       console.log(`\n✓ Gestor del equipo en http://localhost:${PORT}`);
-      console.log(`  Código del equipo para crear cuentas: ${api.teamCode}`);
+      console.log(`  Código de administración (crea cuentas administradoras): ${api.teamCode}`);
+      console.log('  Los compañeros entran con la invitación de su espacio (Ajustes → Espacios).');
       console.log('  Deja esta ventana abierta mientras uséis la app.\n');
     });
 }

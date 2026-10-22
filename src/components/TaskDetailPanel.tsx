@@ -8,6 +8,7 @@ import { TaskNotes } from '../features/notes/TaskNotes';
 import { MessageButton } from '../features/templates/MessageComposer';
 import { useSync } from '../data/sync';
 import { shareInfo } from '../domain/sharing';
+import { spaceOf } from '../domain/spaces';
 import { projectPath } from '../domain/projects';
 import { useProjectOptions } from '../hooks/useProjectOptions';
 import { formatReminder, quickReminders, toDatetimeLocal } from '../domain/reminders';
@@ -19,7 +20,6 @@ import { repo } from '../data/services';
 import { LABEL_COLORS, labelColor } from '../domain/colors';
 import { formatDay, formatMinutes } from '../domain/dates';
 import { describeRule } from '../domain/recurrence';
-import { knownPeople } from '../domain/selectors';
 import { fuzzyScore, nameKey } from '../domain/text';
 import type { ChecklistItem, Priority, Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
@@ -463,11 +463,11 @@ function ChipsField({ values, suggestions, placeholder, renderChip, onChange, ad
 }
 
 function PeopleField({ task }: { task: Task }) {
-  const { tasks } = useApp();
+  const { mentionables } = useApp();
   return (
     <ChipsField
       values={task.people}
-      suggestions={knownPeople(tasks)}
+      suggestions={mentionables}
       placeholder="Nombre…"
       addLabel="Añadida"
       onChange={(people, label) => void repo.batch(label, () => repo.updateTask(task.id, { people }))}
@@ -587,17 +587,22 @@ function StepText({ item, onSave }: { item: ChecklistItem; onSave: (text: string
   );
 }
 
-/** De quién es la tarea y con quién se comparte (por mencionar a compañeros en «Personas»). */
+/** Espacio de la tarea, de quién es y con quién más se comparte (cuentas en «Personas»). */
 function SharingLine({ task }: { task: Task }) {
   const { user, team, owners } = useSync();
+  const { projectMap, spaces } = useApp();
   const info = shareInfo(task.people, owners[`tasks:${task.id}`], user, team);
-  if (!info.owner && !info.with.length) return null;
+  const space = spaces.find((s) => s.id === spaceOf(task, projectMap));
+  const parts = [
+    space && <span key="s" className="inline-flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: space.color }} />Espacio {space.name}</span>,
+    info.owner && <span key="o">De {info.owner.name}</span>,
+    info.with.length > 0 && <span key="w">Compartida con {info.with.map((u) => u.name).join(', ')}</span>,
+  ].filter(Boolean);
+  if (!parts.length) return null;
   return (
-    <p className="mt-1 flex items-center gap-1.5 text-xs text-sky-700 dark:text-sky-400">
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-sky-700 dark:text-sky-400">
       <Users2 className="size-3.5" />
-      {info.owner && <>De {info.owner.name}</>}
-      {info.owner && info.with.length > 0 && ' · '}
-      {info.with.length > 0 && <>Compartida con {info.with.map((u) => u.name).join(', ')}</>}
+      {parts.flatMap((p, i) => (i ? [<span key={`sep${i}`} aria-hidden>·</span>, p] : [p]))}
     </p>
   );
 }

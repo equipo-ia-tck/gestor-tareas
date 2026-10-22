@@ -185,6 +185,7 @@ export function Sidebar({ route }: { route: Route }) {
           className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
         />
       </form>
+      <SpaceSwitcher />
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
@@ -236,6 +237,29 @@ function SyncBadge() {
       <span className="min-w-0 flex-1 truncate">{user.name}</span>
       <span className={`size-2 shrink-0 rounded-full ${dot}`} />
       <span className={status === 'offline' ? 'text-red-600 dark:text-red-400' : ''}>{status === 'offline' ? 'Sin conexión' : label}</span>
+    </div>
+  );
+}
+
+/** Filtro por espacio: todo, lo personal o un espacio. Afecta a todas las vistas. */
+function SpaceSwitcher() {
+  const { spaces, spaceFilter, setSpaceFilter } = useApp();
+  if (!spaces.length) return null;
+  const options = [
+    { id: 'all', name: 'Todo', color: null },
+    { id: 'personal', name: 'Personal', color: null },
+    ...spaces.map((s) => ({ id: s.id, name: s.name, color: s.color })),
+  ];
+  return (
+    <div role="radiogroup" aria-label="Espacio" className="mb-2 flex flex-wrap gap-1 px-1">
+      {options.map((o) => (
+        <button key={o.id} type="button" role="radio" aria-checked={spaceFilter === o.id} onClick={() => setSpaceFilter(o.id)}
+          className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${spaceFilter === o.id
+            ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'}`}>
+          {o.color && <span className="size-2 rounded-full" style={{ background: o.color }} />}
+          {o.name}
+        </button>
+      ))}
     </div>
   );
 }

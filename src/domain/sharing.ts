@@ -1,16 +1,19 @@
 import { nameKey } from './text';
 
-/** Compañero del equipo (cuenta en el servidor). */
+/** Cuenta del servidor del equipo. */
 export interface TeamMember { id: string; login: string; name: string }
 
-/** Igual que en el servidor (servidor/visibility.ts): nombre completo, nombre de pila o usuario. */
+/**
+ * Igual que en el servidor (servidor/visibility.ts): una persona mencionada es una cuenta solo si coincide
+ * su nombre completo o su usuario (email). El nombre de pila no basta, para no compartir con quien no es.
+ */
 export function isMember(person: string, u: TeamMember): boolean {
   const k = nameKey(person);
-  return k === nameKey(u.name) || k === nameKey(u.name.split(/\s+/)[0] ?? '') || k === nameKey(u.login);
+  return k === nameKey(u.name) || k === nameKey(u.login);
 }
 
 /**
- * Con quién se comparte algo: el dueño (si no soy yo) y los compañeros mencionados (menos yo y el dueño).
+ * Con quién se comparte algo: el dueño (si no soy yo) y las cuentas mencionadas (menos yo y el dueño).
  * Sin dueño conocido, el dueño soy yo (lo acabo de crear).
  */
 export function shareInfo(people: string[], ownerId: string | undefined, me: TeamMember | null, team: TeamMember[]) {

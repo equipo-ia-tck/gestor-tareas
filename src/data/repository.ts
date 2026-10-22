@@ -65,7 +65,7 @@ export interface Repository {
 
   listProjects(includeArchived?: boolean): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
-  createProject(name: string, opts?: { color?: string; parent_id?: string | null }): Promise<Project>;
+  createProject(name: string, opts?: { color?: string; parent_id?: string | null; space_id?: string | null }): Promise<Project>;
   updateProject(id: string, patch: Partial<Omit<Project, 'id'>>): Promise<void>;
 
   listItemTypes(): Promise<ItemType[]>;
@@ -147,6 +147,8 @@ export class DexieRepository implements Repository {
   private redoStack: HistoryEntry[] = [];
   private group: HistoryEntry | null = null;
   readonly db: TasksDB;
+  /** Espacio para los proyectos nuevos sin espacio indicado (el del filtro de la barra lateral). */
+  defaultSpaceId: string | null = null;
 
   constructor(db: TasksDB = new TasksDB()) {
     this.db = db;
@@ -396,7 +398,7 @@ export class DexieRepository implements Repository {
     return this.db.projects.get(id);
   }
 
-  async createProject(name: string, opts: { color?: string; parent_id?: string | null } = {}) {
+  async createProject(name: string, opts: { color?: string; parent_id?: string | null; space_id?: string | null } = {}) {
     const count = await this.db.projects.count();
     const project: Project = {
       id: uuid(),
@@ -406,6 +408,8 @@ export class DexieRepository implements Repository {
       archived: false,
       created_at: now(),
       parent_id: opts.parent_id ?? null,
+      // Un subproyecto no lleva espacio propio: hereda el del padre.
+      space_id: opts.parent_id ? null : opts.space_id === undefined ? this.defaultSpaceId : opts.space_id,
     };
     await this.db.projects.add(project);
     this.record({ table: 'projects', key: project.id, before: undefined, after: project }, 'Proyecto creado');

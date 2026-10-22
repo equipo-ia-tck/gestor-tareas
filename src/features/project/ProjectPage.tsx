@@ -11,7 +11,7 @@ import { repo } from '../../data/services';
 import { addDays, formatDay } from '../../domain/dates';
 import { noteExcerpt, sortNotes } from '../../domain/notes';
 import { ancestry, flattenTree, MAX_PROJECT_DEPTH, projectTree, withDescendants } from '../../domain/projects';
-import { isActive, knownPeople, sortTasks } from '../../domain/selectors';
+import { isActive, sortTasks } from '../../domain/selectors';
 import { PROJECT_COLORS, type Note, type Project, type Task } from '../../domain/types';
 import { findType, stateOf } from '../../domain/workflows';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -22,7 +22,7 @@ import { Board, CategoryBoard } from '../board/Board';
 import { submitCapture } from '../capture/submitCapture';
 import { ItemNotes } from '../notes/ItemNotes';
 import { ViewHeader } from '../views/ViewHeader';
-import { MoveProject, ProjectNotes } from '../views/ProjectViews';
+import { MoveProject, ProjectNotes, ProjectSpace } from '../views/ProjectViews';
 
 type Mode = 'summary' | 'list' | 'board';
 const CARD_TASKS = 6;
@@ -79,6 +79,7 @@ export function ProjectView({ id }: { id: string }) {
         actions={
           <>
             <ModeSwitch value={mode} onChange={setMode} />
+            <ProjectSpace id={id} />
             <MoveProject id={id} />
             <SmallButton onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</SmallButton>
             <SmallButton onClick={toggleArchive}>{project.archived ? 'Desarchivar' : 'Archivar'}</SmallButton>
@@ -261,10 +262,10 @@ function CompactTask({ task }: { task: Task }) {
 }
 
 function CardQuickAdd({ projectId }: { projectId: string }) {
-  const { tasks, projects, today, itemTypes, releases } = useApp();
+  const { projects, today, itemTypes, releases, mentionables } = useApp();
   const [text, setText] = useState('');
   async function submit() {
-    const parsed = parseCapture(text, { today, projects, people: knownPeople(tasks), types: itemTypes, releases }).filter((p) => p.title);
+    const parsed = parseCapture(text, { today, projects, people: mentionables, types: itemTypes, releases }).filter((p) => p.title);
     if (!parsed.length) return;
     await repo.batch(parsed.length === 1 ? 'Tarea creada' : `${parsed.length} tareas creadas`, () => submitCapture(parsed, { project_id: projectId }));
     setText('');

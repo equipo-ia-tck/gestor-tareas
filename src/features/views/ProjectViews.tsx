@@ -6,6 +6,7 @@ import { noteExcerpt, sortNotes } from '../../domain/notes';
 import { formatDay } from '../../domain/dates';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { canMoveUnder, flattenTree, MAX_PROJECT_DEPTH, projectTree } from '../../domain/projects';
+import { spaceOfProject } from '../../domain/spaces';
 
 /** Mover el proyecto dentro de otro (o al nivel superior). */
 export function MoveProject({ id }: { id: string }) {
@@ -28,6 +29,48 @@ export function MoveProject({ id }: { id: string }) {
             </MenuItem>
           ))}
           {!options.length && !project.parent_id && <p className="px-2 py-1 text-xs text-zinc-400">No hay otro proyecto donde quepa (máximo {MAX_PROJECT_DEPTH} niveles).</p>}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+/**
+ * Espacio del proyecto: personal o uno de mis espacios (lo ven y editan todos sus miembros).
+ * Los subproyectos heredan el del padre.
+ */
+export function ProjectSpace({ id }: { id: string }) {
+  const { projectMap, spaces } = useApp();
+  const project = projectMap.get(id)!;
+  const current = spaceOfProject(id, projectMap);
+  const space = spaces.find((s) => s.id === current);
+  const label = current ? space?.name ?? 'Espacio compartido' : 'Personal';
+  if (project.parent_id) {
+    return <span className="px-2 text-xs text-zinc-400" title="Los subproyectos están en el espacio de su proyecto principal">{label}</span>;
+  }
+  const set = (spaceId: string | null, name: string) =>
+    void repo.batch(spaceId ? `Proyecto en ${name}` : 'Proyecto personal', () => repo.updateProject(id, { space_id: spaceId }));
+  return (
+    <Popover align="right" width="w-72" trigger={(toggle) => (
+      <SmallButton onClick={toggle}>
+        <span className="inline-flex items-center gap-1.5">
+          {space && <span className="size-2 rounded-full" style={{ background: space.color }} />}{label}
+        </span>
+      </SmallButton>
+    )}>
+      {(close) => (
+        <div className="text-sm">
+          <MenuItem active={!current} onClick={() => { close(); set(null, ''); }}>Personal <span className="text-xs text-zinc-400">(solo tú)</span></MenuItem>
+          {spaces.map((s) => (
+            <MenuItem key={s.id} active={s.id === current} onClick={() => { close(); set(s.id, s.name); }}>
+              <span className="size-2 rounded-full" style={{ background: s.color }} />{s.name}
+              <span className="text-xs text-zinc-400">({s.members.length} {s.members.length === 1 ? 'persona' : 'personas'})</span>
+            </MenuItem>
+          ))}
+          <p className="border-t border-zinc-200 px-2 py-1.5 text-xs text-zinc-500 dark:border-zinc-700">
+            En un espacio, todos sus miembros ven y editan el proyecto, sus subproyectos, tareas y notas.
+            {!spaces.length && ' Crea o únete a un espacio en Ajustes.'}
+          </p>
         </div>
       )}
     </Popover>

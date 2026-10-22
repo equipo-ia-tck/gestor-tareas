@@ -3,7 +3,6 @@ import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { formatDay, formatMinutes } from '../../domain/dates';
 import { describeRule } from '../../domain/recurrence';
-import { knownPeople } from '../../domain/selectors';
 import { fuzzyScore, nameKey, tokenName } from '../../domain/text';
 import type { NewTask } from '../../domain/types';
 import { parseCapture } from '../../parser/parseCapture';
@@ -45,7 +44,7 @@ interface Suggestion {
 
 /** Barra de captura con sintaxis rápida: resaltado en vivo, autocompletado y chips. */
 export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCancel, onCommandMode, large }: Props) {
-  const { tasks, projects, projectMap, today, itemTypes, releases } = useApp();
+  const { projects, projectMap, today, itemTypes, releases, mentionables } = useApp();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [ignore, setIgnore] = useState<string[]>([]);
@@ -54,7 +53,7 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
   const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  const people = useMemo(() => knownPeople(tasks), [tasks]);
+  const people = mentionables;
   const parsed = useMemo(
     () => parseCapture(text, { today, projects, people, ignore, types: itemTypes, releases }),
     [text, today, projects, people, ignore, itemTypes, releases],

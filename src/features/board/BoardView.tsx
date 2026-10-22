@@ -5,7 +5,6 @@ import { Section, TaskList } from '../../components/TaskList';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { repo } from '../../data/services';
 import { activeFilterCount, applyFilter, EMPTY_FILTER, groupTasks } from '../../domain/filters';
-import { knownPeople } from '../../domain/selectors';
 import { fuzzyScore } from '../../domain/text';
 import type { DueFilter, GroupBy, SavedView, StateCategory, TaskFilter } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -36,7 +35,7 @@ const GROUPS: { value: GroupBy; label: string }[] = [
  */
 export function BoardView() {
   useWideLayout(true);
-  const { tasks, allProjects, itemTypes, labels, releases, settings, today, projectMap, editTask } = useApp();
+  const { tasks, allProjects, itemTypes, labels, releases, settings, today, projectMap, editTask, mentionables } = useApp();
   const [stored, setStored] = usePersistentState<TaskFilter>('board-filter', EMPTY_FILTER);
   const [viewId, setViewId] = usePersistentState('board-view', '');
   const [mode, setMode] = usePersistentState<DisplayMode>('board-mode', 'board');
@@ -61,7 +60,7 @@ export function BoardView() {
   const openView = (v: SavedView | null) => { setViewId(v?.id ?? ''); setStored(v ? { ...EMPTY_FILTER, ...v.filter } : EMPTY_FILTER); };
   const saveViews = (next: SavedView[]) => void repo.updateSettings({ saved_views: next });
 
-  const people = knownPeople(tasks);
+  const people = mentionables;
   const tags = [...new Set([...labels.map((l) => l.name), ...tasks.flatMap((t) => t.tags)])].sort((a, b) => a.localeCompare(b, 'es'));
 
   return (

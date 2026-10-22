@@ -367,6 +367,31 @@ conexión; inicio de sesión provisional hasta que WPP permita "Entrar con Micro
   Ajustes → Equipo (miembros, código, cerrar sesión). `npm run dev` (5173) usa la API de 4173 por proxy.
 - Pendiente: alojarlo en un sitio común (hasta entonces cada ordenador tiene su servidor) y "Entrar con Microsoft".
 
+## Fase 16: espacios de equipo
+
+Decisión de la usuaria (22 oct 2026): una sola instancia y una cuenta por persona; equipos como espacios.
+
+- **Espacios** (tablas `spaces` y `space_members` en el servidor): nombre, color, código de invitación y miembros con rol
+  `admin | member`. Cualquiera crea un espacio (queda de administradora) y se une con su invitación. La administradora
+  cambia el código (el anterior deja de valer), nombra a otras administradoras y quita miembros; siempre queda una. Si sale
+  el último miembro, el espacio se borra.
+- **Proyecto en un espacio**: `Project.space_id` (opcional, sin migración; zod lo deja opcional). Los subproyectos heredan el
+  del padre (`spaceOfProject`, igual en `servidor/visibility.ts` y `domain/spaces.ts`). Los miembros ven y editan el
+  proyecto, sus subproyectos, tareas, notas y releases. Solo se puede llevar un proyecto a un espacio propio. Selector en la
+  página del proyecto (`ProjectSpace`, junto a "Mover…").
+- **Menciones**: comparten solo si coinciden exactamente con el nombre completo o el usuario (email) de una cuenta
+  (`isUser` / `isMember`); el nombre de pila ya no basta. Las sugerencias de personas (`mentionables` en `AppContext`)
+  incluyen todas las cuentas del servidor.
+- **Cuentas**: el código del servidor pasa a ser de administración (crea cuentas administradoras; las que ya existían lo son
+  por migración). Los compañeros se dan de alta con la invitación de un espacio y entran en él.
+- **Cambios de acceso**: entrar o salir de un espacio, o mover un proyecto de espacio, sube `users.access_version` de los
+  afectados; su siguiente `pull` lleva `reset` y todo lo visible, y la app borra lo que ya no llega (salvo lo pendiente).
+- **Filtro por espacio** (`AppContext`, `space-filter:<usuario>` en localStorage): Todo · Personal · cada espacio, en la
+  barra lateral (`SpaceSwitcher`). Filtra tareas, notas y proyectos de todas las vistas. Con un espacio elegido, los
+  proyectos nuevos (desde cualquier sitio) van a ese espacio (`repo.defaultSpaceId`).
+- El panel de la tarea muestra "Espacio X · De Y · Compartida con Z". Ajustes → Espacios (`SpacesCard`) sustituye a Equipo.
+- Prueba local: configuración `equipo-prueba` de `.claude/launch.json` (puerto 4180, datos en `servidor/datos-prueba`).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -385,6 +410,7 @@ conexión; inicio de sesión provisional hasta que WPP permita "Entrar con Micro
 - [x] Fase 13: pantalla de proyecto con resumen por subproyecto, personas de las notas en la barra lateral, desplegables sin recortes
 - [x] Fase 14: auditoría: barra lateral simplificada, Mi día, revisión semanal, búsqueda única, Outlook, unir personas, sin dictado
 - [x] Fase 15: versión para el equipo: servidor propio, cuentas provisionales, privado salvo mención y sincronización
+- [x] Fase 16: espacios de equipo (miembros, invitaciones, proyectos compartidos, filtro por espacio, menciones exactas)
 
 ## Fases
 

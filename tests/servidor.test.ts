@@ -16,32 +16,33 @@ const keys = (changes: { table: string; key: string; data: unknown }[]) => chang
 describe('servidor del equipo', () => {
   it('crea cuentas solo con el código del equipo y comprueba la contraseña', () => {
     expect(() => api.register({ login: 'x', name: 'X', password: 'contraseña-larga', code: 'MAL' })).toThrow(/código/);
-    const marta = signup('marta', 'Marta García');
-    expect(() => signup('marta', 'Otra')).toThrow(/ya existe/);
+    const marta = signup('marta@vml.com', 'Marta García');
+    expect(() => signup('marta@vml.com', 'Otra')).toThrow(/ya existe/);
     expect(signup('Marta.Garcia@vml.com', 'Marta G').login).toBe('marta.garcia@vml.com');
     expect(() => signup('con espacios', 'X')).toThrow(/email/);
-    expect(() => api.login({ login: 'marta', password: 'otra-cosa' })).toThrow(/incorrectos/);
-    const { token } = api.login({ login: 'MARTA', password: 'contraseña-larga' });
+    expect(() => api.login({ login: 'marta@vml.com', password: 'otra-cosa' })).toThrow(/incorrectos/);
+    const { token } = api.login({ login: 'MARTA@vml.com', password: 'contraseña-larga' });
     expect(api.userForToken(token)?.id).toBe(marta.id);
     api.logout(token);
     expect(api.userForToken(token)).toBeNull();
   });
 
-  it('reconoce a un compañero por nombre completo, de pila o usuario', () => {
-    const u = { id: '1', login: 'mark.r', name: 'Mark Ruiz' };
-    expect(['Mark', 'mark ruiz', 'Mark-Ruiz', 'mark.r'].every((p) => isUser(p, u))).toBe(true);
+  it('reconoce una cuenta solo por nombre completo o usuario (no por el nombre de pila)', () => {
+    const u = { id: '1', login: 'mark.r@vml.com', name: 'Mark Ruiz' };
+    expect(['mark ruiz', 'Mark-Ruiz', 'Mark.R@vml.com'].every((p) => isUser(p, u))).toBe(true);
+    expect(isUser('Mark', u)).toBe(false);
     expect(isUser('Marcos', u)).toBe(false);
   });
 
   it('todo es privado salvo lo que menciona a un compañero (con su proyecto)', () => {
-    const marta = signup('marta', 'Marta García');
-    const mark = signup('mark', 'Mark Ruiz');
+    const marta = signup('marta@vml.com', 'Marta García');
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
     api.push(marta, [
       { table: 'projects', key: 'p1', data: { id: 'p1', name: 'Pagos', parent_id: 'p0' } },
       { table: 'projects', key: 'p0', data: { id: 'p0', name: 'Cliente', parent_id: null } },
       { table: 'projects', key: 'p2', data: { id: 'p2', name: 'Privado', parent_id: null } },
       { table: 'tasks', key: 'privada', data: task('privada', { project_id: 'p2' }) },
-      { table: 'tasks', key: 'compartida', data: task('compartida', { people: ['Mark'], project_id: 'p1', my_day: '2026-10-21' }) },
+      { table: 'tasks', key: 'compartida', data: task('compartida', { people: ['Mark Ruiz'], project_id: 'p1', my_day: '2026-10-21' }) },
       { table: 'notes', key: 'acta', data: { id: 'acta', title: 'Acta', people: ['Mark Ruiz'], project_id: null } },
       { table: 'people', key: 'Mike', data: { name: 'Mike', role: 'Valida' } },
       { table: 'item_types', key: 'us', data: { id: 'us', name: 'User Story' } },
@@ -53,14 +54,14 @@ describe('servidor del equipo', () => {
   });
 
   it('el compartido puede editar, no ve lo ajeno y deja de verlo si le quitan la mención', () => {
-    const marta = signup('marta', 'Marta García');
-    const mark = signup('mark', 'Mark Ruiz');
+    const marta = signup('marta@vml.com', 'Marta García');
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
     api.push(marta, [
-      { table: 'tasks', key: 't', data: task('t', { people: ['Mark'] }) },
+      { table: 'tasks', key: 't', data: task('t', { people: ['Mark Ruiz'] }) },
       { table: 'tasks', key: 'secreta', data: task('secreta') },
     ]);
     const r = api.push(mark, [
-      { table: 'tasks', key: 't', data: task('t', { people: ['Mark'], title: 'editada por Mark' }) },
+      { table: 'tasks', key: 't', data: task('t', { people: ['Mark Ruiz'], title: 'editada por Mark' }) },
       { table: 'tasks', key: 'secreta', data: task('secreta', { title: 'hack' }) },
     ]);
     expect(r.rejected).toEqual(['tasks:secreta']);
@@ -74,8 +75,8 @@ describe('servidor del equipo', () => {
   });
 
   it('las fichas y ajustes son de cada uno aunque tengan la misma clave', () => {
-    const marta = signup('marta', 'Marta García');
-    const mark = signup('mark', 'Mark Ruiz');
+    const marta = signup('marta@vml.com', 'Marta García');
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
     api.push(marta, [{ table: 'settings', key: 'settings', data: { key: 'settings', value: { capacity_minutes: 300 } } }]);
     api.push(mark, [{ table: 'settings', key: 'settings', data: { key: 'settings', value: { capacity_minutes: 480 } } }]);
     expect(api.pull(marta, 0).changes).toMatchObject([{ table: 'settings', data: { value: { capacity_minutes: 300 } } }]);
@@ -83,7 +84,7 @@ describe('servidor del equipo', () => {
   });
 
   it('solo manda lo que ha cambiado desde la última versión', () => {
-    const marta = signup('marta', 'Marta García');
+    const marta = signup('marta@vml.com', 'Marta García');
     api.push(marta, [{ table: 'tasks', key: 'a', data: task('a') }]);
     const v = api.version;
     api.push(marta, [{ table: 'tasks', key: 'b', data: task('b') }, { table: 'tasks', key: 'a', data: null }]);
@@ -91,11 +92,81 @@ describe('servidor del equipo', () => {
   });
 });
 
+describe('espacios de equipo', () => {
+  const join = (code: string, login: string, name: string) => api.register({ login, name, password: 'contraseña-larga', code }).user;
+
+  it('los miembros ven todo lo de los proyectos del espacio (también subproyectos)', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    const mark = join(exc.inviteCode, 'mark@vml.com', 'Mark Ruiz');
+    const ana = join(api.createSpace(marta, { name: 'Pagos' }).find((s) => s.name === 'Pagos')!.inviteCode, 'ana@vml.com', 'Ana Pérez');
+    api.push(marta, [
+      { table: 'projects', key: 'p', data: { id: 'p', name: 'Revisiones', parent_id: null, space_id: exc.id } },
+      { table: 'projects', key: 'sub', data: { id: 'sub', name: 'Uri', parent_id: 'p' } },
+      { table: 'tasks', key: 'a', data: task('a', { project_id: 'sub' }) },
+      { table: 'tasks', key: 'privada', data: task('privada') },
+    ]);
+    expect(keys(api.pull(mark, 0).changes)).toEqual(['projects:p', 'projects:sub', 'tasks:a']);
+    expect(keys(api.pull(ana, 0).changes)).toEqual([]);
+    // Un miembro puede editar lo del espacio aunque no sea suyo.
+    expect(api.push(mark, [{ table: 'tasks', key: 'a', data: task('a', { project_id: 'sub', title: 'hecha por Mark' }) }]).rejected).toEqual([]);
+    expect(api.spaces(mark)).toMatchObject([{ name: 'Excelencia', role: 'member' }]);
+  });
+
+  it('al cambiar lo que ve alguien, su siguiente petición lo recibe todo de nuevo', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
+    api.push(marta, [
+      { table: 'projects', key: 'p', data: { id: 'p', name: 'Revisiones', parent_id: null, space_id: null } },
+      { table: 'tasks', key: 'a', data: task('a', { project_id: 'p' }) },
+    ]);
+    const cursor = api.pull(mark, 0).version;
+    api.joinSpace(mark, { code: exc.inviteCode });
+    // Marta lleva el proyecto al espacio: Mark recibe el proyecto y sus tareas antiguas.
+    api.push(marta, [{ table: 'projects', key: 'p', data: { id: 'p', name: 'Revisiones', parent_id: null, space_id: exc.id } }]);
+    const r = api.pull(mark, cursor);
+    expect(r.reset).toBe(true);
+    expect(keys(r.changes)).toEqual(['projects:p', 'tasks:a']);
+    // Si sale del espacio, deja de verlo.
+    api.removeMember(mark, exc.id, {});
+    const r2 = api.pull(mark, r.version);
+    expect(r2.reset).toBe(true);
+    expect(keys(r2.changes)).toEqual([]);
+  });
+
+  it('solo se puede llevar un proyecto a un espacio propio, y siempre queda un administrador', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    const r = api.push(mark, [{ table: 'projects', key: 'p', data: { id: 'p', name: 'X', parent_id: null, space_id: exc.id } }]);
+    expect(r.rejected).toEqual(['projects:p']);
+    api.joinSpace(mark, { code: exc.inviteCode });
+    expect(() => api.removeMember(marta, exc.id, {})).toThrow(/administradora/);
+    expect(() => api.removeMember(mark, exc.id, { userId: marta.id })).toThrow(/administra/);
+    expect(() => api.register({ login: 'x@vml.com', name: 'X', password: 'contraseña-larga', code: 'NO-EXISTE' })).toThrow(/invitación/);
+    const [nuevo] = api.updateSpace(marta, exc.id, { newCode: true });
+    expect(nuevo.inviteCode).not.toBe(exc.inviteCode);
+  });
+});
+
 describe('compartir en la app', () => {
   it('dice de quién es y con quién se comparte', async () => {
     const { shareInfo } = await import('../src/domain/sharing');
-    const team = [{ id: 'm', login: 'marta', name: 'Marta García' }, { id: 'k', login: 'mark', name: 'Mark Ruiz' }, { id: 'd', login: 'dani', name: 'Dani' }];
-    expect(shareInfo(['Mark', 'Mike'], undefined, team[0], team)).toEqual({ owner: null, with: [team[1]] });
-    expect(shareInfo(['Marta', 'Dani'], 'k', team[0], team)).toEqual({ owner: team[1], with: [team[2]] });
+    const team = [{ id: 'm', login: 'marta@vml.com', name: 'Marta García' }, { id: 'k', login: 'mark@vml.com', name: 'Mark Ruiz' }, { id: 'd', login: 'dani@vml.com', name: 'Dani' }];
+    expect(shareInfo(['Mark Ruiz', 'Mike'], undefined, team[0], team)).toEqual({ owner: null, with: [team[1]] });
+    expect(shareInfo(['Mark'], undefined, team[0], team)).toEqual({ owner: null, with: [] });
+    expect(shareInfo(['Marta García', 'dani'], 'k', team[0], team)).toEqual({ owner: team[1], with: [team[2]] });
+  });
+
+  it('sabe de qué espacio es cada cosa (los subproyectos heredan)', async () => {
+    const { spaceOfProject, matchesSpace } = await import('../src/domain/spaces');
+    const projects = new Map([
+      ['p', { id: 'p', name: 'P', color: '', archived: false, created_at: '', parent_id: null, space_id: 'exc' }],
+      ['s', { id: 's', name: 'S', color: '', archived: false, created_at: '', parent_id: 'p' }],
+      ['x', { id: 'x', name: 'X', color: '', archived: false, created_at: '', parent_id: null }],
+    ]);
+    expect([spaceOfProject('s', projects), spaceOfProject('x', projects), spaceOfProject(null, projects)]).toEqual(['exc', null, null]);
+    expect([matchesSpace('exc', 'all'), matchesSpace(null, 'personal'), matchesSpace('exc', 'personal'), matchesSpace('exc', 'exc')]).toEqual([true, true, false, true]);
   });
 });

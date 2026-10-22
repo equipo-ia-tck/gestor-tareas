@@ -5,7 +5,7 @@ import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip,
 import { repo } from '../../data/services';
 import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
-import { knownPeople, sortTasks } from '../../domain/selectors';
+import { sortTasks } from '../../domain/selectors';
 import type { ItemType, NewTask, StateCategory, Task } from '../../domain/types';
 import { findType, stateOf } from '../../domain/workflows';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
@@ -163,12 +163,12 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
 }
 
 function AddCard({ add }: { add: ColumnDef['add'] }) {
-  const { tasks, projects, today, itemTypes, releases } = useApp();
+  const { projects, today, itemTypes, releases, mentionables } = useApp();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
 
   async function submit() {
-    const parsed = parseCapture(text, { today, projects, people: knownPeople(tasks), types: itemTypes, releases }).filter((p) => p.title);
+    const parsed = parseCapture(text, { today, projects, people: mentionables, types: itemTypes, releases }).filter((p) => p.title);
     if (!parsed.length) return;
     await repo.batch(parsed.length === 1 ? `Tarjeta creada en ${add.label}` : `${parsed.length} tarjetas creadas`, async () => {
       const created = await submitCapture(parsed, add.defaults);

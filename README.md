@@ -24,8 +24,10 @@ App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, 
   persona, carga de la semana que viene y tareas olvidadas.
 - **Teclado**: J/K, Enter, E, C, D, T, A (Mi día), M, 1–4, Supr; `?` muestra todos los atajos. Deshacer global con Cmd/Ctrl+Z.
 - **Fechas** con calendario mensual (semanas, carga por día) o escribiendo "vie", "15 oct"…
-- **Equipo**: cada uno entra con su cuenta. Todo es privado salvo lo que menciona a un compañero (en «Personas» o con
-  @ en una nota), que se le comparte. «Mi día», recordatorios, fichas y ajustes son siempre de cada uno.
+- **Equipo**: cada uno entra con su cuenta. Todo es privado salvo los proyectos que pones en un **espacio** (Excelencia,
+  Pagos…), que ven y editan todos sus miembros, y lo que menciona a una cuenta por su nombre completo o email. Se puede
+  estar en varios espacios y filtrar por espacio en la barra lateral. «Mi día», recordatorios, fichas y ajustes son siempre
+  de cada uno.
 - **Mensajes de entrega**: plantillas en `plantillas/` (guías y validaciones de etiquetado) que se rellenan con la tarea.
 
 ## Usarla (una sola dirección)
@@ -37,7 +39,8 @@ actualizar tras cambios):
 npm start
 ```
 
-- La terminal muestra el **código del equipo**: hace falta para crear cuenta (pestaña «Crear cuenta»).
+- La terminal muestra el **código de administración** (crea cuentas administradoras). Los compañeros crean su cuenta
+  con la **invitación de su espacio** (Ajustes → Espacios).
 - Si el servidor ya estaba en marcha, `npm start` solo compila y te avisa de que recargues. Si han cambiado archivos de
   `servidor/`, para el servidor con Ctrl+C y vuelve a ejecutar `npm start`.
 - Solo funciona con el servidor en marcha: deja la terminal abierta.

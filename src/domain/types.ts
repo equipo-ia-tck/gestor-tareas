@@ -125,6 +125,8 @@ export interface Project {
   created_at: ISODateTime;
   /** Proyecto padre (subproyectos, hasta 3 niveles). */
   parent_id: string | null;
+  /** Espacio de equipo (sus miembros lo ven todo). Null = personal; los subproyectos heredan el del padre. */
+  space_id?: string | null;
 }
 
 export interface Task {

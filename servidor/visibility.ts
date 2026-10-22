@@ -1,6 +1,10 @@
 /**
- * Quién ve qué. Todo es privado de quien lo crea, salvo que mencione a un compañero del equipo:
- * una tarea con la persona en "Personas" o una nota que la menciona con @ se comparte con ella.
+ * Quién ve qué. Todo es privado de quien lo crea, salvo:
+ * - lo que está en un proyecto de un **espacio** (equipo): lo ven todos sus miembros. Un proyecto pertenece
+ *   a un espacio por su `space_id` o, si no tiene, por el de su proyecto padre;
+ * - lo que **menciona una cuenta**: una tarea con la persona en "Personas" o una nota que la menciona con @.
+ *   Solo cuenta el nombre completo o el email de la cuenta (no el nombre de pila: con mucha gente habría
+ *   confusiones).
  * Funciones puras: las usa el servidor y se prueban en tests/servidor.test.ts.
  */
 
@@ -25,10 +29,10 @@ export const nameKey = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').
 
 export interface TeamUser { id: string; login: string; name: string }
 
-/** Una persona mencionada es este usuario si coincide su nombre completo, su nombre de pila o su usuario. */
+/** Una persona mencionada es esta cuenta si coincide su nombre completo o su usuario (email). */
 export function isUser(person: string, user: TeamUser): boolean {
   const k = nameKey(person);
-  return k === nameKey(user.name) || k === nameKey(user.name.split(/\s+/)[0] ?? '') || k === nameKey(user.login);
+  return k === nameKey(user.name) || k === nameKey(user.login);
 }
 
 export const mentions = (people: unknown, user: TeamUser) =>
@@ -48,6 +52,25 @@ export interface StoredRecord {
 }
 
 const recId = (r: { table: string; key: string }) => `${r.table}:${r.key}`;
+
+/** Espacio de un proyecto: el suyo o el del primer antepasado que tenga. */
+export function spaceOfProject(projectId: unknown, byId: Map<string, StoredRecord>): string | null {
+  let key = projectId;
+  for (let depth = 0; typeof key === 'string' && depth < 10; depth++) {
+    const p = byId.get(`projects:${key}`)?.data;
+    if (!p) return null;
+    if (typeof p.space_id === 'string' && p.space_id) return p.space_id;
+    key = p.parent_id;
+  }
+  return null;
+}
+
+/** Espacio al que pertenece un registro (por su proyecto). */
+export function spaceOfRecord(r: StoredRecord, byId: Map<string, StoredRecord>): string | null {
+  if (!r.data) return null;
+  if (r.table === 'projects') return spaceOfProject(r.key, byId);
+  return spaceOfProject(r.data.project_id, byId);
+}
 
 /** Proyecto (con sus padres) y release de un registro, para que lo compartido se entienda. */
 export function relatedKeys(r: StoredRecord, byId: Map<string, StoredRecord>): string[] {
@@ -70,12 +93,14 @@ export function relatedKeys(r: StoredRecord, byId: Map<string, StoredRecord>): s
  * Registros de tablas con dueño que ve el usuario: los suyos, las tareas y notas que le mencionan y,
  * para que esas se entiendan, sus proyectos (con los padres) y sus releases.
  */
-export function visibleKeys(records: StoredRecord[], user: TeamUser): Set<string> {
+export function visibleKeys(records: StoredRecord[], user: TeamUser, spaces: ReadonlySet<string> = new Set()): Set<string> {
   const byId = new Map(records.map((r) => [recId(r), r]));
   const visible = new Set<string>();
   for (const r of records) {
     if (!r.data) continue;
-    if (r.owner === user.id || ((r.table === 'tasks' || r.table === 'notes') && mentions(r.data.people, user))) visible.add(recId(r));
+    const space = spaceOfRecord(r, byId);
+    if (r.owner === user.id || (space && spaces.has(space))
+      || ((r.table === 'tasks' || r.table === 'notes') && mentions(r.data.people, user))) visible.add(recId(r));
   }
   for (const k of [...visible]) for (const rel of relatedKeys(byId.get(k)!, byId)) visible.add(rel);
   return visible;

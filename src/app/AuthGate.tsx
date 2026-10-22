@@ -94,9 +94,9 @@ function LoginForm({ onDone }: { onDone: () => void }) {
       </div>
       {mode === 'register' && (
         <label className="block space-y-1" htmlFor="auth-name">
-          <span className="text-zinc-600 dark:text-zinc-400">Tu nombre</span>
+          <span className="text-zinc-600 dark:text-zinc-400">Tu nombre completo</span>
           <input {...field('name')} required autoComplete="name" placeholder="Marta García" className={input} />
-          <span className="block text-xs text-zinc-500">Al mencionarte (@Marta o en «Personas») se te comparte la tarea o la nota.</span>
+          <span className="block text-xs text-zinc-500">Si alguien te pone en «Personas» de una tarea (o te menciona en una nota) con este nombre o tu email, te la comparte.</span>
         </label>
       )}
       <label className="block space-y-1" htmlFor="auth-login">
@@ -110,9 +110,9 @@ function LoginForm({ onDone }: { onDone: () => void }) {
       </label>
       {mode === 'register' && (
         <label className="block space-y-1" htmlFor="auth-code">
-          <span className="text-zinc-600 dark:text-zinc-400">Código del equipo</span>
+          <span className="text-zinc-600 dark:text-zinc-400">Invitación</span>
           <input {...field('code')} required autoCapitalize="characters" placeholder="ABCD-1234" className={input} />
-          <span className="block text-xs text-zinc-500">Una clave del equipo para que solo vosotros podáis crear cuenta. Sale en la terminal del servidor («Código del equipo para crear cuentas») y en Ajustes → Equipo de quien ya tiene cuenta.</span>
+          <span className="block text-xs text-zinc-500">El código de invitación de tu espacio: te lo pasa alguien que ya está dentro (Ajustes → Espacios). Al crear la cuenta entras en ese espacio.</span>
         </label>
       )}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
