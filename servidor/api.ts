@@ -79,6 +79,7 @@ export class Api {
       db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0; UPDATE users SET is_admin = 1;');
     }
     if (!cols.includes('access_version')) db.exec('ALTER TABLE users ADD COLUMN access_version INTEGER NOT NULL DEFAULT 0');
+    if (!cols.includes('disabled')) db.exec('ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
     if (!this.kv('team_code')) this.setKv('team_code', newCode());
   }
 
@@ -134,8 +135,9 @@ export class Api {
 
   login(input: { login?: unknown; password?: unknown }) {
     const login = String(input.login ?? '').trim().toLowerCase();
-    const row = this.db.prepare('SELECT id, login, name, pass FROM users WHERE login = ?').get(login) as (TeamUser & { pass: string }) | undefined;
+    const row = this.db.prepare('SELECT id, login, name, pass, disabled FROM users WHERE login = ?').get(login) as (TeamUser & { pass: string; disabled: number }) | undefined;
     if (!row || !verify(String(input.password ?? ''), row.pass)) throw new ApiError(401, 'Usuario o contraseña incorrectos.');
+    if (row.disabled) throw new ApiError(403, 'Esta cuenta está desactivada. Habla con quien administra la herramienta.');
     return { user: { id: row.id, login: row.login, name: row.name }, token: this.newSession(row.id) };
   }
 
@@ -149,7 +151,7 @@ export class Api {
   userForToken(token: string | undefined): TeamUser | null {
     if (!token) return null;
     const row = this.db.prepare(`SELECT u.id, u.login, u.name FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.token = ? AND s.expires > ?`).get(token, new Date().toISOString()) as TeamUser | undefined;
+      WHERE s.token = ? AND s.expires > ? AND u.disabled = 0`).get(token, new Date().toISOString()) as TeamUser | undefined;
     return row ? { id: row.id, login: row.login, name: row.name } : null;
   }
 
@@ -173,7 +175,12 @@ export class Api {
   }
 
   private requireAdmin(spaceId: string, user: TeamUser) {
-    if (this.role(spaceId, user) !== 'admin') throw new ApiError(403, 'Solo quien administra el espacio puede hacer esto.');
+    if (this.role(spaceId, user) !== 'admin' && !this.isAdmin(user)) throw new ApiError(403, 'Solo quien administra el espacio puede hacer esto.');
+  }
+
+  /** Acciones reservadas a quien administra la herramienta. */
+  private requireServerAdmin(user: TeamUser) {
+    if (!this.isAdmin(user)) throw new ApiError(403, 'Solo quien administra la herramienta puede hacer esto.');
   }
 
   /** Lo que ve cada uno ha cambiado: en su próxima petición recibe todo de nuevo. */
@@ -204,6 +211,7 @@ export class Api {
   }
 
   createSpace(user: TeamUser, input: { name?: unknown; color?: unknown }) {
+    this.requireServerAdmin(user);
     const name = String(input.name ?? '').trim();
     if (!name) throw new ApiError(400, 'Ponle nombre al espacio.');
     const id = randomUUID();
@@ -254,6 +262,93 @@ export class Api {
     return this.spaces(user);
   }
 
+  // ---------- Administración de la herramienta ----------
+
+  /** Todas las cuentas, con su rol, estado y espacios (solo administradores). */
+  adminUsers(admin: TeamUser) {
+    this.requireServerAdmin(admin);
+    const rows = this.db.prepare('SELECT id, login, name, is_admin, disabled, created_at FROM users ORDER BY name').all() as
+      { id: string; login: string; name: string; is_admin: number; disabled: number; created_at: string }[];
+    return rows.map((u) => ({
+      id: u.id, login: u.login, name: u.name, isAdmin: !!u.is_admin, disabled: !!u.disabled, createdAt: u.created_at,
+      spaces: (this.db.prepare('SELECT space_id FROM space_members WHERE user_id = ?').all(u.id) as { space_id: string }[]).map((m) => m.space_id),
+    }));
+  }
+
+  /** Todos los espacios, aunque no seas miembro (solo administradores). */
+  adminSpaces(admin: TeamUser) {
+    this.requireServerAdmin(admin);
+    const spaces = this.db.prepare('SELECT id, name, color FROM spaces ORDER BY name').all() as { id: string; name: string; color: string }[];
+    return spaces.map((s) => ({
+      ...s,
+      members: (this.db.prepare('SELECT user_id AS id, role FROM space_members WHERE space_id = ?').all(s.id) as { id: string; role: 'admin' | 'member' }[])
+        .map((m) => ({ id: m.id, role: m.role })),
+    }));
+  }
+
+  private adminCount() {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND disabled = 0').get() as { n: number }).n;
+  }
+
+  setAdmin(admin: TeamUser, input: { userId?: unknown; isAdmin?: unknown }) {
+    this.requireServerAdmin(admin);
+    const id = String(input.userId ?? '');
+    const target = this.db.prepare('SELECT is_admin FROM users WHERE id = ?').get(id) as { is_admin: number } | undefined;
+    if (!target) throw new ApiError(404, 'Esa cuenta no existe.');
+    if (!input.isAdmin && target.is_admin && this.adminCount() <= 1) throw new ApiError(400, 'Tiene que quedar al menos una persona administradora.');
+    this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(input.isAdmin ? 1 : 0, id);
+    return this.adminUsers(admin);
+  }
+
+  /** Desactivar una cuenta cierra sus sesiones; sus datos se conservan y se puede reactivar. */
+  setDisabled(admin: TeamUser, input: { userId?: unknown; disabled?: unknown }) {
+    this.requireServerAdmin(admin);
+    const id = String(input.userId ?? '');
+    if (id === admin.id) throw new ApiError(400, 'No puedes desactivar tu propia cuenta.');
+    const target = this.db.prepare('SELECT is_admin FROM users WHERE id = ?').get(id) as { is_admin: number } | undefined;
+    if (!target) throw new ApiError(404, 'Esa cuenta no existe.');
+    if (input.disabled && target.is_admin && this.adminCount() <= 1) throw new ApiError(400, 'Tiene que quedar al menos una persona administradora.');
+    this.db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(input.disabled ? 1 : 0, id);
+    if (input.disabled) this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    return this.adminUsers(admin);
+  }
+
+  /** Contraseña provisional para quien la ha olvidado: se muestra una vez y la persona la cambia al entrar. */
+  resetPassword(admin: TeamUser, input: { userId?: unknown }) {
+    this.requireServerAdmin(admin);
+    const id = String(input.userId ?? '');
+    if (!this.db.prepare('SELECT 1 FROM users WHERE id = ?').get(id)) throw new ApiError(404, 'Esa cuenta no existe.');
+    const temporary = randomBytes(9).toString('base64url');
+    this.db.prepare('UPDATE users SET pass = ? WHERE id = ?').run(hash(temporary), id);
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    return { temporary };
+  }
+
+  regenerateAdminCode(admin: TeamUser) {
+    this.requireServerAdmin(admin);
+    this.setKv('team_code', newCode());
+    return { adminCode: this.teamCode };
+  }
+
+  /** Entrar en un espacio como administradora (para gestionarlo o ver su contenido). */
+  adminJoinSpace(admin: TeamUser, spaceId: string) {
+    this.requireServerAdmin(admin);
+    if (!this.db.prepare('SELECT 1 FROM spaces WHERE id = ?').get(spaceId)) throw new ApiError(404, 'Ese espacio no existe.');
+    this.db.prepare(`INSERT INTO space_members (space_id, user_id, role) VALUES (?, ?, 'admin')
+      ON CONFLICT(space_id, user_id) DO UPDATE SET role = 'admin'`).run(spaceId, admin.id);
+    this.touchAccess([admin.id]);
+    return this.spaces(admin);
+  }
+
+  changePassword(user: TeamUser, input: { current?: unknown; password?: unknown }) {
+    const row = this.db.prepare('SELECT pass FROM users WHERE id = ?').get(user.id) as { pass: string };
+    if (!verify(String(input.current ?? ''), row.pass)) throw new ApiError(400, 'La contraseña actual no es correcta.');
+    const password = String(input.password ?? '');
+    if (password.length < 8) throw new ApiError(400, 'La contraseña nueva tiene que tener al menos 8 caracteres.');
+    this.db.prepare('UPDATE users SET pass = ? WHERE id = ?').run(hash(password), user.id);
+    return { ok: true };
+  }
+
   // ---------- Sincronización ----------
 
   /** Registros que pueden interesar al usuario: los de tablas con dueño y globales, y los suyos personales. */
@@ -278,6 +373,7 @@ export class Api {
     const rejected: string[] = [];
     const now = new Date().toISOString();
     const accessChanged = new Set<string>();
+    const admin = this.isAdmin(user);
     this.db.exec('BEGIN');
     try {
       for (const c of changes) {
@@ -286,6 +382,8 @@ export class Api {
         const id = `${table}:${c.key}`;
         const before = existing.get(id);
         const owned = !isPersonal(table) && !isGlobal(table);
+        // La configuración común (tipos y estados, colores de etiquetas) solo la cambian los administradores.
+        if (isGlobal(table) && !admin) { rejected.push(id); continue; }
         // Solo se puede cambiar lo propio, lo de tus espacios o lo que te han compartido.
         if (owned && before?.data && before.owner !== user.id && !visible.has(id)) { rejected.push(id); continue; }
         const data = c.data && typeof c.data === 'object' ? { ...c.data } : null;

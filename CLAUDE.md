@@ -412,6 +412,21 @@ Petición de la usuaria (22 oct 2026).
 - **Notas**: "Agregar sección", "Agregar página" y "Acta" arriba de sus columnas. **Barra lateral**: el nombre del proyecto
   nuevo se escribe en su propia línea (no tapa la lista).
 
+## Fase 18: administradores y usuarios
+
+Petición de la usuaria (23 oct 2026): ella y Mark administran todo; el resto usa la herramienta sin administrar.
+
+- **Dos roles de herramienta** (`users.is_admin`): **administrador** (entra con el código de administración, o lo nombra
+  otro administrador) y **usuario** (entra con la invitación de un espacio). Siempre queda al menos un administrador activo.
+- **Solo administradores** (comprobado en el servidor, no solo en la pantalla): panel `AdminCard` en Ajustes (todas las
+  cuentas con rol y espacios; hacer o quitar admin; desactivar o reactivar, que cierra sus sesiones; contraseña provisional
+  que se muestra una vez; todos los espacios y "Entrar" como administradora; ver y cambiar el código de administración),
+  crear espacios, gestionar cualquier espacio, y escribir en las tablas comunes `item_types` y `labels` (el `push` de un
+  usuario las rechaza; en la app se ocultan Tipos y estados, Etiquetas y el color de etiqueta del panel).
+- **Para todos**: "Mi cuenta" en Ajustes → Espacios (cambiar la contraseña con la actual) y la gestión de su propio espacio
+  si lo administran (invitación, miembros).
+- Cuentas desactivadas (`users.disabled`): no pueden entrar y sus sesiones caducan; sus datos se conservan.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -432,6 +447,7 @@ Petición de la usuaria (22 oct 2026).
 - [x] Fase 15: versión para el equipo: servidor propio, cuentas provisionales, privado salvo mención y sincronización
 - [x] Fase 16: espacios de equipo (miembros, invitaciones, proyectos compartidos, filtro por espacio, menciones exactas)
 - [x] Fase 17: notas con formato (sin Markdown a la vista), proyecto más claro, guía de captura, IDs de Rally
+- [x] Fase 18: roles de administrador y usuario, panel de administración y cambio de contraseña
 
 ## Fases
 

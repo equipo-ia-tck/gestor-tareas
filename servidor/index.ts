@@ -71,6 +71,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       return send(res, 200, {
         ...api.pull(user, Number(url.searchParams.get('since') ?? 0) || 0), team: api.team(), spaces: api.spaces(user),
       });
+    case 'POST /api/password':
+      return send(res, 200, api.changePassword(user, await readJson(req)));
+    case 'GET /api/admin':
+      return send(res, 200, { users: api.adminUsers(user), spaces: api.adminSpaces(user), adminCode: api.teamCode });
+    case 'POST /api/admin/role':
+      return send(res, 200, { users: api.setAdmin(user, await readJson(req)) });
+    case 'POST /api/admin/disable':
+      return send(res, 200, { users: api.setDisabled(user, await readJson(req)) });
+    case 'POST /api/admin/password':
+      return send(res, 200, api.resetPassword(user, await readJson(req)));
+    case 'POST /api/admin/code':
+      return send(res, 200, api.regenerateAdminCode(user));
     case 'POST /api/spaces':
       return send(res, 200, { spaces: api.createSpace(user, await readJson(req)) });
     case 'POST /api/spaces/join':
@@ -88,10 +100,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     }
   }
   // Acciones sobre un espacio: /api/spaces/<id>/<acción>
-  const m = /^POST \/api\/spaces\/([\w-]+)\/(update|remove|role)$/.exec(route);
+  const m = /^POST \/api\/spaces\/([\w-]+)\/(update|remove|role|admin-join)$/.exec(route);
   if (m) {
     const body = await readJson(req);
-    const spaces = m[2] === 'update' ? api.updateSpace(user, m[1], body) : m[2] === 'remove' ? api.removeMember(user, m[1], body) : api.setRole(user, m[1], body);
+    const spaces = m[2] === 'update' ? api.updateSpace(user, m[1], body) : m[2] === 'remove' ? api.removeMember(user, m[1], body)
+      : m[2] === 'admin-join' ? api.adminJoinSpace(user, m[1]) : api.setRole(user, m[1], body);
     return send(res, 200, { spaces });
   }
   throw new ApiError(404, 'No existe.');

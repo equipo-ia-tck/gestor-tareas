@@ -10,7 +10,7 @@ const field = 'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark
 
 /** Espacios de equipo: miembros, invitación, crear, unirse y salir. Y la cuenta (cerrar sesión). */
 export function SpacesCard() {
-  const { user, spaces, isAdmin, adminCode } = useSync();
+  const { user, spaces, isAdmin } = useSync();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const run = async (fn: () => Promise<unknown>, done?: string) => {
@@ -38,19 +38,20 @@ export function SpacesCard() {
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <CreateSpace run={run} />
+        {isAdmin ? <CreateSpace run={run} /> : <p className="text-xs text-zinc-500">Los espacios nuevos los crean los administradores.</p>}
         <JoinSpace run={run} />
       </div>
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-700">
-        <span className="text-zinc-500">Sesión de <strong className="text-zinc-800 dark:text-zinc-200">{user?.name}</strong> ({user?.login})</span>
-        <button type="button" onClick={() => void sync().logout()} className={button}><LogOut className="size-3.5" />Cerrar sesión</button>
-        {isAdmin && adminCode && (
-          <span className="text-xs text-zinc-500">
-            Administras el servidor. Código de administración: <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{adminCode}</code> (no lo compartas)
+      <div className="mt-4 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-700">
+        <h3 className="mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Mi cuenta</h3>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-zinc-500">
+            <strong className="text-zinc-800 dark:text-zinc-200">{user?.name}</strong> ({user?.login}) · {isAdmin ? 'Administrador' : 'Usuario'}
           </span>
-        )}
+          <button type="button" onClick={() => void sync().logout()} className={button}><LogOut className="size-3.5" />Cerrar sesión</button>
+        </div>
+        <ChangePassword run={run} />
       </div>
     </section>
   );
@@ -152,6 +153,28 @@ function JoinSpace({ run }: { run: Run }) {
         <input id="space-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-1234" className={`${field} min-w-0 flex-1 uppercase`} />
         <button type="submit" className={button}>Unirme</button>
       </div>
+    </form>
+  );
+}
+
+function ChangePassword({ run }: { run: Run }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => { await sync().changePassword(current, next); setCurrent(''); setNext(''); }, 'Contraseña cambiada');
+  };
+  return (
+    <form onSubmit={submit} className="mt-3 flex flex-wrap items-end gap-2">
+      <label className="space-y-1" htmlFor="pw-current">
+        <span className="block text-xs text-zinc-500">Contraseña actual</span>
+        <input id="pw-current" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required className={field} />
+      </label>
+      <label className="space-y-1" htmlFor="pw-new">
+        <span className="block text-xs text-zinc-500">Nueva (mín. 8 caracteres)</span>
+        <input id="pw-new" type="password" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required className={field} />
+      </label>
+      <button type="submit" className={button}>Cambiar contraseña</button>
     </form>
   );
 }

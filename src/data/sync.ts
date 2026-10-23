@@ -39,6 +39,9 @@ const CHUNK = 400;
 
 export class AuthError extends Error {}
 
+export interface AdminUser { id: string; login: string; name: string; isAdmin: boolean; disabled: boolean; createdAt: string; spaces: string[] }
+export interface AdminSpace { id: string; name: string; color: string; members: { id: string; role: 'admin' | 'member' }[] }
+
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -127,6 +130,24 @@ export class SyncClient {
   leaveSpace = (id: string) => this.spaceAction(`/api/spaces/${id}/remove`, {});
   removeMember = (id: string, userId: string) => this.spaceAction(`/api/spaces/${id}/remove`, { userId });
   setRole = (id: string, userId: string, role: 'admin' | 'member') => this.spaceAction(`/api/spaces/${id}/role`, { userId, role });
+
+  // ---------- Administración (solo administradores) ----------
+
+  adminData = () => call<{ users: AdminUser[]; spaces: AdminSpace[]; adminCode: string }>('GET', '/api/admin');
+  setAdmin = async (userId: string, isAdmin: boolean) => {
+    const r = await call<{ users: AdminUser[] }>('POST', '/api/admin/role', { userId, isAdmin });
+    await this.me(); // por si me he quitado a mí misma
+    return r.users;
+  };
+  setDisabled = async (userId: string, disabled: boolean) => (await call<{ users: AdminUser[] }>('POST', '/api/admin/disable', { userId, disabled })).users;
+  resetPassword = async (userId: string) => (await call<{ temporary: string }>('POST', '/api/admin/password', { userId })).temporary;
+  regenerateAdminCode = async () => {
+    const r = await call<{ adminCode: string }>('POST', '/api/admin/code');
+    this.set({ adminCode: r.adminCode });
+    return r.adminCode;
+  };
+  adminJoinSpace = (id: string) => this.spaceAction(`/api/spaces/${id}/admin-join`);
+  changePassword = (current: string, password: string) => call('POST', '/api/password', { current, password });
 
   // ---------- Primer acceso en este navegador ----------
 

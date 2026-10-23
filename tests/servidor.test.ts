@@ -170,3 +170,54 @@ describe('compartir en la app', () => {
     expect([matchesSpace('exc', 'all'), matchesSpace(null, 'personal'), matchesSpace('exc', 'personal'), matchesSpace('exc', 'exc')]).toEqual([true, true, false, true]);
   });
 });
+
+describe('administración de la herramienta', () => {
+  const join = (code: string, login: string, name: string) => api.register({ login, name, password: 'contraseña-larga', code }).user;
+
+  it('quien entra con invitación no administra; un administrador puede nombrar a otro', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    const mark = join(exc.inviteCode, 'mark@vml.com', 'Mark Ruiz');
+    expect(api.isAdmin(marta)).toBe(true);
+    expect(api.isAdmin(mark)).toBe(false);
+    expect(() => api.adminUsers(mark)).toThrow(/administra/);
+    expect(() => api.createSpace(mark, { name: 'Otro' })).toThrow(/administra/);
+    api.setAdmin(marta, { userId: mark.id, isAdmin: true });
+    expect(api.isAdmin(mark)).toBe(true);
+    api.setAdmin(mark, { userId: marta.id, isAdmin: false });
+    expect(() => api.setAdmin(mark, { userId: mark.id, isAdmin: false })).toThrow(/al menos una/);
+  });
+
+  it('solo los administradores cambian la configuración común', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    const ana = join(exc.inviteCode, 'ana@vml.com', 'Ana Pérez');
+    expect(api.push(ana, [{ table: 'item_types', key: 'us', data: { id: 'us', name: 'Hackeado' } }]).rejected).toEqual(['item_types:us']);
+    expect(api.push(marta, [{ table: 'labels', key: 'bizum', data: { name: 'bizum', color: '#f00' } }]).rejected).toEqual([]);
+  });
+
+  it('desactivar cierra la sesión; la contraseña provisional y el cambio de contraseña funcionan', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const [exc] = api.createSpace(marta, { name: 'Excelencia' });
+    join(exc.inviteCode, 'ana@vml.com', 'Ana Pérez');
+    const { token, user: ana } = api.login({ login: 'ana@vml.com', password: 'contraseña-larga' });
+    api.setDisabled(marta, { userId: ana.id, disabled: true });
+    expect(api.userForToken(token)).toBeNull();
+    expect(() => api.login({ login: 'ana@vml.com', password: 'contraseña-larga' })).toThrow(/desactivada/);
+    expect(() => api.setDisabled(marta, { userId: marta.id, disabled: true })).toThrow(/propia/);
+    api.setDisabled(marta, { userId: ana.id, disabled: false });
+    const { temporary } = api.resetPassword(marta, { userId: ana.id });
+    const again = api.login({ login: 'ana@vml.com', password: temporary }).user;
+    expect(() => api.changePassword(again, { current: 'mal', password: 'otra-contraseña' })).toThrow(/actual/);
+    api.changePassword(again, { current: temporary, password: 'otra-contraseña' });
+    expect(api.login({ login: 'ana@vml.com', password: 'otra-contraseña' }).user.id).toBe(ana.id);
+  });
+
+  it('un administrador ve todos los espacios y puede entrar en cualquiera', () => {
+    const marta = signup('marta@vml.com', 'Marta García');
+    const mark = signup('mark@vml.com', 'Mark Ruiz');
+    const [pagos] = api.createSpace(mark, { name: 'Pagos' });
+    expect(api.adminSpaces(marta).map((s) => s.name)).toEqual(['Pagos']);
+    expect(api.adminJoinSpace(marta, pagos.id)).toMatchObject([{ name: 'Pagos', role: 'admin' }]);
+  });
+});

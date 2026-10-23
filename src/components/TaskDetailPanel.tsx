@@ -483,6 +483,8 @@ function PeopleField({ task }: { task: Task }) {
 
 function LabelsField({ task }: { task: Task }) {
   const { tasks, labels, labelColors } = useApp();
+  // El color de una etiqueta es común a todo el equipo: solo lo cambian los administradores.
+  const { isAdmin } = useSync();
   const all = useMemo(() => [...new Set([...labels.map((l) => l.name), ...tasks.flatMap((t) => t.tags)])], [labels, tasks]);
   return (
     <ChipsField
@@ -491,7 +493,7 @@ function LabelsField({ task }: { task: Task }) {
       placeholder="Etiqueta…"
       addLabel="Etiqueta"
       onChange={(tags, label) => void repo.batch(label, () => repo.updateTask(task.id, { tags }))}
-      renderChip={(name, remove) => (
+      renderChip={(name, remove) => !isAdmin ? <LabelChip key={name} name={name} colors={labelColors} onRemove={remove} /> : (
         <Popover key={name} width="w-auto" trigger={(toggle) => (
           <span onClick={toggle} className="cursor-pointer" title="Clic para cambiar el color"><LabelChip name={name} colors={labelColors} onRemove={remove} /></span>
         )}>

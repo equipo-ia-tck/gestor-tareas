@@ -6,8 +6,9 @@ import { useToast } from '../../components/Toast';
 import { downloadBackup, parseBackup, type BackupSummary } from '../../data/backup';
 import type { Backup } from '../../domain/schemas';
 import { autosave, repo } from '../../data/services';
-import { sync } from '../../data/sync';
+import { sync, useSync } from '../../data/sync';
 import { SpacesCard } from './SpacesCard';
+import { AdminCard } from './AdminCard';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
 import { usePersistence } from './usePersistence';
@@ -27,6 +28,7 @@ export function useAutosaveState() {
 
 export function SettingsView() {
   const { settings } = useApp();
+  const { isAdmin } = useSync();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<{ backup: Backup; summary: BackupSummary; merge: boolean } | null>(null);
@@ -75,6 +77,8 @@ export function SettingsView() {
     <>
       <ViewHeader title="Copias y ajustes" />
 
+      {isAdmin && <AdminCard />}
+
       <SpacesCard />
 
       <Card title="Copia de seguridad">
@@ -108,9 +112,16 @@ export function SettingsView() {
 
       <InstallCard />
 
-      <TypesCard />
-
-      <LabelsCard />
+      {isAdmin ? (
+        <>
+          <TypesCard />
+          <LabelsCard />
+        </>
+      ) : (
+        <Card title="Tipos, estados y etiquetas">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Son comunes a todo el equipo: los configuran los administradores.</p>
+        </Card>
+      )}
 
       <Card title="Capacidad y días laborables">
         <label className="mb-3 flex items-center gap-3 text-sm">
