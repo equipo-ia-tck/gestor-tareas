@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Ban, Copy, KeyRound, LogIn, RefreshCw, Shield, ShieldOff, UserCheck } from 'lucide-react';
+import { Ban, KeyRound, LogIn, RefreshCw, Shield, ShieldOff, UserCheck } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { sync, useSync, type AdminSpace, type AdminUser } from '../../data/sync';
 
@@ -13,7 +13,6 @@ export function AdminCard() {
   const [spaces, setSpaces] = useState<AdminSpace[]>([]);
   const [adminCode, setAdminCode] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [temporary, setTemporary] = useState<{ name: string; password: string } | null>(null);
 
   const load = async () => {
     try {
@@ -39,9 +38,6 @@ export function AdminCard() {
   };
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? '—';
   const spaceName = (id: string) => spaces.find((s) => s.id === id)?.name ?? '';
-  const copy = async (text: string, label: string) => {
-    try { await navigator.clipboard.writeText(text); toast(`${label} copiado`); } catch { toast(text); }
-  };
 
   return (
     <section className="mb-4 rounded-lg border border-indigo-200 p-4 dark:border-indigo-900">
@@ -80,9 +76,9 @@ export function AdminCard() {
                     {!u.disabled && (u.isAdmin
                       ? <button type="button" className={button} onClick={() => void run(() => sync().setAdmin(u.id, false), `${u.name} ya no es administrador`)}><ShieldOff className="size-3" />Quitar admin</button>
                       : <button type="button" className={button} onClick={() => void run(() => sync().setAdmin(u.id, true), `${u.name} es administrador`)}><Shield className="size-3" />Hacer admin</button>)}
-                    <button type="button" className={button} title="Genera una contraseña provisional que le tienes que pasar"
-                      onClick={() => void run(async () => setTemporary({ name: u.name, password: await sync().resetPassword(u.id) }))}>
-                      <KeyRound className="size-3" />Restablecer contraseña
+                    <button type="button" className={button} title="Le llega un email para elegir una contraseña nueva"
+                      onClick={() => void run(async () => { await sync().resetPassword(u.id); }, `Email enviado a ${u.login}`)}>
+                      <KeyRound className="size-3" />Enviar email de contraseña
                     </button>
                     {u.id !== user?.id && (u.disabled
                       ? <button type="button" className={button} onClick={() => void run(() => sync().setDisabled(u.id, false), 'Cuenta reactivada')}><UserCheck className="size-3" />Reactivar</button>
@@ -94,13 +90,6 @@ export function AdminCard() {
           </tbody>
         </table>
       </div>
-      {temporary && (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
-          Contraseña provisional de <strong>{temporary.name}</strong>: <code className="rounded bg-white px-1.5 py-0.5 font-semibold dark:bg-zinc-900">{temporary.password}</code>
-          <button type="button" className={`${button} ml-2`} onClick={() => void copy(temporary.password, 'Contraseña')}><Copy className="size-3" />Copiar</button>
-          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">Pásasela por un canal privado. Solo se muestra ahora; que la cambie al entrar (Ajustes → Mi cuenta).</p>
-        </div>
-      )}
 
       <h3 className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Todos los espacios · {spaces.length}</h3>
       <ul className="mb-4 space-y-1 text-sm">

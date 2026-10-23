@@ -1,6 +1,5 @@
-// `npm start`: compila y arranca el servidor del equipo (app + API) en http://localhost:4173.
-// Si ya hay uno en marcha en ese puerto, solo compila (el que está en marcha sirve los archivos nuevos;
-// si han cambiado archivos de servidor/, hay que pararlo con Ctrl+C y volver a ejecutar npm start).
+// `npm start`: compila y sirve la app en http://localhost:4173. Los datos están en Supabase (la base de datos
+// del equipo), así que aquí solo se sirven los archivos. Si ya está en marcha, solo compila.
 import { execSync, spawn } from 'node:child_process';
 import net from 'node:net';
 
@@ -20,6 +19,6 @@ execSync('npm run build', { stdio: 'inherit' });
 if (await inUse()) {
   console.log(`\n✓ Compilado. La app ya estaba en marcha: recarga ${URL} (dos veces) para ver los cambios.\n`);
 } else {
-  console.log('\n✓ Compilado. Arrancando el servidor del equipo…');
-  spawn(process.execPath, ['servidor/index.ts'], { stdio: 'inherit' });
+  console.log(`\n✓ Compilado. Abriendo la app en ${URL} (deja esta ventana abierta mientras la uses).\n`);
+  spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'inherit' });
 }
