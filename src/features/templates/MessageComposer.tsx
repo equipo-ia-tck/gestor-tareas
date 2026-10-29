@@ -12,6 +12,7 @@ import { fold, nameKey } from '../../domain/text';
 import { peopleDirectory } from '../../domain/people';
 import type { Task } from '../../domain/types';
 import { findType } from '../../domain/workflows';
+import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 
 // Las plantillas son archivos del repositorio (plantillas/*.md) y entran en la app al compilar.
 const files = import.meta.glob('/plantillas/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -77,6 +78,7 @@ function Composer({ task, close }: { task: Task; close: () => void }) {
   const people = task.people.map((name) => ({ name, email: peopleCards.find((p) => nameKey(p.name) === nameKey(name))?.email ?? '' }));
   const missing = people.filter((p) => !p.email);
   const topic = [task.external_id, task.title].filter(Boolean).join(' · ');
+  const [teamsApp] = useTeamsApp();
   const teams = teamsChatUrl(people.map((p) => p.email), topic, text);
 
   const copy = async () => {
@@ -129,7 +131,7 @@ function Composer({ task, close }: { task: Task; close: () => void }) {
           <Copy className="size-3.5" />Copiar
         </button>
         {teams && (
-          <a href={teams} target="_blank" rel="noreferrer" onClick={close}
+          <a {...teamsLinkProps(teams, teamsApp)} onClick={close}
             className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500">
             <MessageSquare className="size-3.5" />Abrir en Teams{people.length - missing.length > 1 ? ' (chat de grupo)' : ''}
           </a>

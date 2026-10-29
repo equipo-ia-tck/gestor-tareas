@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { peopleDirectory } from '../src/domain/people';
+import { rallyOwners } from '../src/domain/rally';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -16,11 +17,29 @@ describe('directorio de personas', () => {
       [{ name: 'Ana López', role: '', notes: '', email: '' }, { name: 'Luis', role: 'Dev', notes: '', email: '' }],
     );
     expect(dir).toEqual([
-      { name: 'Diana', tasks: 2, notes: 1 },
-      { name: 'Luis', tasks: 1, notes: 0 },
-      { name: 'Marcos Porto', tasks: 0, notes: 2 },
-      { name: 'Ana', tasks: 0, notes: 1 },
-      { name: 'Ana López', tasks: 0, notes: 0 },
+      { name: 'Diana', tasks: 2, notes: 1, rally: 0 },
+      { name: 'Luis', tasks: 1, notes: 0, rally: 0 },
+      { name: 'Marcos Porto', tasks: 0, notes: 2, rally: 0 },
+      { name: 'Ana', tasks: 0, notes: 1, rally: 0 },
+      { name: 'Ana López', tasks: 0, notes: 0, rally: 0 },
+    ]);
+  });
+
+  it('añade a los Owners de Rally de las tareas enlazadas, sin contar dos veces', () => {
+    const tasks = [
+      makeTask({ external_id: 'US-1' }),
+      makeTask({ external_id: 'US2', people: ['Carla Ruiz'] }),
+      makeTask({ external_id: 'US3', status: 'done' }),
+      makeTask({ external_id: 'US4' }),
+      makeTask({ external_id: 'otra-cosa' }),
+      makeTask({ external_id: 'US5', deleted_at: '2026-10-01T00:00:00Z' }),
+    ];
+    const owners: Record<string, string> = { US1: 'Carla Ruiz', US2: 'carla ruiz', US3: 'Elena', US4: 'Elena', US5: 'Borrada' };
+    const map = rallyOwners(tasks, (id) => owners[id]);
+    expect([...map.values()]).toEqual(['Carla Ruiz', 'carla ruiz', 'Elena', 'Elena']);
+    expect(peopleDirectory(tasks, [], [], map)).toEqual([
+      { name: 'Carla Ruiz', tasks: 1, notes: 0, rally: 1 },
+      { name: 'Elena', tasks: 0, notes: 0, rally: 1 },
     ]);
   });
 });

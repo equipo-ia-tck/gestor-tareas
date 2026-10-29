@@ -9,12 +9,16 @@ export interface CalendarEvent {
   date: ISODate;
   /** Hora local "HH:MM" (null en eventos de día completo). */
   time: string | null;
+  /** Hora local de fin "HH:MM" (null si no la trae, es de día completo o acaba otro día). */
+  end: string | null;
   attendees: { name: string; email: string }[];
   organizer: { name: string; email: string } | null;
   description: string;
   location: string;
   /** Enlace para unirse (Teams u otro), si lo trae. */
   url: string | null;
+  /** Cómo se muestra en Outlook: ocupado, provisional (sin confirmar), libre o fuera de la oficina. */
+  showAs: 'busy' | 'tentative' | 'free' | 'oof';
 }
 
 interface Prop { name: string; params: Record<string, string>; value: string }
@@ -118,6 +122,8 @@ function toEvents(props: Prop[], from: ISODate, to: ISODate): CalendarEvent[] {
   if (get('STATUS')?.value.toUpperCase() === 'CANCELLED') return [];
   const start = get('DTSTART') ? parseDate(get('DTSTART')!) : null;
   if (!start) return [];
+  const finish = get('DTEND') ? parseDate(get('DTEND')!) : null;
+  const end = start.time && finish?.time && finish.date === start.date ? finish.time : null;
   const description = unescape(get('DESCRIPTION')?.value ?? '');
   const location = unescape(get('LOCATION')?.value ?? '');
   const teams = get('X-MICROSOFT-SKYPETEAMSMEETINGURL')?.value
@@ -127,10 +133,13 @@ function toEvents(props: Prop[], from: ISODate, to: ISODate): CalendarEvent[] {
   const organizer = organizerProp ? person(organizerProp) : null;
   const attendees = props.filter((p) => p.name === 'ATTENDEE').map(person);
   if (organizer && !attendees.some((a) => a.email.toLowerCase() === organizer.email.toLowerCase())) attendees.unshift(organizer);
+  const busy = (get('X-MICROSOFT-CDO-BUSYSTATUS')?.value ?? '').toUpperCase();
+  const showAs: CalendarEvent['showAs'] = busy === 'TENTATIVE' ? 'tentative' : busy === 'OOF' ? 'oof'
+    : busy === 'FREE' || (!busy && get('TRANSP')?.value.toUpperCase() === 'TRANSPARENT') ? 'free' : 'busy';
   const base = {
     uid: get('UID')?.value ?? `${start.date}-${get('SUMMARY')?.value}`,
     title: unescape(get('SUMMARY')?.value ?? 'Reunión'),
-    time: start.time, attendees, organizer, description, location, url: teams,
+    time: start.time, end, attendees, organizer, description, location, url: teams, showAs,
   };
   const rrule = get('RRULE')?.value;
   const recurrenceId = get('RECURRENCE-ID');

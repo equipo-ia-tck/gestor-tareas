@@ -16,7 +16,8 @@ export interface RecurrenceRule {
 }
 
 /** Grupo de un estado: decide si cuenta como pendiente, en curso, bloqueado o terminado. */
-export type StateCategory = 'todo' | 'doing' | 'blocked' | 'done';
+/** "accepted" (validado por quien lo pidió, como en Rally) cuenta como completada, igual que "done". */
+export type StateCategory = 'todo' | 'doing' | 'blocked' | 'done' | 'accepted';
 
 export interface WorkflowState {
   id: string;

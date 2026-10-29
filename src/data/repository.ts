@@ -14,7 +14,7 @@ import {
   type Task,
   type TaskPatch,
 } from '../domain/types';
-import { doneState, equivalentState, findType, initialState, patchForState, stateOf } from '../domain/workflows';
+import { doneState, equivalentState, findType, initialState, isDoneCategory, patchForState, stateOf, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
 import { extractMentions } from '../domain/markdown';
 import { activityFor } from '../domain/activity';
@@ -72,6 +72,11 @@ export interface Repository {
   createItemType(name: string): Promise<ItemType>;
   /** Guarda un tipo; las tareas en estados eliminados pasan al estado equivalente por categoría. */
   saveItemType(type: ItemType): Promise<void>;
+  /**
+   * Añade el estado "Accepted" a Tarea, User Story y Test Scenario si no lo tienen. Sin historial ni aviso: es una
+   * actualización de los tipos comunes, así que solo la lanza un administrador (se sincroniza al resto del equipo).
+   */
+  ensureAcceptedStates(): Promise<void>;
   /** Elimina un tipo (no el de Tarea); sus tareas pasan a Tarea. */
   deleteItemType(id: string): Promise<void>;
 
@@ -288,7 +293,7 @@ export class DexieRepository implements Repository {
       ...input,
       type_id: type.id,
       state_id: state.id,
-      ...(state.category === 'done' ? { status: 'done' as const, completed_at: input.completed_at ?? ts } : {}),
+      ...(isDoneCategory(state.category) ? { status: 'done' as const, completed_at: input.completed_at ?? ts } : {}),
       title: input.title.trim(),
       id: uuid(),
       created_at: ts,
@@ -350,7 +355,7 @@ export class DexieRepository implements Repository {
     const state = type.states.find((s) => s.id === stateId);
     if (!state) return;
     // Pasar a "hecho" es completar: así las recurrentes generan su siguiente ocurrencia.
-    if (state.category === 'done' && task.status !== 'done') {
+    if (isDoneCategory(state.category) && task.status !== 'done') {
       await this.batch(`${state.name}`, async () => {
         await this.setCompleted(id, true);
         await this.patchTask(id, { state_id: state.id }, state.name);
@@ -449,6 +454,13 @@ export class DexieRepository implements Repository {
     this.record({ table: 'item_types', key: id, before: undefined, after: type }, `Tipo ${type.name} creado`);
     this.emit();
     return type;
+  }
+
+  async ensureAcceptedStates() {
+    for (const type of await this.listItemTypes()) {
+      const next = withAcceptedState(type);
+      if (next) await this.db.item_types.put(next);
+    }
   }
 
   async saveItemType(type: ItemType) {

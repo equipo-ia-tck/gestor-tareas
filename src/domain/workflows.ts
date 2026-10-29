@@ -8,6 +8,7 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
       { id: 'task-doing', name: 'En curso', color: '#3b82f6', category: 'doing' },
       { id: 'task-blocked', name: 'Bloqueada', color: '#ef4444', category: 'blocked' },
       { id: 'task-done', name: 'Hecha', color: '#22c55e', category: 'done' },
+      { id: 'task-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
     ],
   },
   {
@@ -20,6 +21,7 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
       { id: 'us-blocked', name: 'Bloqueada', color: '#ef4444', category: 'blocked' },
       { id: 'us-validated', name: 'Validada', color: '#14b8a6', category: 'doing' },
       { id: 'us-prod', name: 'En producción', color: '#22c55e', category: 'done' },
+      { id: 'us-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
     ],
   },
   {
@@ -31,6 +33,7 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
       { id: 'ts-failed', name: 'Fallido', color: '#f97316', category: 'blocked' },
       { id: 'ts-blocked', name: 'Bloqueado', color: '#ef4444', category: 'blocked' },
       { id: 'ts-passed', name: 'Pasado', color: '#22c55e', category: 'done' },
+      { id: 'ts-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
     ],
   },
   {
@@ -47,6 +50,18 @@ export const TOPIC_TYPE = DEFAULT_ITEM_TYPES.find((t) => t.id === TOPIC_TYPE_ID)
 export const findType = (types: ItemType[], id: string | undefined): ItemType =>
   types.find((t) => t.id === id) ?? types.find((t) => t.id === DEFAULT_TYPE_ID) ?? DEFAULT_ITEM_TYPES[0];
 
+/** Categorías que cuentan como completada. */
+export const isDoneCategory = (cat: StateCategory) => cat === 'done' || cat === 'accepted';
+
+/** Tipos que llevan el estado "Accepted" (los de serie salvo "Para hablar"). */
+export const ACCEPTED_TYPE_IDS = [DEFAULT_TYPE_ID, 'us', 'ts'];
+
+/** El tipo con el estado "Accepted" al final si aún no tiene ninguno de esa categoría (null si no hace falta). */
+export function withAcceptedState(type: ItemType): ItemType | null {
+  if (!ACCEPTED_TYPE_IDS.includes(type.id) || type.states.some((s) => s.category === 'accepted')) return null;
+  return { ...type, states: [...type.states, { id: `${type.id}-accepted`, name: 'Accepted', color: '#047857', category: 'accepted' }] };
+}
+
 const firstOf = (type: ItemType, cat: StateCategory) => type.states.find((s) => s.category === cat);
 
 /** Estado inicial de un tipo (el primero pendiente). */
@@ -61,7 +76,7 @@ export function stateOf(types: ItemType[], task: Pick<Task, 'type_id' | 'state_i
 
 /** Estado del nuevo tipo con la misma categoría que el actual (al cambiar una tarea de tipo). */
 export function equivalentState(from: WorkflowState, to: ItemType): WorkflowState {
-  return firstOf(to, from.category) ?? (from.category === 'done' ? doneState(to) : initialState(to));
+  return firstOf(to, from.category) ?? (isDoneCategory(from.category) ? doneState(to) : initialState(to));
 }
 
 /**
@@ -69,7 +84,7 @@ export function equivalentState(from: WorkflowState, to: ItemType): WorkflowStat
  * reabrirla si sale de él. Las archivadas no cambian de status.
  */
 export function patchForState(task: Pick<Task, 'status' | 'completed_at'>, state: WorkflowState, nowIso: string) {
-  if (state.category === 'done') {
+  if (isDoneCategory(state.category)) {
     return { state_id: state.id, status: 'done' as const, completed_at: task.status === 'done' ? task.completed_at : nowIso };
   }
   return {

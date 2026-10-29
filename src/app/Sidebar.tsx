@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -8,6 +8,7 @@ import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
 import { peopleDirectory } from '../domain/people';
+import { useRallyOwners } from '../features/rally/rallyStore';
 import { dropHighlight, useTaskDrop } from '../hooks/useTaskDrop';
 import { routeHref, type Route } from './router';
 import { inboxTasks, myDayTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
@@ -145,8 +146,9 @@ export function Sidebar({ route }: { route: Route }) {
   const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
   const { notes, peopleCards } = useApp();
-  // Todas las personas: con tareas, mencionadas en notas o con ficha.
-  const allPeople = peopleDirectory(tasks, notes, peopleCards);
+  // Todas las personas: con tareas, mencionadas en notas, con ficha u Owners en Rally de lo que llevo.
+  const rallyOwners = useRallyOwners(tasks);
+  const allPeople = peopleDirectory(tasks, notes, peopleCards, rallyOwners);
   const [showAllPeople, setShowAllPeople] = usePersistentState('sidebar-all-people', false);
   const people = showAllPeople ? allPeople : allPeople.slice(0, 10);
   const { moveIds } = useTaskActions();
@@ -189,6 +191,8 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
+      <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
+      <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
 
       <Heading action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
@@ -203,7 +207,7 @@ export function Sidebar({ route }: { route: Route }) {
 
       <Heading href={routeHref({ view: 'people' })}><Users className="mr-1.5 inline size-3.5" />Personas</Heading>
       {people.map((p) => (
-        <NavItem key={p.name} href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.tasks}
+        <NavItem key={p.name} href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.tasks + p.rally}
           lead={<Avatar name={p.name} size={18} />}>
           {p.name}
         </NavItem>

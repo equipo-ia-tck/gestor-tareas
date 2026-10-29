@@ -6,6 +6,9 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { extname, join, normalize, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Api, ApiError, type Change } from './api.ts';
+import { Calendar } from './calendar.ts';
+import { Chats } from './chats.ts';
+import { Rally } from './rally.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist');
@@ -15,7 +18,11 @@ const HOSTS = process.env.GESTOR_HOST ? [process.env.GESTOR_HOST] : ['127.0.0.1'
 const COOKIE = 'gestor_sesion';
 
 mkdirSync(join(DATA, 'copias'), { recursive: true });
-const api = new Api(new DatabaseSync(join(DATA, 'equipo.sqlite')));
+const db = new DatabaseSync(join(DATA, 'equipo.sqlite'));
+const api = new Api(db);
+const rally = new Rally(db);
+const calendar = new Calendar(db);
+const chats = new Chats(db);
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -90,6 +97,77 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     case 'POST /api/push': {
       const body = await readJson(req);
       return send(res, 200, api.push(user, Array.isArray(body.changes) ? (body.changes as Change[]) : []));
+    }
+    case 'GET /api/rally':
+      return send(res, 200, rally.status(user));
+    case 'POST /api/rally/connect':
+      return send(res, 200, await rally.connect(user, await readJson(req)));
+    case 'POST /api/rally/disconnect':
+      return send(res, 200, rally.disconnect(user));
+    case 'GET /api/rally/projects':
+      return send(res, 200, { projects: await rally.projects(user) });
+    case 'POST /api/rally/move': {
+      const body = await readJson(req);
+      try {
+        const item = await rally.move(user, body);
+        console.log(`[Rally] ${user.login}: ${String(body.id)} → ${String(body.category)} · ahora "${item.state}" (${item.category})`);
+        return send(res, 200, { item });
+      } catch (e) {
+        console.log(`[Rally] ${user.login}: ${String(body.id)} → ${String(body.category)} · ERROR: ${(e as Error).message}`);
+        throw e;
+      }
+    }
+    case 'POST /api/rally/comment': {
+      const body = await readJson(req);
+      try {
+        const post = await rally.comment(user, body);
+        console.log(`[Rally] ${user.login}: comentario en ${String(body.kind)} ${String(body.objectId)}`);
+        return send(res, 200, { post });
+      } catch (e) {
+        console.log(`[Rally] ${user.login}: comentario en ${String(body.kind)} ${String(body.objectId)} · ERROR: ${(e as Error).message}`);
+        throw e;
+      }
+    }
+    case 'POST /api/rally/attach': {
+      const body = await readJson(req);
+      try {
+        const file = await rally.attach(user, body);
+        console.log(`[Rally] ${user.login}: adjunto "${file.name}" en ${String(body.kind)} ${String(body.objectId)}`);
+        return send(res, 200, { file });
+      } catch (e) {
+        console.log(`[Rally] ${user.login}: adjunto en ${String(body.kind)} ${String(body.objectId)} · ERROR: ${(e as Error).message}`);
+        throw e;
+      }
+    }
+    case 'GET /api/chats':
+      return send(res, 200, chats.status(user));
+    case 'POST /api/chats/link':
+      return send(res, 200, chats.link(user));
+    case 'POST /api/chats/unlink':
+      return send(res, 200, chats.unlink(user));
+    case 'GET /api/chats/data':
+      return send(res, 200, await chats.chats(user));
+    case 'GET /api/calendar':
+      return send(res, 200, calendar.status(user));
+    case 'POST /api/calendar/connect':
+      return send(res, 200, await calendar.connect(user, await readJson(req)));
+    case 'POST /api/calendar/disconnect':
+      return send(res, 200, calendar.disconnect(user));
+    case 'POST /api/calendar/file/link':
+      return send(res, 200, calendar.linkFile(user));
+    case 'POST /api/calendar/file/unlink':
+      return send(res, 200, calendar.unlinkFile(user));
+    case 'GET /api/calendar/events':
+      return send(res, 200, await calendar.events(user));
+    case 'GET /api/calendar/ics':
+      return send(res, 200, { ics: await calendar.ics(user, url.searchParams.get('fresh') === '1') });
+    case 'POST /api/rally/lookup':
+      return send(res, 200, { items: await rally.lookup(user, await readJson(req)) });
+    case 'GET /api/rally/detail':
+      return send(res, 200, await rally.detail(user, url.searchParams.get('kind'), url.searchParams.get('id')));
+    case 'GET /api/rally/items': {
+      const projects = (url.searchParams.get('projects') ?? '').split(',').filter(Boolean);
+      return send(res, 200, { items: await rally.items(user, Number(url.searchParams.get('days') ?? 90) || 0, projects) });
     }
     case 'POST /api/snapshot': {
       // Copia de seguridad de lo que había en el navegador antes de vaciarlo (por si acaso).

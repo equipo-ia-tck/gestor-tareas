@@ -427,6 +427,56 @@ Petición de la usuaria (23 oct 2026): ella y Mark administran todo; el resto us
   si lo administran (invitación, miembros).
 - Cuentas desactivadas (`users.disabled`): no pueden entrar y sus sesiones caducan; sus datos se conservan.
 
+## Fase 19: conector de Rally
+
+Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (entrada «Rally» debajo de Notas).
+
+- **Servidor** (`servidor/rally.ts`, WSAPI v2 con cabecera `ZSESSIONID`): la clave de API de cada usuario se guarda solo en
+  la tabla `rally_accounts` y nunca vuelve al navegador. URL por defecto `https://eu1.rallydev.com`. Las consultas van
+  anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
+  (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Crear devuelve `CreateResult` y
+  actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
+- **Asignación**: se usa el campo personalizado `c_Assignee` (el Owner suele ser quien lo pidió). `mine` = Assignee u Owner soy yo.
+- **Categorías** (`rallyCategory`): todo · blocked · doing · done · **accepted**. El gestor tiene ahora la categoría de estado
+  `accepted` (cuenta como completada, `isDoneCategory`); la sesión de un administrador añade el estado «Accepted» a Tarea, US y TS
+  (`repo.ensureAcceptedStates`), y la sincronización lo lleva al equipo. Tablero: Por hacer · Bloqueado · En curso · Hecho · Accepted.
+- **Dos sentidos** (`RallySync`, `rallyStates.ts`): cada 5 min, al volver a la ventana y al abrir Rally, las tareas enlazadas
+  (por `external_id`) pasan a la categoría que tienen en Rally (Rally manda). Al mover una tarea aquí (entrada del historial), se
+  mueve en Rally; no se reenvía lo que viene de Rally (WeakSet) ni al deshacer un movimiento traído de Rally.
+- **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
+  «solo lo mío», ficha lateral con todos los campos, discusión (con caja para comentar) y adjuntos (con subida). La misma ficha
+  sale en el panel de una tarea enlazada (`RallyTaskSection`).
+- **Owner**: `rallyStore.ts` recuerda en memoria el último estado de cada elemento y los Owners en localStorage. El Tablero muestra
+  «Owned By» y Personas incluye a los Owners de las tareas enlazadas (`rallyOwners`, campo `rally` de `peopleDirectory`). El Owner
+  **no** se escribe en `task.people`: eso compartiría la tarea con la cuenta que se llame igual.
+
+## Fase 20: calendario estilo Teams (Outlook)
+
+- **Fuentes** (`servidor/calendar.ts`): enlace ICS publicado (en WPP solo da la disponibilidad: «Busy»/«Tentative») y, para los
+  títulos, un **flujo de Power Automate** («Obtener vista de calendario de eventos (V3)», −14/+45 días, cada 5 min) que escribe
+  `OneDrive/Gestor/calendario.json`. OneDrive lo sincroniza al Mac y el servidor lo lee de la carpeta local (`findGestorFile`),
+  vinculado a una sola cuenta y releído solo si cambia el mtime. Sin permisos de Microsoft. `outlookEvents.ts` acepta V3 o
+  Graph (horas UTC sin zona → locales, `showAs`, Teams del cuerpo, canceladas fuera). Los archivos que importa el servidor no
+  pueden tener imports de valores sin extensión `.ts`.
+- **Pantalla** (`CalendarView`, `useWideLayout('full')`: ocupa la ventana y solo hace scroll la agenda): minicalendario, «Mis
+  calendarios» (reuniones, tareas, completadas, releases), Hoy, flechas, rango y vista (Día, Semana laboral, Semana, Mes, Lista
+  de la semana). `WeekAgenda` coloca las reuniones por horas (80 px/h, de 9 a 20, `layoutDay` reparte las que se solapan) con las
+  tareas del día arriba; provisionales rayadas como en Teams.
+- **Reunión nueva**: doble clic en una hora vacía → `NewMeeting` abre en Teams la reunión rellenada (`teamsMeetingUrl`, enlace
+  `l/meeting/new`); se envía allí. Se ve como pendiente (localStorage) hasta que llega del calendario; al llegar se borra para
+  siempre, así una reunión eliminada en Teams no reaparece. «Crear acta» desde cualquier reunión (`createMeetingNote`).
+- **Teams en la app**: los enlaces de teams.microsoft.com se abren como `msteams:` (`useTeamsApp`, Ajustes, activado por defecto),
+  sin dejar una pestaña en Chrome.
+
+## Fase 21: chats de Teams (solo lectura)
+
+- Mismo patrón que el calendario: un flujo con «Enviar una solicitud HTTP de Microsoft Graph» (solo admite rutas `me`, `users`
+  o `teams`: `/me/chats?$expand=lastMessagePreview&$top=20` y `/me/chats/{id}/messages?$top=20` para los 10 más recientes) escribe
+  `OneDrive/Gestor/chats.json`; `servidor/chats.ts` lo lee. `teamsChats.ts` acepta `{ value }`, `[chat]` o `[{ chat, messages }]`.
+- Pantalla `#/chats`: lista con último mensaje y no leídos (`viewpoint.lastMessageReadDateTime`), conversación, «Responder en
+  Teams» y «→ Tarea». «Actualizado hace X» por el mtime. Los mensajes no se escriben en el registro del servidor.
+- Chat fluido o escribir desde el gestor necesitaría Microsoft Graph con una app registrada en Entra ID (IT).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -448,6 +498,9 @@ Petición de la usuaria (23 oct 2026): ella y Mark administran todo; el resto us
 - [x] Fase 16: espacios de equipo (miembros, invitaciones, proyectos compartidos, filtro por espacio, menciones exactas)
 - [x] Fase 17: notas con formato (sin Markdown a la vista), proyecto más claro, guía de captura, IDs de Rally
 - [x] Fase 18: roles de administrador y usuario, panel de administración y cambio de contraseña
+- [x] Fase 19: conector de Rally (dos sentidos, Accepted, Owner, comentarios y adjuntos)
+- [x] Fase 20: calendario estilo Teams con reuniones de Outlook (Power Automate), agenda por horas y reuniones nuevas
+- [x] Fase 21: chats de Teams en solo lectura (Power Automate) con «→ Tarea»
 
 ## Fases
 

@@ -61,7 +61,7 @@ export const taskSchema = z.object({
 export const taskFilterSchema = z.object({
   text: z.string().default(''),
   types: z.array(z.string()).default([]),
-  categories: z.array(z.enum(['todo', 'doing', 'blocked', 'done'])).default([]),
+  categories: z.array(z.enum(['todo', 'doing', 'blocked', 'done', 'accepted'])).default([]),
   projects: z.array(z.string()).default([]),
   people: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
@@ -88,7 +88,7 @@ const stateSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   color: z.string(),
-  category: z.enum(['todo', 'doing', 'blocked', 'done']),
+  category: z.enum(['todo', 'doing', 'blocked', 'done', 'accepted']),
 });
 
 export const itemTypeSchema = z.object({

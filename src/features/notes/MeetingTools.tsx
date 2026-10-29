@@ -8,11 +8,13 @@ import { repo } from '../../data/services';
 import { nameKey } from '../../domain/text';
 import { meetingSummary, teamsChatUrl } from '../../domain/teams';
 import type { Note } from '../../domain/types';
+import { openTeams, teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 
 /** Enlace de la reunión (Teams u otra) con botón "Unirse". */
 export function MeetingLink({ note }: { note: Note }) {
   const [value, setValue] = useState(note.meeting_url ?? '');
   useEffect(() => setValue(note.meeting_url ?? ''), [note.meeting_url]);
+  const [teamsApp] = useTeamsApp();
   const save = () => {
     const v = value.trim() || null;
     if (v !== note.meeting_url) void repo.updateNote(note.id, { meeting_url: v });
@@ -24,7 +26,7 @@ export function MeetingLink({ note }: { note: Note }) {
         placeholder="Pega el enlace de la reunión de Teams…"
         className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-zinc-600 outline-none placeholder:text-zinc-400 hover:border-zinc-200 focus:border-indigo-500 dark:text-zinc-300 dark:hover:border-zinc-700" />
       {note.meeting_url && (
-        <a href={note.meeting_url} target="_blank" rel="noopener noreferrer"
+        <a {...teamsLinkProps(note.meeting_url, teamsApp)}
           className="flex shrink-0 items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#4b4fb7]">
           <Video className="size-3.5" />Unirse
         </a>
@@ -40,6 +42,7 @@ export function ShareMeeting({ note }: { note: Note }) {
   const summary = meetingSummary(note, new Map(tasks.map((t) => [t.id, t])));
   const emailOf = (name: string) => peopleCards.find((c) => nameKey(c.name) === nameKey(name))?.email ?? '';
   const missing = note.people.filter((p) => !emailOf(p));
+  const [teamsApp] = useTeamsApp();
   const chat = teamsChatUrl(note.people.map(emailOf).filter(Boolean), note.title, summary);
 
   async function copy(text: string, label: string) {
@@ -66,7 +69,7 @@ export function ShareMeeting({ note }: { note: Note }) {
             <Copy className="size-4 text-zinc-400" />Copiar acta completa
           </MenuItem>
           {chat ? (
-            <MenuItem onClick={() => { close(); window.open(chat, '_blank', 'noopener'); }}>
+            <MenuItem onClick={() => { close(); openTeams(chat, teamsApp); }}>
               <MessageCircle className="size-4 text-[#5b5fc7]" />Abrir chat de Teams con los asistentes
             </MenuItem>
           ) : (

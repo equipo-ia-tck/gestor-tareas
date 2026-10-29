@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 const MARGIN = 8;
@@ -9,11 +9,14 @@ const MARGIN = 8;
  * si no cabe a la derecha se desplaza, y si no cabe debajo se abre hacia arriba.
  * Se cierra con clic fuera o Esc. `trigger` recibe la función para abrir/cerrar.
  */
-export function Popover({ trigger, children, align = 'left', width = 'w-56' }: {
+export function Popover({ trigger, children, align = 'left', width = 'w-56', className = 'relative inline-block', style }: {
   trigger: (toggle: () => void, open: boolean) => ReactNode;
   children: (close: () => void) => ReactNode;
   align?: 'left' | 'right';
   width?: string;
+  /** Clases y estilo del contenedor del disparador (p. ej. para colocarlo en posición absoluta). */
+  className?: string;
+  style?: CSSProperties;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -66,7 +69,7 @@ export function Popover({ trigger, children, align = 'left', width = 'w-56' }: {
   }, [open, place]);
 
   return (
-    <div ref={anchor} className="relative inline-block">
+    <div ref={anchor} className={className} style={style}>
       {trigger(() => setOpen((o) => !o), open)}
       {open && createPortal(
         <div

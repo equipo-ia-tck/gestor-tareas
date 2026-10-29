@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { CheckSquare, FileText, MessageCircle, MessageSquare, Plus, Quote, UserCog, Users } from 'lucide-react';
+import { CheckSquare, FileText, Layers, MessageCircle, MessageSquare, Plus, Quote, UserCog, Users } from 'lucide-react';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { fuzzyScore } from '../../domain/text';
 import { navigate } from '../../app/router';
@@ -16,12 +16,15 @@ import { isActive, samePerson, sortTasks } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
 import { TOPIC_TYPE_ID } from '../../domain/types';
 import { newNote } from '../notes/NotesView';
+import { useRallyOwners } from '../rally/rallyStore';
+import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { ViewHeader } from './ViewHeader';
 
 export function PeopleView() {
   const { tasks, notes, peopleCards } = useApp();
-  // Personas con tareas, mencionadas en notas o con ficha.
-  const people = peopleDirectory(tasks, notes, peopleCards);
+  // Personas con tareas, mencionadas en notas, con ficha u Owners en Rally de las tareas enlazadas.
+  const rallyOwners = useRallyOwners(tasks);
+  const people = peopleDirectory(tasks, notes, peopleCards, rallyOwners);
   const role = (name: string) => peopleCards.find((c) => nameKey(c.name) === nameKey(name))?.role;
   const topics = (name: string) => tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'todo' && t.people.some((p) => samePerson(p, name))).length;
 
@@ -39,6 +42,7 @@ export function PeopleView() {
               </div>
               <div className="text-right text-xs text-zinc-500">
                 <p>{p.tasks} tarea{p.tasks === 1 ? '' : 's'}{p.notes ? ` · ${p.notes} nota${p.notes === 1 ? '' : 's'}` : ''}</p>
+                {p.rally > 0 && <p className="text-indigo-600 dark:text-indigo-400">Owner de {p.rally} en Rally</p>}
                 {topics(p.name) > 0 && <p className="text-amber-600">{topics(p.name)} para hablar</p>}
               </div>
             </a>
@@ -58,7 +62,13 @@ export function PersonView({ name }: { name: string }) {
   const talked = mine.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'done').sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''));
   const active = sortTasks(mine.filter((t) => t.type_id !== TOPIC_TYPE_ID && isActive(t)));
   const done = mine.filter((t) => t.type_id !== TOPIC_TYPE_ID && t.status === 'done');
+  // Tareas enlazadas con Rally de las que es Owner allí (las que ya la tienen en Personas salen arriba).
+  const rallyOwners = useRallyOwners(tasks);
+  const owned = tasks.filter((t) => !mine.includes(t) && samePerson(rallyOwners.get(t.id) ?? '', name));
+  const ownedActive = sortTasks(owned.filter(isActive));
+  const ownedDone = owned.filter((t) => t.status === 'done');
   const said = mentionsOf(name, notes);
+  const [teamsApp] = useTeamsApp();
   const meetings = meetingsWith(name, notes);
   const list = { today, projects: projectMap, onEdit: editTask };
 
@@ -71,7 +81,7 @@ export function PersonView({ name }: { name: string }) {
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
         {card?.email && teamsChatUrl([card.email]) && (
-          <a href={teamsChatUrl([card.email])!} target="_blank" rel="noopener noreferrer"
+          <a {...teamsLinkProps(teamsChatUrl([card.email])!, teamsApp)}
             className="flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-sm font-medium text-white hover:bg-[#4b4fb7]">
             <MessageCircle className="size-4" />Chat en Teams
           </a>
@@ -93,6 +103,12 @@ export function PersonView({ name }: { name: string }) {
           <Section title={<span className="inline-flex items-center gap-1.5"><CheckSquare className="size-3.5" />Tareas · {active.length}</span>}>
             <TaskList {...list} tasks={active} empty="Nada pendiente con esta persona." />
           </Section>
+          {owned.length > 0 && (
+            <Section title={<span className="inline-flex items-center gap-1.5"><Layers className="size-3.5 text-indigo-500" />Owner en Rally · {ownedActive.length}</span>}>
+              <TaskList {...list} tasks={ownedActive} empty="Nada pendiente de lo que lleva en Rally." />
+              {ownedDone.length > 0 && <p className="px-2 pt-1 text-xs text-zinc-400">Y {ownedDone.length} terminada{ownedDone.length === 1 ? '' : 's'} en el gestor.</p>}
+            </Section>
+          )}
           {done.length > 0 && (
             <Section title={`Completadas · ${done.length}`} collapsible defaultOpen={false}>
               <TaskList {...list} tasks={done} />

@@ -8,6 +8,7 @@ import type { Backup } from '../../domain/schemas';
 import { autosave, repo } from '../../data/services';
 import { sync, useSync } from '../../data/sync';
 import { SpacesCard } from './SpacesCard';
+import { OutlookSettings } from '../calendar/Meetings';
 import { AdminCard } from './AdminCard';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
@@ -80,6 +81,10 @@ export function SettingsView() {
       {isAdmin && <AdminCard />}
 
       <SpacesCard />
+
+      <Card title="Calendario de Outlook / Teams">
+        <OutlookSettings />
+      </Card>
 
       <Card title="Copia de seguridad">
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">

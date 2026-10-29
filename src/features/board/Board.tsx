@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { AlignLeft, Calendar, Plus, Repeat } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
-import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PriorityFlag, ReleaseChip, ReminderChip, TypeBadge } from '../../components/ui/Badges';
+import { Avatar, AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PriorityFlag, ReleaseChip, ReminderChip, TypeBadge } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
@@ -11,6 +11,7 @@ import { findType, stateOf } from '../../domain/workflows';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
+import { useRallyItem } from '../rally/rallyStore';
 
 /** Las completadas hace más de esto no se muestran en la columna "hecho" (para no saturarla). */
 const DONE_VISIBLE_DAYS = 14;
@@ -57,9 +58,10 @@ export function Board({ tasks, type, defaults, showProject = true }: Props) {
 
 export const CATEGORY_COLUMNS: { category: StateCategory; label: string; color: string }[] = [
   { category: 'todo', label: 'Por hacer', color: '#94a3b8' },
-  { category: 'doing', label: 'En curso', color: '#3b82f6' },
   { category: 'blocked', label: 'Bloqueado', color: '#ef4444' },
+  { category: 'doing', label: 'En curso', color: '#3b82f6' },
   { category: 'done', label: 'Hecho', color: '#22c55e' },
+  { category: 'accepted', label: 'Accepted', color: '#047857' },
 ];
 
 /**
@@ -99,7 +101,8 @@ function Column({ column: c, showProject }: { column: ColumnDef; showProject: bo
     <section
       {...dropProps}
       aria-label={c.label}
-      className={`flex w-64 shrink-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
+      // Las columnas se reparten el ancho (también con el panel de la tarea abierto); por debajo de 11rem, scroll lateral.
+      className={`flex min-w-44 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ background: tint(c.color, over ? 0.22 : 0.1) }}
     >
       <header className="mb-2 flex items-center gap-2 px-1">
@@ -122,11 +125,13 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
   const done = task.status === 'done';
   const late = !done && task.due_date !== null && task.due_date < today;
   const dueToday = !done && task.due_date === today;
+  const rally = useRallyItem(task.external_id);
 
   return (
     <li
       draggable
       onDragStart={(e) => setDraggedTasks(e, [task.id])}
+      data-opens-task
       onClick={() => editTask(task)}
       className={`cursor-pointer rounded-lg border bg-white p-2.5 shadow-sm transition hover:shadow-md dark:bg-zinc-900
         ${detailId === task.id ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-zinc-200 dark:border-zinc-700'}`}
@@ -158,6 +163,15 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
         <span className="flex-1" />
         <AvatarStack names={task.people} size={20} />
       </div>
+      {rally?.owner && (
+        <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-100 pt-1.5 dark:border-zinc-800" title="Owner en Rally">
+          <Avatar name={rally.owner} size={22} />
+          <span className="min-w-0 leading-tight">
+            <span className="block text-[10px] text-zinc-400">Owned By:</span>
+            <span className="block truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{rally.owner}</span>
+          </span>
+        </div>
+      )}
     </li>
   );
 }

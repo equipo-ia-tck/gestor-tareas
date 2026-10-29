@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { TasksDB } from '../src/data/db';
 import { DexieRepository } from '../src/data/repository';
 import { externalUrl, groupReleases, releaseCountdown, releaseProgress } from '../src/domain/releases';
-import { DEFAULT_ITEM_TYPES, findType } from '../src/domain/workflows';
+import { DEFAULT_ITEM_TYPES, findType, withAcceptedState } from '../src/domain/workflows';
+import type { ItemType } from '../src/domain/types';
 import { makeTask } from './factories';
 
 let repo: DexieRepository;
@@ -93,7 +94,35 @@ describe('configurar tipos', () => {
     expect((await repo.getTask(task.id))?.state_id).toBe('us-dev'); // primer estado "doing"
     await repo.undo();
     expect((await repo.getTask(task.id))?.state_id).toBe('us-qa');
-    expect((await repo.listItemTypes()).find((t) => t.id === 'us')!.states).toHaveLength(7);
+    expect((await repo.listItemTypes()).find((t) => t.id === 'us')!.states).toHaveLength(8);
+  });
+
+  it('"Accepted" cuenta como completada y se puede reabrir', async () => {
+    const task = await repo.createTask({ title: 'x', type_id: 'us' });
+    await repo.setState(task.id, 'us-accepted');
+    expect(await repo.getTask(task.id)).toMatchObject({ status: 'done', state_id: 'us-accepted' });
+    expect((await repo.getTask(task.id))?.completed_at).toBeTruthy();
+    await repo.setState(task.id, 'us-dev');
+    expect(await repo.getTask(task.id)).toMatchObject({ status: 'todo', state_id: 'us-dev', completed_at: null });
+    // Al cambiar de tipo, una aceptada sigue aceptada (o completada si el tipo no tiene "Accepted").
+    await repo.setState(task.id, 'us-accepted');
+    await repo.setType(task.id, 'ts');
+    expect(await repo.getTask(task.id)).toMatchObject({ status: 'done', state_id: 'ts-accepted' });
+    await repo.setType(task.id, 'topic');
+    expect(await repo.getTask(task.id)).toMatchObject({ status: 'done', state_id: 'topic-done' });
+  });
+
+  it('añade "Accepted" a los tipos de serie que no lo tienen, una sola vez', async () => {
+    const strip = (t: ItemType) => ({ ...t, states: t.states.filter((s) => s.category !== 'accepted') });
+    for (const t of await repo.listItemTypes()) await repo.saveItemType(strip(t));
+    await repo.ensureAcceptedStates();
+    await repo.ensureAcceptedStates();
+    const types = await repo.listItemTypes();
+    for (const id of ['task', 'us', 'ts']) {
+      expect(types.find((t) => t.id === id)!.states.filter((s) => s.category === 'accepted').map((s) => s.name)).toEqual(['Accepted']);
+    }
+    expect(types.find((t) => t.id === 'topic')!.states.some((s) => s.category === 'accepted')).toBe(false);
+    expect(withAcceptedState(types[0])).toBeNull();
   });
 
   it('eliminar un tipo pasa sus tareas a Tarea; Tarea no se puede eliminar', async () => {

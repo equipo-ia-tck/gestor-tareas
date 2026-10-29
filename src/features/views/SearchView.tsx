@@ -7,6 +7,7 @@ import { Avatar } from '../../components/ui/Badges';
 import { formatDay } from '../../domain/dates';
 import { matchesNote, noteExcerpt, sortNotes } from '../../domain/notes';
 import { peopleDirectory } from '../../domain/people';
+import { useRallyOwners } from '../rally/rallyStore';
 import { projectPath } from '../../domain/projects';
 import { isEmptySearch, matchesSearch, parseSearch } from '../../domain/search';
 import { sortTasks } from '../../domain/selectors';
@@ -25,7 +26,8 @@ export function SearchView({ q }: { q: string }) {
   // Notas, personas y proyectos se buscan por palabras (los filtros #, @ y + son de tareas).
   const hit = (text: string) => words.length > 0 && words.every((w) => fold(text).includes(w));
   const noteHits = words.length ? sortNotes(notes.filter((n) => matchesNote(n, words))) : [];
-  const peopleHits = peopleDirectory(tasks, notes, peopleCards).filter((p) => hit(p.name));
+  const rallyOwners = useRallyOwners(tasks);
+  const peopleHits = peopleDirectory(tasks, notes, peopleCards, rallyOwners).filter((p) => hit(p.name));
   const projectHits = allProjects.filter((p) => hit(p.name));
   const total = results.length + noteHits.length + peopleHits.length + projectHits.length;
 
