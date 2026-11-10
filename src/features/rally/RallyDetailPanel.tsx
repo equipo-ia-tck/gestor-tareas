@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Plus, Send, Upload, X } from 'lucide-react';
 import type { RallyDetail, RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
-import { rallyApi } from './rallyApi';
+import { MAX_UPLOAD, rallyApi, toBase64 } from './rallyApi';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
 const PRIMARY = [
@@ -183,11 +183,72 @@ export function RallyDetailBody({ item: current, detail, error, onSelect }: {
               </ul>
             </Block>
           ))}
+          {(current.kind === 'US' || current.kind === 'DE') && <NewRallyTask key={`new-${current.objectId}`} parent={current} onSelect={onSelect} />}
           <Discussion key={current.objectId} item={current} posts={detail.discussion} />
           <Attachments key={`files-${current.objectId}`} item={current} files={detail.attachments} />
         </>
       )}
     </>
+  );
+}
+
+/** Alta rápida de tareas de Rally dentro de una US o un defecto. Las creadas se listan debajo (se abren en la ficha). */
+function NewRallyTask({ parent, onSelect }: { parent: RallyItem; onSelect: (item: RallyItem) => void }) {
+  const [added, setAdded] = useState<RallyItem[]>([]);
+  const [name, setName] = useState('');
+  const [assignToMe, setAssignToMe] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    if (!name.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const item = await rallyApi.create({ kind: 'TA', name, parentId: parent.id, assignToMe });
+      setAdded((list) => [...list, item]);
+      setName('');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Block title={`Nueva tarea en ${parent.id}`}>
+      {added.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {added.map((r) => (
+            <li key={r.objectId}>
+              <button type="button" onClick={() => onSelect(r)} className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                <span className="shrink-0 font-mono text-xs text-indigo-600">{r.id}</span>
+                <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                <span className="shrink-0 text-xs text-emerald-600">Creada</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); void create(); }} className="flex gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nombre de la tarea…"
+          maxLength={256}
+          disabled={sending}
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-400 disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900"
+        />
+        <button type="submit" disabled={!name.trim() || sending}
+          className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40">
+          <Plus className="size-3" />{sending ? 'Creando…' : 'Crear'}
+        </button>
+      </form>
+      <label className="mt-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">
+        <input type="checkbox" checked={assignToMe} onChange={(e) => setAssignToMe(e.target.checked)} /> Asignármela
+      </label>
+      {error && <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+    </Block>
   );
 }
 
@@ -250,17 +311,6 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
     </Block>
   );
 }
-
-/** Límite del servidor (`MAX_ATTACHMENT_BYTES` en servidor/rally.ts). */
-const MAX_UPLOAD = 25 * 1024 * 1024;
-
-/** Contenido de un archivo en base64 (sin la cabecera `data:…;base64,`). */
-const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
-  reader.onerror = () => reject(new Error(`No se ha podido leer ${file.name}.`));
-  reader.readAsDataURL(file);
-});
 
 /** Adjuntos de Rally: se abren en Rally y se pueden subir más (botón o soltando archivos encima), de uno en uno. */
 function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['attachments'] }) {

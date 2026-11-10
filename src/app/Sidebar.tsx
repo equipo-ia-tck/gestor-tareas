@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -192,6 +192,8 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
+      <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
+      <NavItem icon={FileText} href={routeHref({ view: 'confluence' })} active={is('confluence')}>Confluence</NavItem>
       <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
 
       <Heading action={

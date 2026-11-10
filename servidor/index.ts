@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { Api, ApiError, type Change } from './api.ts';
 import { Calendar } from './calendar.ts';
 import { Chats } from './chats.ts';
+import { Confluence } from './confluence.ts';
+import { MsList } from './msList.ts';
 import { Rally } from './rally.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -23,6 +25,8 @@ const api = new Api(db);
 const rally = new Rally(db);
 const calendar = new Calendar(db);
 const chats = new Chats(db);
+const confluence = new Confluence(db);
+const msList = new MsList(db);
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -117,6 +121,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
         throw e;
       }
     }
+    case 'POST /api/rally/create': {
+      const body = await readJson(req);
+      try {
+        const item = await rally.create(user, body);
+        console.log(`[Rally] ${user.login}: creado ${item.id} "${item.name}"`);
+        return send(res, 200, { item });
+      } catch (e) {
+        console.log(`[Rally] ${user.login}: crear ${String(body.kind)} · ERROR: ${(e as Error).message}`);
+        throw e;
+      }
+    }
     case 'POST /api/rally/comment': {
       const body = await readJson(req);
       try {
@@ -139,6 +154,24 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
         throw e;
       }
     }
+    case 'GET /api/lista':
+      return send(res, 200, msList.status(user));
+    case 'POST /api/lista/link':
+      return send(res, 200, msList.link(user));
+    case 'POST /api/lista/unlink':
+      return send(res, 200, msList.unlink(user));
+    case 'GET /api/lista/items':
+      return send(res, 200, await msList.items(user));
+    case 'POST /api/lista/change':
+      return send(res, 200, await msList.change(user, await readJson(req)));
+    case 'GET /api/confluence':
+      return send(res, 200, confluence.status(user));
+    case 'POST /api/confluence/connect':
+      return send(res, 200, await confluence.connect(user, await readJson(req)));
+    case 'POST /api/confluence/disconnect':
+      return send(res, 200, confluence.disconnect(user));
+    case 'GET /api/confluence/tasks':
+      return send(res, 200, { tasks: await confluence.tasks(user, { done: url.searchParams.get('done') }) });
     case 'GET /api/chats':
       return send(res, 200, chats.status(user));
     case 'POST /api/chats/link':
@@ -163,11 +196,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       return send(res, 200, { ics: await calendar.ics(user, url.searchParams.get('fresh') === '1') });
     case 'POST /api/rally/lookup':
       return send(res, 200, { items: await rally.lookup(user, await readJson(req)) });
+    case 'GET /api/rally/users':
+      return send(res, 200, { users: await rally.searchUsers(user, url.searchParams.get('q')) });
+    case 'GET /api/rally/pick':
+      return send(res, 200, await rally.searchArtifacts(user, Object.fromEntries(url.searchParams)));
+    case 'GET /api/rally/tags':
+      return send(res, 200, await rally.searchTags(user, Object.fromEntries(url.searchParams)));
+    case 'GET /api/rally/form':
+      return send(res, 200, await rally.formOptions(user, url.searchParams.get('kind'), url.searchParams.get('project')));
     case 'GET /api/rally/detail':
       return send(res, 200, await rally.detail(user, url.searchParams.get('kind'), url.searchParams.get('id')));
     case 'GET /api/rally/items': {
       const projects = (url.searchParams.get('projects') ?? '').split(',').filter(Boolean);
-      return send(res, 200, { items: await rally.items(user, Number(url.searchParams.get('days') ?? 90) || 0, projects) });
+      const tags = url.searchParams.getAll('tag').filter(Boolean);
+      return send(res, 200, await rally.itemsReport(user, Number(url.searchParams.get('days') ?? 90) || 0, projects, tags));
     }
     case 'POST /api/snapshot': {
       // Copia de seguridad de lo que había en el navegador antes de vaciarlo (por si acaso).

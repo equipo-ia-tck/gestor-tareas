@@ -1,13 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { RallyCategory, RallyDetail, RallyItem, RallyKind, RallyProject, RallyStatus } from '../src/domain/rally.ts';
+import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
 import type { TeamUser } from './visibility.ts';
 
 /**
  * Conector de Rally (WSAPI v2) con la clave personal de cada usuario. La clave se guarda solo aquí (nunca vuelve
  * al navegador) y las consultas salen del servidor, así no hay problemas de CORS. Lee lo asignado a la persona o todo
- * lo de los proyectos que elija, y escribe tres cosas: la columna de un elemento cuando se mueve en el gestor, los
- * comentarios que se publican en su discusión y los archivos que se adjuntan.
+ * lo de los proyectos que elija, y escribe cuatro cosas: elementos nuevos (US, defectos y tareas), la columna de un
+ * elemento cuando se mueve en el gestor, los comentarios que se publican en su discusión y los archivos que se adjuntan.
  */
 
 /** Rally de Europa (el que usamos); se puede cambiar al conectar. */
@@ -15,7 +15,9 @@ export const DEFAULT_RALLY_URL = 'https://eu1.rallydev.com';
 const PAGE = 200;
 /** Tamaño máximo de un adjunto (va en base64 dentro de un JSON de como mucho 50 MB). */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const MAX_PAGES = 5;
+/** Páginas de 200 por tipo en la pantalla Rally: hasta 5.000 de cada uno. */
+const MAX_PAGES = 25;
+const MAX_PROJECT_PAGES = 20;
 
 type Fetch = typeof fetch;
 type RallyObject = Record<string, unknown>;
@@ -24,13 +26,21 @@ type RallyObject = Record<string, unknown>;
  * `_type` de Rally → prefijo y ruta de la página de detalle. `assignee`: el tipo tiene el campo personalizado
  * "Assignee", que es el que se usa para asignar (el Owner suele ser quien lo pidió).
  */
-const KINDS: Record<string, { kind: RallyKind; path: string; typeName: string; assignee?: boolean }> = {
+const KINDS: Record<string, { kind: RallyKind; path: string; typeName: string; assignee?: boolean; prefixes?: string[] }> = {
+  // Features (portfolio items): su FormattedID empieza por FE o por F según el Rally.
+  'portfolioitem/feature': { kind: 'FE', path: 'portfolioitem/feature', typeName: 'Feature', prefixes: ['FE', 'F'] },
   hierarchicalrequirement: { kind: 'US', path: 'userstory', typeName: 'HierarchicalRequirement', assignee: true },
   defect: { kind: 'DE', path: 'defect', typeName: 'Defect', assignee: true },
+  defectsuite: { kind: 'DS', path: 'defectsuite', typeName: 'DefectSuite' },
   task: { kind: 'TA', path: 'task', typeName: 'Task', assignee: true },
   testset: { kind: 'TS', path: 'testset', typeName: 'TestSet' },
   testcase: { kind: 'TC', path: 'testcase', typeName: 'TestCase' },
 };
+/** Tipo de un FormattedID ("US1764574", "F123"…) o undefined. */
+function kindOfId(id: string) {
+  return Object.entries(KINDS).find(([, info]) => (info.prefixes ?? [info.kind]).some((p) => new RegExp(`^${p}\\d{1,12}$`).test(id)));
+}
+
 /** Columna del tablero a la que se mueve cada categoría (la primera que exista en el proyecto). */
 const TARGET_FLOW: Record<RallyCategory, string[]> = {
   todo: ['defined', 'to do', 'new'],
@@ -43,6 +53,15 @@ const TARGET_FLOW: Record<RallyCategory, string[]> = {
 const TARGET_SCHEDULE: Record<RallyCategory, string | null> = { todo: 'Defined', blocked: null, doing: 'In-Progress', done: 'Completed', accepted: 'Accepted' };
 const TARGET_TASK_STATE: Record<RallyCategory, string | null> = { todo: 'Defined', blocked: null, doing: 'In-Progress', done: 'Completed', accepted: 'Completed' };
 const CATEGORIES = Object.keys(TARGET_FLOW) as RallyCategory[];
+/** Tipos que se pueden crear desde el gestor. */
+const CREATABLE = ['FE', 'US', 'DE', 'DS', 'TS', 'TA'];
+/** Tipos del buscador «Elegir padre» → tipo de la WSAPI. */
+const PICK_TYPES: Record<string, string> = { US: 'hierarchicalrequirement', DE: 'defect', F: 'portfolioitem/feature', PI: 'portfolioitem' };
+const PICK_PAGE = 50;
+/** Texto de búsqueda seguro dentro de una consulta de la WSAPI (sin comillas ni paréntesis). */
+export const searchText = (q: unknown) => String(q ?? '').replace(/["\\()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+/** Campos estándar del formulario cuyos valores permitidos se piden a Rally. */
+const FORM_VALUES = ['ScheduleState', 'State', 'Severity', 'Priority', 'Environment'];
 
 /** Colecciones que se muestran como elementos relacionados en la ficha. */
 const RELATED: [string, string][] = [['Children', 'User Stories hijas'], ['Tasks', 'Tareas'], ['TestCases', 'Test Cases'], ['Defects', 'Defectos']];
@@ -51,11 +70,11 @@ const HIDDEN = new Set(['ObjectID', 'ObjectUUID', 'VersionId', 'Subscription', '
   'ScheduleStatePrefix', 'Name', 'FormattedID', 'LatestDiscussionAgeInMinutes', 'Blocked', 'BlockedReason', 'Recycled', 'HasParent',
   'Expedite', 'Ready', 'Connections']);
 const ASSIGNEE_FIELD = 'c_Assignee';
-const DONE = new Set(['accepted', 'completed', 'released', 'closed', 'pass']);
+const DONE = new Set(['accepted', 'completed', 'released', 'closed', 'pass', 'done']);
 /** Orden de las columnas cuando no hay FlowState (tablero sin columnas propias). */
 const SCHEDULE = ['idea', 'new', 'submitted', 'defined', 'open', 'in-progress', 'fixed', 'completed', 'accepted', 'released', 'closed'];
 const FETCH = 'FormattedID,Name,FlowState,OrderIndex,ScheduleState,State,LastVerdict,Blocked,Project,Iteration,Release,'
-  + 'LastUpdateDate,ObjectID,Owner,c_Assignee';
+  + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags';
 
 /** Solo servidores de Rally (`https://*.rallydev.com`), sin ruta. */
 export function normalizeBaseUrl(input: unknown): string {
@@ -130,9 +149,9 @@ export function rallyCategory(flow: string | null, schedule: string, blocked: bo
   const f = (flow ?? '').toLowerCase();
   const s = schedule.toLowerCase();
   if (['accepted', 'released', 'closed'].includes(s) || f === 'accepted') return 'accepted';
-  if (s === 'completed' || s === 'pass' || f === 'completed') return 'done';
+  if (s === 'completed' || s === 'pass' || s === 'done' || f === 'completed') return 'done';
   if (blocked || f.includes('block') || s === 'fail' || s === 'blocked') return 'blocked';
-  if (s === 'in-progress' || s === 'fixed' || /progress|review|desarrollo|curso|test|qa/.test(f)) return 'doing';
+  if (s === 'in-progress' || s === 'fixed' || /progress|review|desarrollo|curso|test|qa/.test(f) || /develop|implement|measur/.test(s)) return 'doing';
   return 'todo';
 }
 
@@ -146,7 +165,10 @@ export const joinQuery = (parts: string[], op: 'AND' | 'OR') => parts.reduce((ac
 export function toRallyItem(o: RallyObject, baseUrl: string, meId: string | null = null): RallyItem | null {
   const info = KINDS[String(o._type ?? '').toLowerCase()];
   if (!info) return null;
-  const schedule = String(o.ScheduleState ?? o.State ?? o.LastVerdict ?? '') || (info.kind === 'TC' ? 'Sin ejecutar' : '');
+  // El State de una feature es un objeto (Discovering, Developing, Done…), con su orden.
+  const stateRef = o.State && typeof o.State === 'object' ? o.State as RallyObject : null;
+  const schedule = String(o.ScheduleState ?? (stateRef ? refName(stateRef) ?? '' : o.State) ?? o.LastVerdict ?? '')
+    || (info.kind === 'TC' ? 'Sin ejecutar' : '');
   const flow = o.FlowState as RallyObject | null | undefined;
   const scheduleOrder = SCHEDULE.indexOf(schedule.toLowerCase());
   return {
@@ -155,7 +177,8 @@ export function toRallyItem(o: RallyObject, baseUrl: string, meId: string | null
     kind: info.kind,
     name: String(o.Name ?? '').trim() || String(o.FormattedID ?? ''),
     state: refName(flow) ?? schedule,
-    stateOrder: typeof flow?.OrderIndex === 'number' ? flow.OrderIndex : scheduleOrder < 0 ? 99 : scheduleOrder,
+    stateOrder: typeof flow?.OrderIndex === 'number' ? flow.OrderIndex : typeof stateRef?.OrderIndex === 'number' ? stateRef.OrderIndex
+      : scheduleOrder < 0 ? 99 : scheduleOrder,
     category: rallyCategory(refName(flow), schedule, o.Blocked === true),
     done: DONE.has(schedule.toLowerCase()),
     blocked: o.Blocked === true,
@@ -165,9 +188,16 @@ export function toRallyItem(o: RallyObject, baseUrl: string, meId: string | null
     assignee: refName(o.c_Assignee) ?? refName(o.Owner),
     owner: refName(o.Owner),
     mine: meId !== null && (refId(o.c_Assignee) === meId || refId(o.Owner) === meId),
+    tags: tagNames(o.Tags),
     updatedAt: String(o.LastUpdateDate ?? ''),
     url: `${baseUrl}/#/detail/${info.path}/${o.ObjectID}`,
   };
+}
+
+/** Nombres de las etiquetas que la WSAPI devuelve dentro de la colección Tags (`_tagsNameArray`). */
+function tagNames(v: unknown): string[] {
+  const list = v && typeof v === 'object' ? (v as RallyObject)._tagsNameArray : null;
+  return Array.isArray(list) ? list.map((t) => String((t as RallyObject)?.Name ?? '').trim()).filter(Boolean) : [];
 }
 
 export class Rally {
@@ -257,40 +287,60 @@ export class Rally {
     return a;
   }
 
-  /** Proyectos abiertos a los que tiene acceso la clave. */
+  /** Proyectos abiertos a los que tiene acceso la clave: todos, de 200 en 200 (hasta 4.000). */
   async projects(user: TeamUser): Promise<RallyProject[]> {
     const a = this.connected(user);
-    const params = new URLSearchParams({ query: '(State = "Open")', fetch: 'Name,ObjectID', order: 'Name', pagesize: String(PAGE) });
-    const rows = (((await this.get(a.base_url, a.api_key, `/project?${params}`)).QueryResult as RallyObject)?.Results ?? []) as RallyObject[];
+    const rows: RallyObject[] = [];
+    for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
+      const params = new URLSearchParams({ query: '(State = "Open")', fetch: 'Name,ObjectID', order: 'Name', pagesize: String(PAGE), start: String(page * PAGE + 1) });
+      const result = (await this.get(a.base_url, a.api_key, `/project?${params}`)).QueryResult as RallyObject;
+      const batch = (result?.Results ?? []) as RallyObject[];
+      rows.push(...batch);
+      if (batch.length < PAGE || rows.length >= Number(result?.TotalResultCount ?? 0)) break;
+    }
     return rows.map((p) => ({ id: String(p.ObjectID), name: String(p.Name ?? '') }));
   }
 
   /**
    * Actualizado en los últimos `days` días (0 = todo), más reciente primero: sin `projects`, lo asignado a la persona
-   * (Assignee u Owner); con `projects` (ObjectID), todo lo de esos proyectos. Una consulta por tipo, porque no todos
-   * tienen el campo Assignee.
+   * (Assignee u Owner); con `projects` (ObjectID), todo lo de esos proyectos. Con `tags` (nombres), lo que tiene alguna
+   * de esas etiquetas: en los proyectos elegidos o, sin proyectos, en todo Rally (los test sets no tienen Assignee y se
+   * reparten por etiqueta). Una consulta por tipo, porque no todos tienen el campo Assignee.
    */
-  async items(user: TeamUser, days = 90, projects: string[] = []): Promise<RallyItem[]> {
+  async items(user: TeamUser, days = 90, projects: string[] = [], tags: string[] = []): Promise<RallyItem[]> {
+    return (await this.itemsReport(user, days, projects, tags)).items;
+  }
+
+  /** Como `items`, y además los tipos que no han cabido (más de 5.000), para avisar en la pantalla. */
+  async itemsReport(user: TeamUser, days = 90, projects: string[] = [], tags: string[] = []):
+    Promise<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }> {
     const a = this.connected(user);
     const ids = projects.filter((p) => /^\d+$/.test(p));
     const owner = `(Owner.ObjectID = ${a.rally_user_id})`;
     const since = days > 0 ? new Date(Date.now() - Math.min(days, 3650) * 86_400_000).toISOString().slice(0, 10) : null;
     const recent = (who: string) => (since ? `(${who} AND (LastUpdateDate >= "${since}"))` : who);
-    const inProjects = ids.length ? joinQuery(ids.map((id) => `(Project.ObjectID = ${id})`), 'OR') : null;
+    const names = [...new Set(tags.map(searchText).filter(Boolean))].slice(0, 30);
+    const tagged = names.length ? joinQuery(names.map((n) => `(Tags.Name = "${n}")`), 'OR') : null;
+    const projectsOnly = ids.length ? joinQuery(ids.map((id) => `(Project.ObjectID = ${id})`), 'OR') : null;
+    const inProjects = projectsOnly && tagged ? `(${projectsOnly} AND ${tagged})` : projectsOnly ?? tagged;
     const items: RallyItem[] = [];
+    const truncated: { kind: RallyKind; total: number; shown: number }[] = [];
     for (const [type, info] of Object.entries(KINDS)) {
       const query = recent(inProjects ?? (info.assignee ? `(${owner} OR (${ASSIGNEE_FIELD}.ObjectID = ${a.rally_user_id}))` : owner));
-      // Un Rally sin el campo Assignee rechaza la consulta: entonces basta con el Owner.
-      const rows = await this.query(a, type, query).catch((e: unknown) => {
-        if (info.assignee && e instanceof ApiError && e.message.includes(ASSIGNEE_FIELD)) return this.query(a, type, recent(owner));
+      // Un Rally sin el campo Assignee rechaza la consulta: entonces basta con el Owner. Uno sin features (portfolio
+      // items) no las tiene: se siguen viendo los demás tipos.
+      const { rows, total } = await this.queryAll(a, type, query).catch((e: unknown) => {
+        if (info.assignee && e instanceof ApiError && e.message.includes(ASSIGNEE_FIELD)) return this.queryAll(a, type, recent(owner));
+        if (info.kind === 'FE') return { rows: [], total: 0 };
         throw e;
       });
+      if (total > rows.length) truncated.push({ kind: info.kind, total, shown: rows.length });
       for (const r of rows) {
         const item = toRallyItem({ _type: type, ...r }, a.base_url, a.rally_user_id);
         if (item) items.push(item);
       }
     }
-    return items.sort((x, y) => y.updatedAt.localeCompare(x.updatedAt));
+    return { items: items.sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)), truncated };
   }
 
   /**
@@ -300,11 +350,11 @@ export class Rally {
   async lookup(user: TeamUser, input: { ids?: unknown }): Promise<RallyItem[]> {
     const a = this.connected(user);
     const ids = [...new Set((Array.isArray(input.ids) ? input.ids : []).map((id) => String(id).replace(/-/g, '').toUpperCase()))]
-      .filter((id) => /^(US|DE|TA|TS|TC)\d{1,12}$/.test(id))
+      .filter((id) => !!kindOfId(id))
       .slice(0, 1000);
     const items: RallyItem[] = [];
-    for (const [type, info] of Object.entries(KINDS)) {
-      const mine = ids.filter((id) => id.startsWith(info.kind));
+    for (const type of Object.keys(KINDS)) {
+      const mine = ids.filter((id) => kindOfId(id)?.[0] === type);
       for (let i = 0; i < mine.length; i += 40) {
         const query = joinQuery(mine.slice(i, i + 40).map((id) => `(FormattedID = "${id}")`), 'OR');
         for (const r of await this.query(a, type, query)) {
@@ -338,10 +388,11 @@ export class Rally {
     const a = this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const category = input.category as RallyCategory;
-    const entry = Object.entries(KINDS).find(([, info]) => id.startsWith(info.kind));
-    if (!entry || !/^[A-Z]{2}\d{1,12}$/.test(id) || !CATEGORIES.includes(category)) throw new ApiError(400, 'Movimiento de Rally no válido.');
+    const entry = kindOfId(id);
+    if (!entry || !CATEGORIES.includes(category)) throw new ApiError(400, 'Movimiento de Rally no válido.');
     const [type, info] = entry;
     if (info.kind === 'TC') throw new ApiError(400, 'Los test cases no tienen columna en Rally: se mueven con su resultado.');
+    if (info.kind === 'FE') throw new ApiError(400, 'Las features cambian de estado en Rally.');
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
     const current = toRallyItem({ _type: type, ...o }, a.base_url, a.rally_user_id)!;
@@ -361,6 +412,338 @@ export class Rally {
     if (category !== 'blocked' && o.Blocked === true) patch.Blocked = false;
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: patch });
     return toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
+  }
+
+  /** Caché de las opciones que cambian poco (etiquetas, milestones, valores permitidos): 10 minutos. */
+  private cache = new Map<string, { at: number; value: Promise<unknown> }>();
+  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < 600_000) return hit.value as Promise<T>;
+    const value = load();
+    value.catch(() => this.cache.delete(key));
+    this.cache.set(key, { at: Date.now(), value });
+    return value;
+  }
+
+  private async list(a: { base_url: string; api_key: string }, path: string, params: Record<string, string>): Promise<RallyObject[]> {
+    const q = new URLSearchParams({ pagesize: String(PAGE), ...params });
+    return (((await this.get(a.base_url, a.api_key, `${path}?${q}`)).QueryResult as RallyObject)?.Results ?? []) as RallyObject[];
+  }
+
+  private toRef(a: { base_url: string }, o: RallyObject, name = refName(o) ?? String(o.Name ?? '')): RallyRef | null {
+    const ref = this.relative(a, o._ref);
+    return ref && name ? { ref, name } : null;
+  }
+
+  /**
+   * Atributos de un tipo con sus valores permitidos: los estándar del formulario y los personalizados obligatorios
+   * (sin ellos Rally no deja crear).
+   */
+  private attributes(a: { base_url: string; api_key: string }, typeName: string) {
+    return this.cached(`attrs ${a.base_url} ${typeName}`, async () => {
+      const def = await this.list(a, '/typedefinition', { query: `(ElementName = ${typeName})`, fetch: 'Attributes' });
+      const ref = this.relative(a, (def[0]?.Attributes as RallyObject | undefined)?._ref);
+      const attrs = ref ? await this.collection(a, ref, 'ElementName,Name,Required,ReadOnly,Custom,AllowedValues') : [];
+      const wanted = attrs.filter((x) => FORM_VALUES.includes(String(x.ElementName)) || (x.Custom === true && x.Required === true && x.ReadOnly !== true));
+      return Promise.all(wanted.map(async (x) => {
+        const allowed = x.AllowedValues as RallyObject | undefined;
+        const vref = allowed && Number(allowed.Count) > 0 ? this.relative(a, allowed._ref) : null;
+        const values = vref ? (await this.collection(a, vref, 'StringValue').catch(() => [])).map((v) => String(v.StringValue ?? '')).filter(Boolean) : [];
+        return { field: String(x.ElementName), label: String(x.Name ?? x.ElementName), custom: x.Custom === true, values };
+      }));
+    });
+  }
+
+  /** Opciones del formulario «New Item» para un tipo en un proyecto. */
+  async formOptions(user: TeamUser, kind: unknown, projectId: unknown): Promise<RallyFormOptions> {
+    const a = this.connected(user);
+    const entry = Object.entries(KINDS).find(([, info]) => info.kind === kind);
+    if (!entry || !CREATABLE.includes(String(kind))) throw new ApiError(400, 'Tipo de Rally no válido.');
+    if (!/^\d+$/.test(String(projectId))) throw new ApiError(400, 'Elige el proyecto de Rally.');
+    const [type, info] = entry;
+    const pid = String(projectId);
+    const inProject = { query: `(Project.ObjectID = ${pid})`, fetch: 'Name' };
+    const refs = (rows: RallyObject[]) => rows.map((r) => this.toRef(a, r)).filter((r): r is RallyRef => !!r);
+    const soft = <T,>(p: Promise<T>, empty: T) => p.catch(() => empty);
+    const feature = info.kind === 'FE';
+    const [flows, attrs, releases, iterations, members, permissions, milestones, portfolioStates, estimates] = await Promise.all([
+      type === 'task' || feature ? Promise.resolve([]) : soft(this.list(a, '/flowstate', { ...inProject, fetch: 'Name,ScheduleStateMapping', order: 'OrderIndex' }), []),
+      soft(this.attributes(a, info.typeName), []),
+      soft(this.list(a, '/release', { ...inProject, order: 'ReleaseDate DESC', pagesize: '50' }), []),
+      feature ? Promise.resolve([]) : soft(this.list(a, '/iteration', { ...inProject, order: 'StartDate DESC', pagesize: '50' }), []),
+      soft(this.list(a, `/project/${pid}/TeamMembers`, { fetch: 'DisplayName,UserName' }), []),
+      soft(this.list(a, '/projectpermission', { query: `(Project.ObjectID = ${pid})`, fetch: 'User' }), []),
+      soft(this.cached(`milestones ${a.base_url}`, () => this.list(a, '/milestone', { fetch: 'Name', order: 'TargetDate DESC', pagesize: '100' })), []),
+      // Features: estados de portfolio (Discovering, Developing…) y tallas de Preliminary Estimate, propios de cada Rally.
+      feature ? this.featureStates(a) : Promise.resolve([]),
+      feature ? soft(this.cached(`estimates ${a.base_url}`, () => this.list(a, '/preliminaryestimate', { fetch: 'Name,Value', order: 'Value' })), [])
+        : Promise.resolve([]),
+    ]);
+    const me = { ref: `/user/${a.rally_user_id}`, name: a.rally_user };
+    const users = new Map<string, RallyRef>([[me.ref, me]]);
+    for (const u of [...members.map((m) => this.toRef(a, m, String(m.DisplayName || m._refObjectName || m.UserName || ''))),
+      ...permissions.map((p) => (p.User ? this.toRef(a, p.User as RallyObject) : null))]) {
+      if (u && !users.has(u.ref)) users.set(u.ref, u);
+    }
+    const valuesOf = (field: string) => attrs.find((x) => x.field === field)?.values ?? [];
+    const values: Record<string, string[]> = {};
+    if (type === 'defect') for (const f of ['Severity', 'Priority', 'State', 'Environment']) values[f] = valuesOf(f);
+    return {
+      me,
+      users: [...users.values()].sort((x, y) => (x.ref === me.ref ? -1 : y.ref === me.ref ? 1 : x.name.localeCompare(y.name, 'es'))),
+      flowStates: flows.map((f) => {
+        const r = this.toRef(a, f);
+        return r ? { ...r, scheduleState: String(f.ScheduleStateMapping ?? '') || null } : null;
+      }).filter((f): f is RallyFormOptions['flowStates'][number] => !!f),
+      scheduleStates: type === 'task' || feature ? [] : valuesOf('ScheduleState').length ? valuesOf('ScheduleState') : ['Defined', 'In-Progress', 'Completed', 'Accepted'],
+      taskStates: type === 'task' ? (valuesOf('State').length ? valuesOf('State') : ['Defined', 'In-Progress', 'Completed']) : [],
+      releases: refs(releases),
+      iterations: refs(iterations),
+      milestones: refs(milestones),
+      portfolioStates: refs(portfolioStates.filter((st) => st.Enabled !== false)),
+      preliminaryEstimates: refs(estimates),
+      values,
+      custom: attrs.filter((x) => x.custom).map(({ field, label, values: v }) => ({ field, label, values: v })),
+    };
+  }
+
+  /** Personas de Rally por nombre, usuario o email (para Owner y Assignee), activas, como mucho 25. */
+  async searchUsers(user: TeamUser, q: unknown): Promise<RallyRef[]> {
+    const a = this.connected(user);
+    const text = searchText(q);
+    if (text.length < 2) return [];
+    const who = joinQuery([`(DisplayName contains "${text}")`, `(UserName contains "${text}")`, `(EmailAddress contains "${text}")`], 'OR');
+    const rows = await this.list(a, '/user', { query: joinQuery([who, '(Disabled = false)'], 'AND'), fetch: 'DisplayName,UserName', order: 'DisplayName', pagesize: '25' });
+    return rows.map((u) => this.toRef(a, u, String(u.DisplayName || u._refObjectName || u.UserName || ''))).filter((u): u is RallyRef => !!u);
+  }
+
+  /**
+   * Buscador de «Elegir padre»: User Stories, defectos o features por palabra o ID, en un proyecto (o en todos), con
+   * release y etiqueta opcionales; de 50 en 50 y los más nuevos primero, como en Rally.
+   */
+  async searchArtifacts(user: TeamUser, input: { types?: unknown; q?: unknown; project?: unknown; release?: unknown; tag?: unknown; page?: unknown }):
+    Promise<{ items: RallyPick[]; total: number }> {
+    const a = this.connected(user);
+    const types = [...new Set(String(input.types ?? '').split(',').map((t) => PICK_TYPES[t]).filter(Boolean))];
+    if (!types.length) throw new ApiError(400, 'Tipo de elemento no válido.');
+    const text = searchText(input.q);
+    const conditions: string[] = [];
+    if (text) {
+      const id = text.replace(/[-\s]/g, '').toUpperCase();
+      conditions.push(/^[A-Z]{1,2}\d{1,12}$/.test(id) ? `(FormattedID = "${id}")` : `(Name contains "${text}")`);
+    }
+    for (const [k, field] of [['project', 'Project'], ['release', 'Release'], ['tag', 'Tags']] as const) {
+      const v = String(input[k] ?? '');
+      if (/^\d+$/.test(v)) conditions.push(`(${field}.ObjectID = ${v})`);
+    }
+    const page = Math.max(1, Math.min(1000, Math.floor(Number(input.page) || 1)));
+    const params = new URLSearchParams({
+      types: types.join(','), fetch: 'FormattedID,Name,Project', order: 'CreationDate DESC', pagesize: String(PICK_PAGE), start: String((page - 1) * PICK_PAGE + 1),
+      ...(conditions.length ? { query: joinQuery(conditions, 'AND') } : {}),
+    });
+    const result = (await this.get(a.base_url, a.api_key, `/artifact?${params}`)).QueryResult as RallyObject;
+    const rows = (result?.Results ?? []) as RallyObject[];
+    return {
+      items: rows.map((r) => ({ id: String(r.FormattedID ?? ''), name: String(r.Name ?? ''), project: refName(r.Project) })).filter((r) => r.id),
+      total: Number(result?.TotalResultCount ?? rows.length),
+    };
+  }
+
+  /** Etiquetas de Rally (hay miles): por nombre, de 50 en 50 y por orden alfabético. */
+  async searchTags(user: TeamUser, input: { q?: unknown; page?: unknown }): Promise<{ items: RallyRef[]; total: number }> {
+    const a = this.connected(user);
+    const text = searchText(input.q);
+    const page = Math.max(1, Math.min(1000, Math.floor(Number(input.page) || 1)));
+    const query = text ? joinQuery(['(Archived = false)', `(Name contains "${text}")`], 'AND') : '(Archived = false)';
+    const params = new URLSearchParams({ query, fetch: 'Name', order: 'Name', pagesize: String(PICK_PAGE), start: String((page - 1) * PICK_PAGE + 1) });
+    const result = (await this.get(a.base_url, a.api_key, `/tag?${params}`)).QueryResult as RallyObject;
+    const rows = (result?.Results ?? []) as RallyObject[];
+    return { items: rows.map((r) => this.toRef(a, r)).filter((r): r is RallyRef => !!r), total: Number(result?.TotalResultCount ?? rows.length) };
+  }
+
+  /**
+   * Estados de portfolio de las features: las columnas de su Portfolio Kanban (Discovering, Refinement, Ready,
+   * Developing…), en su orden. No todos los Rally aceptan la misma consulta, así que se prueban varias: por el ObjectID
+   * de la definición del tipo, por su nombre y por su ElementName. Solo se guarda en caché si ha encontrado alguno.
+   */
+  private featureStates(a: { base_url: string; api_key: string }): Promise<RallyObject[]> {
+    const key = `fe-states ${a.base_url}`;
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < 600_000) return hit.value as Promise<RallyObject[]>;
+    const fetchFields = 'Name,Enabled,OrderIndex';
+    const byQuery = (query: string) => this.list(a, '/state', { query, fetch: fetchFields, order: 'OrderIndex' });
+    const tries: (() => Promise<RallyObject[]>)[] = [
+      async () => {
+        const [def] = await this.list(a, '/typedefinition', { query: '(TypePath = "PortfolioItem/Feature")', fetch: 'ObjectID', pagesize: '1' });
+        return def?.ObjectID ? byQuery(`(TypeDef.ObjectID = ${String(def.ObjectID)})`) : [];
+      },
+      () => byQuery('(TypeDef.Name = "Feature")'),
+      () => byQuery('(TypeDef.ElementName = "Feature")'),
+    ];
+    const value = (async () => {
+      for (const attempt of tries) {
+        const rows = (await attempt().catch(() => [] as RallyObject[])).filter((r) => r.Enabled !== false);
+        if (rows.length) return rows.sort((x, y) => Number(x.OrderIndex ?? 0) - Number(y.OrderIndex ?? 0));
+      }
+      console.log('[Rally] No se han podido leer los estados de Feature con ninguna consulta.');
+      return [];
+    })();
+    this.cache.set(key, { at: Date.now(), value });
+    void value.then((rows) => { if (!rows.length) this.cache.delete(key); }, () => this.cache.delete(key));
+    return value;
+  }
+
+  /** ObjectID de un elemento por su FormattedID, comprobando que es de uno de los tipos dados. */
+  private async findByFormattedId(a: { base_url: string; api_key: string }, id: string, types: Record<string, string>, what: string) {
+    const clean = String(id).replace(/-/g, '').toUpperCase();
+    const type = Object.entries(types).find(([prefix]) => clean.startsWith(prefix) && /^[A-Z]+\d{1,12}$/.test(clean))?.[1];
+    if (!type) throw new ApiError(400, `${what}: indica su ID (${Object.keys(types).map((p) => `${p}…`).join(' o ')}).`);
+    const [o] = await this.list(a, `/${type}`, { query: `(FormattedID = "${clean}")`, fetch: 'ObjectID,Project', pagesize: '1' });
+    if (!o) throw new ApiError(404, `${clean} no existe en Rally.`);
+    return { ref: `/${type}/${o.ObjectID}`, projectId: refId(o.Project) };
+  }
+
+  /**
+   * Crea un elemento con los campos del formulario «New Item» de Rally: User Story, defecto, defect suite o test set en
+   * un proyecto, o una tarea dentro de una US o un defecto (`parentId`). El Owner es quien la crea salvo que se elija
+   * otro; el Assignee se pone con `assigneeRef` (o `assignToMe`) y, si el tipo no tiene ese campo, se crea sin él.
+   */
+  async create(user: TeamUser, input: Record<string, unknown>): Promise<RallyItem> {
+    const a = this.connected(user);
+    const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
+    if (!entry || !CREATABLE.includes(String(input.kind))) throw new ApiError(400, 'Desde aquí se pueden crear User Stories, defectos, defect suites, test sets y tareas.');
+    const [type, info] = entry;
+    const name = String(input.name ?? '').replace(/\s+/g, ' ').trim();
+    if (!name) throw new ApiError(400, 'Escribe el nombre.');
+    if (name.length > 256) throw new ApiError(400, 'El nombre es demasiado largo (máximo 256 caracteres).');
+    const text = (k: string, max = 30_000) => {
+      const v = String(input[k] ?? '').trim();
+      if (v.length > max) throw new ApiError(400, `El campo ${k} es demasiado largo.`);
+      return v;
+    };
+    const ref = (k: string, kinds: string) => {
+      const v = String(input[k] ?? '');
+      if (!v) return null;
+      if (!new RegExp(`^/(${kinds})/\\d+$`).test(v)) throw new ApiError(400, `Valor no válido en ${k}.`);
+      return v;
+    };
+    const num = (k: string) => {
+      const v = input[k];
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 9999) throw new ApiError(400, `El número de ${k} no es válido.`);
+      return n;
+    };
+    const refs = (k: string, kinds: string) => (Array.isArray(input[k]) ? input[k] as unknown[] : []).slice(0, 50).map((v) => {
+      if (!new RegExp(`^/(${kinds})/\\d+$`).test(String(v))) throw new ApiError(400, `Valor no válido en ${k}.`);
+      return { _ref: String(v) };
+    });
+
+    const fields: RallyObject = { Name: name, Owner: ref('ownerRef', 'user') ?? `/user/${a.rally_user_id}` };
+    const description = text('description');
+    if (description) fields.Description = commentHtml(description);
+    const notes = text('notes');
+    if (notes) fields.Notes = commentHtml(notes);
+    if (input.ready === true) fields.Ready = true;
+    if (input.blocked === true) {
+      fields.Blocked = true;
+      const reason = text('blockedReason', 256);
+      if (reason) fields.BlockedReason = reason;
+    }
+    const color = String(input.color ?? '');
+    if (color) {
+      if (!/^#[0-9a-f]{6}$/i.test(color)) throw new ApiError(400, 'Color no válido.');
+      fields.DisplayColor = color.toLowerCase();
+    }
+    const tags = refs('tagRefs', 'tag');
+    if (tags.length) fields.Tags = tags;
+    const milestones = refs('milestoneRefs', 'milestone');
+    if (milestones.length) fields.Milestones = milestones;
+    const release = ref('releaseRef', 'release');
+    if (release) fields.Release = release;
+    const iteration = ref('iterationRef', 'iteration');
+    if (iteration) fields.Iteration = iteration;
+
+    let projectId = String(input.projectId ?? '');
+    const parentId = String(input.parentId ?? '').trim();
+    if (type === 'task') {
+      if (!parentId) throw new ApiError(400, 'Una tarea de Rally va dentro de una User Story o un defecto: indica su ID (US… o DE…).');
+      const parent = await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement', DE: 'defect' }, 'Una tarea de Rally va dentro de una User Story o un defecto');
+      fields.WorkProduct = parent.ref;
+      if (!/^\d+$/.test(projectId) && parent.projectId) projectId = parent.projectId;
+      const state = text('state', 40);
+      if (state) fields.State = state;
+      const estimate = num('estimate');
+      if (estimate !== null) fields.Estimate = estimate;
+      const toDo = num('toDo');
+      if (toDo !== null) fields.ToDo = toDo;
+    } else if (info.kind === 'FE') {
+      const state = ref('portfolioStateRef', 'state');
+      if (state) fields.State = state;
+      const estimate = ref('preliminaryEstimateRef', 'preliminaryestimate');
+      if (estimate) fields.PreliminaryEstimate = estimate;
+      for (const [k, field] of [['plannedStart', 'PlannedStartDate'], ['plannedEnd', 'PlannedEndDate']] as const) {
+        const v = String(input[k] ?? '');
+        if (!v) continue;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new ApiError(400, `Fecha no válida en ${k}.`);
+        fields[field] = `${v}T12:00:00.000Z`; // a mediodía UTC: el día no cambia por la zona horaria
+      }
+      if (parentId) {
+        // El padre de una feature es un portfolio item de nivel superior (Initiative, Epic…, según el Rally).
+        const clean = parentId.replace(/[-\s]/g, '').toUpperCase();
+        if (!/^[A-Z]{1,3}\d{1,12}$/.test(clean)) throw new ApiError(400, 'El padre de una feature es un portfolio item: indica su ID.');
+        const [o] = await this.list(a, '/portfolioitem', { query: `(FormattedID = "${clean}")`, fetch: 'ObjectID', pagesize: '1' });
+        const parentRef = o ? this.relative(a, o._ref) : null;
+        if (!parentRef) throw new ApiError(404, `${clean} no existe en Rally.`);
+        fields.Parent = parentRef;
+      }
+    } else {
+      const flow = ref('flowStateRef', 'flowstate');
+      const schedule = text('scheduleState', 40);
+      // La columna ya lleva su ScheduleState: mandar los dos podría contradecirse.
+      if (flow) fields.FlowState = flow;
+      else if (schedule) fields.ScheduleState = schedule;
+      const estimate = num('planEstimate');
+      if (estimate !== null) fields.PlanEstimate = estimate;
+      if (input.expedite === true) fields.Expedite = true;
+      if (parentId && type === 'hierarchicalrequirement') {
+        fields.Parent = (await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement' }, 'El padre de una User Story es otra User Story')).ref;
+      }
+      if (parentId && type === 'defect') {
+        fields.Requirement = (await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement' }, 'El defecto se enlaza con una User Story')).ref;
+      }
+      const featureId = String(input.featureId ?? '').trim();
+      if (featureId && type === 'hierarchicalrequirement') {
+        fields.PortfolioItem = (await this.findByFormattedId(a, featureId, { F: 'portfolioitem/feature' }, 'La feature')).ref;
+      }
+      if (type === 'defect') {
+        for (const [k, f] of [['severity', 'Severity'], ['priority', 'Priority'], ['state', 'State'], ['environment', 'Environment']]) {
+          const v = text(k, 100);
+          if (v) fields[f] = v;
+        }
+      }
+    }
+    if (!/^\d+$/.test(projectId)) throw new ApiError(400, 'Elige el proyecto de Rally.');
+    fields.Project = `/project/${projectId}`;
+    const custom = input.custom && typeof input.custom === 'object' ? input.custom as Record<string, unknown> : {};
+    for (const [k, v] of Object.entries(custom).slice(0, 50)) {
+      if (!/^c_\w{1,80}$/.test(k)) throw new ApiError(400, `Campo personalizado no válido: ${k}.`);
+      const value = String(v ?? '').trim().slice(0, 30_000);
+      if (value) fields[k] = value;
+    }
+
+    const assignee = ref('assigneeRef', 'user') ?? (input.assignToMe === true ? `/user/${a.rally_user_id}` : null);
+    const send = (body: RallyObject) => this.post(a, `/${type}/create?fetch=${FETCH}`, { [info.typeName]: body });
+    let created: RallyObject;
+    if (assignee && info.assignee) {
+      created = await send({ ...fields, [ASSIGNEE_FIELD]: assignee }).catch((e: unknown) => {
+        if (e instanceof ApiError && e.message.includes(ASSIGNEE_FIELD)) return send(fields);
+        throw e;
+      });
+    } else {
+      created = await send(fields);
+    }
+    return toRallyItem({ _type: type, ...created }, a.base_url, a.rally_user_id)!;
   }
 
   /** Publica un comentario en la discusión de un elemento, como el usuario de la clave. */
@@ -493,20 +876,26 @@ export class Rally {
   }
 
   private async query(a: { base_url: string; api_key: string }, type: string, query: string): Promise<RallyObject[]> {
-    const params = new URLSearchParams({
-      query,
-      fetch: FETCH,
-      order: 'LastUpdateDate DESC',
-      pagesize: String(PAGE),
-    });
-    const rows: RallyObject[] = [];
-    for (let page = 0; page < MAX_PAGES; page++) {
-      params.set('start', String(page * PAGE + 1));
-      const result = (await this.get(a.base_url, a.api_key, `/${type}?${params}`)).QueryResult as RallyObject;
-      const batch = (result?.Results ?? []) as RallyObject[];
-      rows.push(...batch);
-      if (batch.length < PAGE || (page + 1) * PAGE >= Number(result?.TotalResultCount ?? 0)) break;
+    return (await this.queryAll(a, type, query)).rows;
+  }
+
+  /**
+   * Todas las páginas de una consulta (más reciente primero), hasta `MAX_PAGES` × 200. La primera dice cuántos hay y
+   * las demás se piden de 5 en 5 a la vez, para no tardar. `total` es lo que hay en Rally (puede ser más que `rows`).
+   */
+  private async queryAll(a: { base_url: string; api_key: string }, type: string, query: string): Promise<{ rows: RallyObject[]; total: number }> {
+    const page = async (n: number) => {
+      const params = new URLSearchParams({ query, fetch: FETCH, order: 'LastUpdateDate DESC', pagesize: String(PAGE), start: String(n * PAGE + 1) });
+      return (await this.get(a.base_url, a.api_key, `/${type}?${params}`)).QueryResult as RallyObject;
+    };
+    const first = await page(0);
+    const rows = [...((first?.Results ?? []) as RallyObject[])];
+    const total = Number(first?.TotalResultCount ?? rows.length);
+    const pages = Math.min(MAX_PAGES, Math.ceil(total / PAGE));
+    for (let n = 1; n < pages && rows.length === n * PAGE; n += 5) {
+      const batch = await Promise.all(Array.from({ length: Math.min(5, pages - n) }, (_, i) => page(n + i)));
+      for (const r of batch) rows.push(...((r?.Results ?? []) as RallyObject[]));
     }
-    return rows;
+    return { rows, total };
   }
 }

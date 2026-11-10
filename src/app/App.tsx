@@ -7,6 +7,9 @@ import { CalendarView } from '../features/calendar/CalendarView';
 import { ReleasesView } from '../features/releases/ReleasesView';
 import { NotesView } from '../features/notes/NotesView';
 import { RallyView } from '../features/rally/RallyView';
+import { ConfluenceView } from '../features/confluence/ConfluenceView';
+import { ListaView } from '../features/mslist/ListaView';
+import { ListaSync } from '../features/mslist/ListaSync';
 import { ChatsView } from '../features/chats/ChatsView';
 import { RallySync } from '../features/rally/RallySync';
 import { LogView } from '../features/log/LogView';
@@ -39,6 +42,8 @@ function View({ route }: { route: Route }) {
     case 'review': return <ReviewView />;
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
+    case 'confluence': return <ConfluenceView />;
+    case 'lista': return <ListaView />;
     case 'chats': return <ChatsView />;
     case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
     case 'inbox': return <InboxView />;
@@ -64,6 +69,7 @@ function Main({ route }: { route: Route }) {
         <BackupReminder />
         <ReminderCenter />
         <RallySync />
+        <ListaSync />
         <WideContext.Provider value={setWide}>
           {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}
           <div className={full ? 'min-h-0 flex-1' : undefined}><View route={route} /></div>

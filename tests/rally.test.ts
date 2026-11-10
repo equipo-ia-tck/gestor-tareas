@@ -12,7 +12,7 @@ const story = { _type: 'HierarchicalRequirement', FormattedID: 'US1764574', Obje
 
 const item = (extra: Partial<RallyItem> = {}): RallyItem => ({
   id: 'US1', objectId: '1', kind: 'US', name: 'Uno', state: 'Defined', done: false, blocked: false, project: null,
-  stateOrder: 2, category: 'todo', iteration: null, release: null, assignee: null, owner: null, mine: true, updatedAt: '', url: `${BASE}/#/detail/userstory/1`, ...extra,
+  stateOrder: 2, category: 'todo', iteration: null, release: null, assignee: null, owner: null, mine: true, tags: [], updatedAt: '', url: `${BASE}/#/detail/userstory/1`, ...extra,
 });
 
 /** Rally falso: responde a /user y a /artifact y apunta las peticiones. */
@@ -31,14 +31,17 @@ describe('Rally: servidor', () => {
   it('convierte los resultados de la WSAPI y descarta los tipos que no usamos', () => {
     expect(toRallyItem(story, BASE)).toEqual({
       id: 'US1764574', objectId: '111', kind: 'US', name: 'Login SSO', state: 'In-Progress', stateOrder: 5, category: 'doing', done: false, blocked: false,
-      project: 'Caixa Web', iteration: 'Sprint 14', release: null, assignee: null, owner: null, mine: false, updatedAt: '2026-10-20T10:00:00.000Z',
+      project: 'Caixa Web', iteration: 'Sprint 14', release: null, assignee: null, owner: null, mine: false, tags: [], updatedAt: '2026-10-20T10:00:00.000Z',
       url: `${BASE}/#/detail/userstory/111`,
     });
     expect(toRallyItem({ ...story, ScheduleState: 'Accepted' }, BASE)?.done).toBe(true);
     expect(toRallyItem({ _type: 'Defect', FormattedID: 'DE9', ObjectID: 9, ScheduleState: 'Defined', State: 'Closed' }, BASE)?.state).toBe('Defined');
     expect(toRallyItem({ _type: 'TestCase', FormattedID: 'TC5', ObjectID: 5 }, BASE)).toMatchObject({ kind: 'TC', state: 'Sin ejecutar', done: false });
     expect(toRallyItem({ _type: 'TestCase', FormattedID: 'TC6', ObjectID: 6, LastVerdict: 'Pass' }, BASE)?.done).toBe(true);
-    expect(toRallyItem({ _type: 'PortfolioItem/Feature', FormattedID: 'F1' }, BASE)).toBeNull();
+    expect(toRallyItem({ _type: 'PortfolioItem/Feature', FormattedID: 'F1', ObjectID: 3, State: { _refObjectName: 'Developing', OrderIndex: 3 } }, BASE))
+      .toMatchObject({ kind: 'FE', state: 'Developing', stateOrder: 3, category: 'doing', done: false, url: `${BASE}/#/detail/portfolioitem/feature/3` });
+    expect(toRallyItem({ _type: 'PortfolioItem/Feature', FormattedID: 'FE2', State: { _refObjectName: 'Done' } }, BASE)).toMatchObject({ category: 'done', done: true });
+    expect(toRallyItem({ _type: 'PortfolioItem/Theme', FormattedID: 'T1' }, BASE)).toBeNull();
   });
 
   it('usa la columna del tablero (FlowState) y el Assignee, y marca lo de la persona conectada', () => {
@@ -93,16 +96,17 @@ describe('Rally: servidor', () => {
 
     calls.length = 0;
     const items = await rally.items(marta, 30);
-    expect(items.map((i) => i.id)).toEqual(Array(5).fill('US1764574')); // el Rally falso responde lo mismo a cada tipo
-    expect(calls.map((c) => new URL(c.url).pathname.split('/').pop())).toEqual(['hierarchicalrequirement', 'defect', 'task', 'testset', 'testcase']);
+    expect(items.map((i) => i.id)).toEqual(Array(7).fill('US1764574')); // el Rally falso responde lo mismo a cada tipo
+    expect(calls.map((c) => new URL(c.url).pathname.split('/').pop())).toEqual(['feature', 'hierarchicalrequirement', 'defect', 'defectsuite', 'task', 'testset', 'testcase']);
     expect(calls[0].key).toBe('_secreta1234');
     const query = (i: number) => new URL(calls[i].url).searchParams.get('query');
-    expect(query(0)).toMatch(/^\(\(\(Owner\.ObjectID = 42\) OR \(c_Assignee\.ObjectID = 42\)\) AND \(LastUpdateDate >= "\d{4}-\d{2}-\d{2}"\)\)$/);
-    expect(query(3)).toMatch(/^\(\(Owner\.ObjectID = 42\) AND /);
+    expect(query(0)).toMatch(/^\(\(Owner\.ObjectID = 42\) AND /); // features: solo Owner
+    expect(query(1)).toMatch(/^\(\(\(Owner\.ObjectID = 42\) OR \(c_Assignee\.ObjectID = 42\)\) AND \(LastUpdateDate >= "\d{4}-\d{2}-\d{2}"\)\)$/);
+    expect(query(5)).toMatch(/^\(\(Owner\.ObjectID = 42\) AND /);
 
     calls.length = 0;
     await rally.items(marta, 0);
-    expect(query(0)).toBe('((Owner.ObjectID = 42) OR (c_Assignee.ObjectID = 42))');
+    expect(query(1)).toBe('((Owner.ObjectID = 42) OR (c_Assignee.ObjectID = 42))');
 
     calls.length = 0;
     await rally.items(marta, 0, ['7', '8', 'mal']);
@@ -203,19 +207,22 @@ describe('Rally: mover', () => {
   const flows = ['New', 'Defined', 'To Do', 'Blocked', 'In-Progress', 'Need Review', 'Completed', 'Accepted']
     .map((Name, i) => ({ Name, _ref: `${ws}/flowstate/${i + 1}` }));
 
-  async function setup(row: Record<string, unknown>, opts: { readOnly?: boolean } = {}) {
+  async function setup(row: Record<string, unknown>, opts: { readOnly?: boolean; noAssignee?: boolean } = {}) {
     const db = new DatabaseSync(':memory:');
     const api = new Api(db);
     const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
     const posts: { path: string; body: unknown }[] = [];
+    const gets: URL[] = [];
     const fetcher = (async (url: string, init: RequestInit = {}) => {
       const u = new URL(url);
       const path = u.pathname.replace('/slm/webservice/v2.0', '');
+      if (init.method !== 'POST') gets.push(u);
       if (init.method === 'POST') {
         const body = JSON.parse(String(init.body));
         posts.push({ path, body });
         if (opts.readOnly) return new Response(JSON.stringify({ OperationResult: { Errors: ['Not authorized to perform action: Invalid key'] } }));
         const patch = Object.values(body)[0] as Record<string, unknown>;
+        if (opts.noAssignee && 'c_Assignee' in patch) return new Response(JSON.stringify({ CreateResult: { Errors: ['Could not set value for c_Assignee'] } }));
         const flow = flows.find((f) => f._ref === patch.FlowState);
         return new Response(JSON.stringify({ OperationResult: { Errors: [], Object: { ...row, ...patch, ...(flow ? { FlowState: { _refObjectName: flow.Name } } : {}) } } }));
       }
@@ -224,7 +231,8 @@ describe('Rally: mover', () => {
     }) as unknown as typeof fetch;
     const rally = new Rally(db, fetcher);
     await rally.connect(marta, { apiKey: '_clave' });
-    return { rally, marta, posts };
+    gets.length = 0;
+    return { rally, marta, posts, gets };
   }
   const us = { FormattedID: 'US1', ObjectID: 111, Name: 'Login', ScheduleState: 'In-Progress', FlowState: { _refObjectName: 'Need Review' },
     Blocked: true, Project: { _ref: `${ws}/project/7` } };
@@ -270,6 +278,180 @@ describe('Rally: mover', () => {
     ]);
     expect(file).toEqual({ name: 'captura.png', size: 4 });
     await expect(rally.attach(marta, { kind: 'DE', objectId: '5', name: 'x', content: '!!' })).rejects.toThrow(/no válido/);
+  });
+
+  it('crea User Stories en un proyecto y tareas dentro de su US, con Owner y Assignee', async () => {
+    const { rally, marta, posts } = await setup(us);
+    const item = await rally.create(marta, { kind: 'US', name: '  Nuevo   login ', description: 'a < b', projectId: '7', assignToMe: true });
+    expect(posts).toEqual([{ path: '/hierarchicalrequirement/create', body: { HierarchicalRequirement: {
+      Name: 'Nuevo login', Owner: '/user/42', Description: 'a &lt; b', Project: '/project/7', c_Assignee: '/user/42' } } }]);
+    expect(item).toMatchObject({ id: 'US1', kind: 'US', name: 'Nuevo login' });
+    posts.length = 0;
+    await rally.create(marta, { kind: 'TA', name: 'Probar', parentId: 'US-1', assignToMe: false });
+    expect(posts).toEqual([{ path: '/task/create', body: { Task: { Name: 'Probar', Owner: '/user/42', WorkProduct: '/hierarchicalrequirement/111', Project: '/project/7' } } }]);
+  });
+
+  it('crea sin Assignee si Rally no tiene ese campo y valida lo que falta', async () => {
+    const { rally, marta, posts } = await setup(us, { noAssignee: true });
+    await rally.create(marta, { kind: 'DE', name: 'Falla', projectId: '7', assignToMe: true });
+    expect(posts.map((p) => 'c_Assignee' in (Object.values(p.body as object)[0] as object))).toEqual([true, false]);
+    await expect(rally.create(marta, { kind: 'US', name: 'x' })).rejects.toThrow(/proyecto/);
+    await expect(rally.create(marta, { kind: 'TA', name: 'x', parentId: 'TC1' })).rejects.toThrow(/User Story o un defecto/);
+    await expect(rally.create(marta, { kind: 'US', name: ' ', projectId: '7' })).rejects.toThrow(/nombre/);
+    await expect(rally.create(marta, { kind: 'TC', name: 'x', projectId: '7' })).rejects.toThrow(/test sets y tareas/);
+  });
+
+  it('crea con los campos del formulario de Rally (columna, release, etiquetas, padre, feature y personalizados)', async () => {
+    const { rally, marta, posts } = await setup(us);
+    await rally.create(marta, {
+      kind: 'US', name: 'Alta', projectId: '7', ownerRef: '/user/5', assigneeRef: '/user/6', color: '#105CAB', ready: true,
+      blocked: true, blockedReason: 'Falta API', scheduleState: 'Defined', flowStateRef: '/flowstate/2', planEstimate: 3, expedite: true,
+      releaseRef: '/release/9', iterationRef: '/iteration/4', tagRefs: ['/tag/1'], milestoneRefs: ['/milestone/2'], notes: 'n',
+      parentId: 'US1', featureId: 'F1', custom: { c_Canal: 'Web' },
+    });
+    expect(posts).toEqual([{ path: '/hierarchicalrequirement/create', body: { HierarchicalRequirement: {
+      Name: 'Alta', Owner: '/user/5', Notes: 'n', Ready: true, Blocked: true, BlockedReason: 'Falta API', DisplayColor: '#105cab',
+      Tags: [{ _ref: '/tag/1' }], Milestones: [{ _ref: '/milestone/2' }], Release: '/release/9', Iteration: '/iteration/4',
+      FlowState: '/flowstate/2', PlanEstimate: 3, Expedite: true, Parent: '/hierarchicalrequirement/111',
+      PortfolioItem: '/portfolioitem/feature/111', Project: '/project/7', c_Canal: 'Web', c_Assignee: '/user/6' } } }]);
+    posts.length = 0;
+    await rally.create(marta, { kind: 'TA', name: 'T', parentId: 'DE1', state: 'In-Progress', estimate: 2, toDo: 1 });
+    expect(posts[0].body).toEqual({ Task: { Name: 'T', Owner: '/user/42', WorkProduct: '/defect/111', State: 'In-Progress', Estimate: 2, ToDo: 1, Project: '/project/7' } });
+    await expect(rally.create(marta, { kind: 'US', name: 'x', projectId: '7', releaseRef: '/project/1' })).rejects.toThrow(/no válido/);
+    await expect(rally.create(marta, { kind: 'US', name: 'x', projectId: '7', custom: { Canal: 'x' } })).rejects.toThrow(/personalizado/);
+    await expect(rally.create(marta, { kind: 'DS', name: 'Suite', projectId: '7' })).resolves.toMatchObject({ kind: 'DS' });
+  });
+
+  it('busca personas, padres y etiquetas en Rally con consultas seguras', async () => {
+    const { rally, marta, gets } = await setup(us);
+    expect(await rally.searchUsers(marta, 'a')).toEqual([]);
+    expect(gets).toEqual([]);
+    await rally.searchUsers(marta, 'Marc "x"');
+    expect(gets[0].pathname).toMatch(/\/user$/);
+    expect(gets[0].searchParams.get('query')).toBe(
+      '((((DisplayName contains "Marc x") OR (UserName contains "Marc x")) OR (EmailAddress contains "Marc x")) AND (Disabled = false))');
+
+    gets.length = 0;
+    const found = await rally.searchArtifacts(marta, { types: 'US,DE,otro', q: 'us-19', project: '7', release: '9', page: '2' });
+    expect(gets[0].pathname).toMatch(/\/artifact$/);
+    expect(Object.fromEntries(gets[0].searchParams)).toMatchObject({
+      types: 'hierarchicalrequirement,defect', start: '51', pagesize: '50', order: 'CreationDate DESC',
+      query: '(((FormattedID = "US19") AND (Project.ObjectID = 7)) AND (Release.ObjectID = 9))',
+    });
+    expect(found).toEqual({ items: [{ id: 'US1', name: 'Login', project: null }], total: 1 });
+    gets.length = 0;
+    await rally.searchArtifacts(marta, { types: 'F', q: 'pagos bizum' });
+    expect(gets[0].searchParams.get('query')).toBe('(Name contains "pagos bizum")');
+    expect(gets[0].searchParams.get('types')).toBe('portfolioitem/feature');
+    await expect(rally.searchArtifacts(marta, { types: 'TC' })).rejects.toThrow(/Tipo/);
+
+    gets.length = 0;
+    await rally.searchTags(marta, { q: 'ios', page: '1' });
+    expect(gets[0].searchParams.get('query')).toBe('((Archived = false) AND (Name contains "ios"))');
+  });
+
+  it('lee las etiquetas y filtra por etiqueta, en los proyectos elegidos o en todo Rally', async () => {
+    const { rally, marta, gets } = await setup({ ...us, Tags: { Count: 2, _tagsNameArray: [{ Name: 'QA Marc' }, { Name: ' iOS ' }] } });
+    const items = await rally.items(marta, 0, [], ['QA Marc', 'i"OS']);
+    expect(items[0].tags).toEqual(['QA Marc', 'iOS']);
+    expect(gets[0].searchParams.get('fetch')).toContain('Tags');
+    expect(gets[0].searchParams.get('query')).toBe('((Tags.Name = "QA Marc") OR (Tags.Name = "i OS"))');
+    gets.length = 0;
+    await rally.items(marta, 0, ['7'], ['QA Marc']);
+    expect(gets[0].searchParams.get('query')).toBe('((Project.ObjectID = 7) AND (Tags.Name = "QA Marc"))');
+  });
+
+  it('trae todos los proyectos abiertos, de 200 en 200', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const starts: string[] = [];
+    const fetcher = (async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/user')) return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      const start = Number(u.searchParams.get('start'));
+      starts.push(String(start));
+      const count = start === 1 ? 200 : 30;
+      const Results = Array.from({ length: count }, (_, i) => ({ ObjectID: start + i, Name: `P${start + i}` }));
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results, TotalResultCount: 230 } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+    const projects = await rally.projects(marta);
+    expect(projects).toHaveLength(230);
+    expect(starts).toEqual(['1', '201']);
+  });
+
+  it('trae hasta 5.000 por tipo (páginas en paralelo) y avisa de lo que no cabe', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const starts: number[] = [];
+    const fetcher = (async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/user')) return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      const start = Number(u.searchParams.get('start'));
+      const isUs = u.pathname.endsWith('/hierarchicalrequirement');
+      if (isUs) starts.push(start);
+      const total = isUs ? 6200 : 3;
+      const count = Math.max(0, Math.min(200, total - start + 1));
+      const Results = Array.from({ length: count }, (_, i) => ({ FormattedID: `US${start + i}`, ObjectID: start + i, ScheduleState: 'Defined' }));
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results, TotalResultCount: total } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+    const report = await rally.itemsReport(marta, 0, ['7']);
+    expect(starts).toHaveLength(25);
+    expect(report.truncated).toEqual([{ kind: 'US', total: 6200, shown: 5000 }]);
+    expect(report.items.filter((i) => i.kind === 'US')).toHaveLength(5000);
+  });
+
+  it('crea features con estado de portfolio, talla, fechas planificadas y padre', async () => {
+    const { rally, marta, posts, gets } = await setup({ ...us, _ref: `${ws}/portfolioitem/initiative/5`, Name: 'Iniciativa' });
+    const options = await rally.formOptions(marta, 'FE', '7');
+    expect(gets.map((g) => g.pathname.replace('/slm/webservice/v2.0', ''))).toEqual(expect.arrayContaining(['/state', '/preliminaryestimate']));
+    // Los estados se piden por la definición del tipo Feature (las columnas de su Portfolio Kanban).
+    expect(gets.find((g) => g.pathname.endsWith('/typedefinition') && g.searchParams.get('query')?.includes('PortfolioItem/Feature'))).toBeTruthy();
+    expect(gets.find((g) => g.pathname.endsWith('/state'))?.searchParams.get('query')).toBe('(TypeDef.ObjectID = 111)');
+    expect(gets.some((g) => g.pathname.endsWith('/flowstate') || g.pathname.endsWith('/iteration'))).toBe(false);
+    expect(options).toMatchObject({ scheduleStates: [], flowStates: [], iterations: [] });
+    expect(options.portfolioStates).toEqual([{ ref: '/portfolioitem/initiative/5', name: 'Iniciativa' }]); // el Rally falso responde lo mismo
+
+    await rally.create(marta, {
+      kind: 'FE', name: 'Pagos Bizum', projectId: '7', portfolioStateRef: '/state/3', preliminaryEstimateRef: '/preliminaryestimate/2',
+      plannedStart: '2026-11-10', plannedEnd: '2026-12-31', parentId: 'I-12', releaseRef: '/release/9', ready: true,
+    });
+    expect(posts).toEqual([{ path: '/portfolioitem/feature/create', body: { Feature: {
+      Name: 'Pagos Bizum', Owner: '/user/42', Ready: true, Release: '/release/9', State: '/state/3', PreliminaryEstimate: '/preliminaryestimate/2',
+      PlannedStartDate: '2026-11-10T12:00:00.000Z', PlannedEndDate: '2026-12-31T12:00:00.000Z', Parent: '/portfolioitem/initiative/5', Project: '/project/7' } } }]);
+    await expect(rally.create(marta, { kind: 'FE', name: 'x', projectId: '7', plannedStart: '10/11/2026' })).rejects.toThrow(/Fecha/);
+    await expect(rally.create(marta, { kind: 'FE', name: 'x', projectId: '7', portfolioStateRef: '/release/1' })).rejects.toThrow(/no válido/);
+  });
+
+  it('si una consulta de estados de Feature no vale, prueba la siguiente', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const ws = `${BASE}/slm/webservice/v2.0`;
+    const states = ['Discovering', 'Refinement', 'Ready', 'Developing', 'Completed', 'Measuring']
+      .map((Name, i) => ({ _ref: `${ws}/state/${i + 1}`, _refObjectName: Name, Name, OrderIndex: i + 1 }));
+    const fetcher = (async (url: string) => {
+      const u = new URL(url);
+      const q = u.searchParams.get('query') ?? '';
+      if (u.pathname.endsWith('/user')) return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      const Results = u.pathname.endsWith('/state') && q === '(TypeDef.Name = "Feature")' ? [...states].reverse() : [];
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results, TotalResultCount: Results.length } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+    const options = await rally.formOptions(marta, 'FE', '7');
+    expect(options.portfolioStates.map((x) => x.name)).toEqual(['Discovering', 'Refinement', 'Ready', 'Developing', 'Completed', 'Measuring']);
+    expect(options.portfolioStates[0].ref).toBe('/state/1');
+  });
+
+  it('no mueve features desde el gestor', async () => {
+    const { rally, marta } = await setup(us);
+    await expect(rally.move(marta, { id: 'F12', category: 'done' })).rejects.toThrow(/features/);
   });
 
   it('rechaza lo que no se puede mover y explica una clave de solo lectura', async () => {
@@ -325,8 +507,8 @@ describe('Rally: gestor', () => {
   });
 
   it('reconoce los IDs de Rally (para mostrar su ficha en el panel de la tarea)', () => {
-    for (const id of ['US1764574', 'us-12', 'DE9', 'TS215889', 'TA1', 'TC7']) expect(isRallyId(id)).toBe(true);
-    for (const id of [null, undefined, '', 'JIRA-5', 'US', 'F789', 'US1 extra']) expect(isRallyId(id)).toBe(false);
+    for (const id of ['US1764574', 'us-12', 'DE9', 'TS215889', 'TA1', 'TC7', 'F789', 'FE12', 'DS3']) expect(isRallyId(id)).toBe(true);
+    for (const id of [null, undefined, '', 'JIRA-5', 'US', 'FX1', 'US1 extra']) expect(isRallyId(id)).toBe(false);
   });
 
   it('solo pide a Rally los IDs de las tareas activas, sin repetir', () => {
@@ -361,6 +543,12 @@ describe('Rally: gestor', () => {
     expect(byCategory.map((g) => `${g.key} ${g.items.length}`)).toEqual(['Por hacer 0', 'Bloqueado 1', 'En curso 0', 'Hecho 0', 'Accepted 2']);
     expect(groupRally(list, 'iteration').map((g) => g.key)).toEqual(['Sprint 14', 'Sprint 9', null]);
     expect(groupRally(list, 'assignee').map((g) => g.key)).toEqual(['Ana', 'Marc', null]);
+    const tagged = [item({ id: 'TS1', tags: ['QA Marc', 'iOS'] }), item({ id: 'TS2', tags: ['iOS'] }), item({ id: 'TS3' })];
+    expect(groupRally(tagged, 'tag').map((g) => `${g.key} ${g.items.map((i) => i.id).join('+')}`)).toEqual(['iOS TS1+TS2', 'QA Marc TS1', 'null TS3']);
+  });
+
+  it('lleva las etiquetas de Rally a la tarea del gestor', () => {
+    expect(taskFromRally(item({ tags: ['QA Marc'] }), DEFAULT_ITEM_TYPES, null).tags).toEqual(['QA Marc']);
   });
 
   it('apunta el Assignee en la tarea solo si no es de la persona conectada', () => {

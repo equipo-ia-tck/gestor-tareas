@@ -1,4 +1,4 @@
-import type { RallyCategory, RallyDetail, RallyItem, RallyProject, RallyStatus } from '../../domain/rally';
+import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -21,11 +21,31 @@ export const rallyApi = {
   move: (id: string, category: RallyCategory) => call<{ item: RallyItem }>('POST', '/api/rally/move', { id, category }).then((r) => r.item),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
+  create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>
+    call<{ item: RallyItem }>('POST', '/api/rally/create', input).then((r) => r.item),
+  searchUsers: (q: string) => call<{ users: RallyRef[] }>('GET', `/api/rally/users?q=${encodeURIComponent(q)}`).then((r) => r.users),
+  pick: (filter: { types: string[]; q: string; project: string; release: string; page: number }) =>
+    call<{ items: RallyPick[]; total: number }>('GET', `/api/rally/pick?${new URLSearchParams({ ...filter, types: filter.types.join(','), page: String(filter.page) })}`),
+  tags: (q: string, page: number) => call<{ items: RallyRef[]; total: number }>('GET', `/api/rally/tags?q=${encodeURIComponent(q)}&page=${page}`),
+  formOptions: (kind: RallyCreatableKind, projectId: string) =>
+    call<RallyFormOptions>('GET', `/api/rally/form?kind=${kind}&project=${projectId}`),
   comment: (item: RallyItem, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>
     call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then((r) => r.file),
   projects: () => call<{ projects: RallyProject[] }>('GET', '/api/rally/projects').then((r) => r.projects),
-  items: (days: number, projects: string[]) =>
-    call<{ items: RallyItem[] }>('GET', `/api/rally/items?days=${days}&projects=${projects.join(',')}`).then((r) => r.items),
+  items: (days: number, projects: string[], tags: string[] = []) =>
+    call<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }>('GET', `/api/rally/items?${new URLSearchParams([['days', String(days)], ['projects', projects.join(',')], ...tags.map((t) => ['tag', t])])}`)
+
 };
+
+/** Contenido de un archivo en base64 (sin la cabecera `data:…;base64,`). */
+export const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+  reader.onerror = () => reject(new Error(`No se ha podido leer ${file.name}.`));
+  reader.readAsDataURL(file);
+});
+
+/** Límite del servidor (`MAX_ATTACHMENT_BYTES` en servidor/rally.ts). */
+export const MAX_UPLOAD = 25 * 1024 * 1024;

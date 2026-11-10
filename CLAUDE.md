@@ -341,7 +341,7 @@ Decisión de la usuaria (21 oct 2026): para todo el equipo; todo privado salvo l
 conexión; inicio de sesión provisional hasta que WPP permita "Entrar con Microsoft".
 
 - **Servidor** (`servidor/`, TypeScript ejecutado por Node 24 sin compilar: nada de parameter properties ni enums, imports
-  con `.ts`): `index.ts` sirve `dist/` y la API en `localhost:4173` (sustituye a `vite preview`; `npm start` lo arranca);
+  con `.ts`): `index.ts` sirve `dist/` y la API en `localhost:4173` (sustituye a `vite preview`; `npm start` lo arranca y, si ya había uno nuestro en marcha, lo para y lo vuelve a arrancar);
   `api.ts` (cuentas, sesiones, push/pull, sin HTTP para poder probarla); `visibility.ts` (quién ve qué, funciones puras).
   Base de datos `node:sqlite` en `servidor/datos/equipo.sqlite` (fuera de Git; `GESTOR_DATOS` cambia la carpeta). Sin
   dependencias nuevas.
@@ -436,6 +436,38 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
   (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Crear devuelve `CreateResult` y
   actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
+- **Crear en Rally** (`rally.create`, `POST /api/rally/create`): User Story, Defect, Defect Suite (`DS`) y Test Set en un
+  proyecto; tareas dentro de una US o un defecto (`WorkProduct`). «Nuevo en Rally» (`RallyCreateForm`) es un panel lateral
+  con el mismo formulario que el «New Item» de Rally: Ready/Blocked, color, Owner, Assignee, proyecto, Schedule State y Flow
+  State (elegir uno mueve el otro; se envía solo FlowState si hay columna), estimación, descripción, padre, etiquetas,
+  release, iteración, milestones, Expedite, feature, adjuntos (se suben después de crear), notas, campos de defecto
+  (Severity, Priority, State, Environment) y los **campos personalizados obligatorios** del tipo. Las opciones salen de
+  `GET /api/rally/form` (`formOptions`: columnas, valores permitidos de la definición del tipo, releases e iteraciones del
+  proyecto, miembros y permisos del proyecto, etiquetas y milestones; en caché 10 min). Las referencias se validan por
+  tipo (`/release/123`…). Si el tipo no tiene `c_Assignee`, se reintenta sin él. La ficha de una US/DE sigue teniendo el
+  alta rápida de tareas (`NewRallyTask`).
+- **Selectores como en Rally** (`RallyPickers.tsx`): Owner/Assignee con «Quick picks» (nadie, tú), miembros del equipo y
+  búsqueda en todo Rally (`GET /api/rally/users`, desde 2 letras); «Elegir padre» (Parent, User Story del defecto, Work
+  Product de la tarea y Feature) con tipo, proyecto, palabra o ID, release y páginas de 50 (`GET /api/rally/pick`, sobre
+  `/artifact?types=…`); «Elegir etiquetas» con recientes (localStorage), casillas que no se mueven al marcar y páginas
+  de 50 buscando en Rally (`GET /api/rally/tags`: hay decenas de miles); Milestones igual, con la lista ya cargada.
+  Las búsquedas limpian comillas y paréntesis (`searchText`). Las ventanas van en portal y su Esc no cierra el panel.
+- **Etiquetas de Rally** (`RallyItem.tags`, de `Tags._tagsNameArray`): los TS no tienen Assignee y se reparten por etiqueta.
+  En «Qué ver de Rally», «Etiquetas» (`rally-tag-filter`) pide a Rally lo que tenga alguna (`Tags.Name = …`): en los
+  proyectos elegidos o, sin proyectos, en todo Rally. «Agrupar por etiqueta» pone un elemento en cada una de las suyas.
+  Al añadir al gestor, las etiquetas pasan a `task.tags` (no se vuelven a sincronizar después).
+- **Proyectos de Rally**: `projects()` los trae todos por páginas de 200 (antes solo la primera página). En la pantalla,
+  `ProjectChips`: fijados (`rally-pinned-projects`, alfiler), elegidos y hasta 10 en total; el resto con el buscador.
+- **Features** (`FE`, `portfolioitem/feature`; su ID empieza por FE o F, `kindOfId`): se ven, se buscan y se añaden al
+  gestor, pero no se mueven desde aquí (su State es un objeto de Rally), igual que los TC. Un Rally sin portfolio items
+  no rompe la carga. **Tope**: hasta 5.000 por tipo (`MAX_PAGES = 25`, páginas de 5 en 5 en paralelo); `itemsReport`
+  devuelve `truncated` y la pantalla avisa para acotar.
+- **Crear features**: tipo «Feature» en «Nuevo elemento». Sin Blocked, Assignee, Schedule/Flow State, Iteration ni
+  Expedite; con State de portfolio = columnas de su Portfolio Kanban (`featureStates`: `/state` por el ObjectID de la definición `PortfolioItem/Feature`, si no por `TypeDef.Name` y por `TypeDef.ElementName`; por defecto la primera; aviso si no se leen), Preliminary Estimate
+  (`/preliminaryestimate`), Planned Start/End Date (se envían a mediodía UTC) y Parent = portfolio item de nivel superior
+  (`/portfolioitem` por FormattedID; el buscador abre en «Todos los proyectos»). Se crea en `/portfolioitem/feature/create`.
+- **Etiquetas por defecto al crear**: si la pantalla Rally tiene etiquetas en el filtro, «Nuevo elemento» (cualquier tipo)
+  las trae ya puestas en Tags (`defaultTags`); se pueden quitar o añadir más.
 - **Asignación**: se usa el campo personalizado `c_Assignee` (el Owner suele ser quien lo pidió). `mine` = Assignee u Owner soy yo.
 - **Categorías** (`rallyCategory`): todo · blocked · doing · done · **accepted**. El gestor tiene ahora la categoría de estado
   `accepted` (cuenta como completada, `isDoneCategory`); la sesión de un administrador añade el estado «Accepted» a Tarea, US y TS
@@ -476,6 +508,36 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
 - Pantalla `#/chats`: lista con último mensaje y no leídos (`viewpoint.lastMessageReadDateTime`), conversación, «Responder en
   Teams» y «→ Tarea». «Actualizado hace X» por el mtime. Los mensajes no se escriben en el registro del servidor.
 - Chat fluido o escribir desde el gestor necesitaría Microsoft Graph con una app registrada en Entra ID (IT).
+
+## Fase 22: conector de Confluence (Data Center)
+
+- **Servidor** (`servidor/confluence.ts`): Personal Access Token de cada usuario (`Authorization: Bearer`), guardado solo en
+  `confluence_accounts`. `connect` comprueba `/rest/api/user/current` (un token malo deja «anónimo» con 200). `tasks` trae
+  las tareas (casillas de las páginas) asignadas con `/rest/api/inlinetasks/search` (`assignee` = userKey, de 100 en 100) y
+  añade título, espacio y enlace de su página con CQL `id in (…)`. Solo lectura por ahora.
+- **Pantalla** `#/confluence` (debajo de Rally): filtro por texto y espacio, completadas opcionales, «Añadir al gestor»
+  (`taskFromConfluence`: primera línea como título, fecha, enlace a la página, `external_id = CF-<id>`).
+- **Ojo**: el Confluence de CaixaBank (`confluence.cloud.lacaixa.es/confluence`) solo es accesible desde su red (escritorio
+  virtual). Desde el Mac el nombre no se resuelve y la pantalla lo explica; funcionará solo donde el servidor llegue a esa
+  dirección. No se debe saltar ese aislamiento (túneles, sacar datos del escritorio virtual).
+
+## Fase 23: Microsoft List por Power Automate (sin permisos de Microsoft)
+
+IT de WPP no registra apps en Entra ID para herramientas propias (nov 2026), así que va como el calendario.
+
+- **Leer** (`servidor/msList.ts`, `domain/msListParse.ts` sin imports de valores): un flujo («Obtener elementos» de SharePoint,
+  cada 5 min) guarda `OneDrive/Gestor/lista.json` (`GESTOR_LISTA` lo cambia). Se vincula a una cuenta y se relee al cambiar el
+  mtime, como el calendario. `parseMsList` convierte opciones, personas, listas y fechas y quita las columnas internas;
+  `columnLabel` descodifica `_x0020_`, `_x00ed_`…
+- **Escribir**: el servidor apunta cada cambio en `OneDrive/Gestor/cambios/lista-cambios.json` (`{ cambios: [{ id, campo, valor,
+  titulo, at }] }`, carpeta aparte para no disparar el segundo flujo con cada exportación; escrito con temporal + renombrar).
+  Un segundo flujo («Cuando se modifica un archivo» → «Actualizar elemento») lo aplica. `pendingChanges` borra los que la lista
+  ya refleja y `withPending` devuelve los elementos con el valor nuevo, así la siguiente exportación no deshace un cambio.
+- **En el gestor** (`domain/msList.ts`, `features/mslist/`): pantalla `#/lista` (debajo de Rally) con columna de estado
+  (se adivina, `guessStatusColumn`) y correspondencia valor → categoría (`guessCategory`, editable en «Estados»; en
+  localStorage `gestor-tareas:lista-config`). Tareas enlazadas por `external_id = LS-<id>`. `ListaSync` (cada 2 min): la lista
+  manda (`listMoves`); al mover una tarea aquí, `listPushes` + `valueForCategory` (primer valor de esa categoría) apuntan el
+  cambio. Tarda unos minutos en cada sentido.
 
 ### Más adelante
 

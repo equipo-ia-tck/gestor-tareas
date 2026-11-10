@@ -1,8 +1,92 @@
 import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type Task } from './types';
 import { findType, stateOf } from './workflows';
 
-/** Prefijo del ID de Rally: US (historia), DE (defecto), TA (tarea), TS (test set), TC (test case). */
-export type RallyKind = 'US' | 'DE' | 'TA' | 'TS' | 'TC';
+/**
+ * Tipo de Rally: FE (feature; su ID empieza por FE o F), US (historia), DE (defecto), DS (defect suite), TA (tarea),
+ * TS (test set), TC (test case).
+ */
+export type RallyKind = 'FE' | 'US' | 'DE' | 'DS' | 'TA' | 'TS' | 'TC';
+
+/** Tipos que se pueden crear desde el gestor (los del formulario «New Item» de Rally, más las tareas). */
+export type RallyCreatableKind = 'FE' | 'US' | 'DE' | 'DS' | 'TS' | 'TA';
+
+/** Referencia de Rally relativa a la WSAPI ("/release/123") con su nombre. */
+export interface RallyRef { ref: string; name: string }
+
+/**
+ * Opciones del formulario de alta de un tipo en un proyecto (`GET /api/rally/form`): personas, columnas, estados,
+ * releases, iteraciones, etiquetas, milestones, valores permitidos y los campos personalizados obligatorios.
+ */
+export interface RallyFormOptions {
+  me: RallyRef;
+  users: RallyRef[];
+  /** Columnas del tablero del proyecto, con el ScheduleState al que corresponde cada una. */
+  flowStates: (RallyRef & { scheduleState: string | null })[];
+  scheduleStates: string[];
+  /** State de las tareas (Defined, In-Progress, Completed). */
+  taskStates: string[];
+  releases: RallyRef[];
+  iterations: RallyRef[];
+  milestones: RallyRef[];
+  /** Feature: estados de portfolio (Discovering, Developing…) y tallas de Preliminary Estimate; vacíos en el resto. */
+  portfolioStates: RallyRef[];
+  preliminaryEstimates: RallyRef[];
+  /** Valores permitidos de los campos de defecto (Severity, Priority, State, Environment); vacío si no aplica. */
+  values: Record<string, string[]>;
+  /** Campos personalizados obligatorios del tipo, para poder crearlo. */
+  custom: { field: string; label: string; values: string[] }[];
+}
+
+/** Resultado del buscador «Elegir padre» (`GET /api/rally/pick`). */
+export interface RallyPick { id: string; name: string; project: string | null }
+
+/** Lo que se envía al crear (`POST /api/rally/create`). Las referencias son las de `RallyFormOptions`. */
+export interface RallyCreateInput {
+  kind: RallyCreatableKind;
+  name: string;
+  projectId: string;
+  /** US padre (US), User Story del defecto (DE) o US/defecto de la tarea (TA): su FormattedID. */
+  parentId?: string;
+  /** Feature de la US (F123). */
+  featureId?: string;
+  /** Feature: estado de portfolio, talla y fechas planificadas (YYYY-MM-DD). */
+  portfolioStateRef?: string;
+  preliminaryEstimateRef?: string;
+  plannedStart?: string;
+  plannedEnd?: string;
+  description?: string;
+  notes?: string;
+  ownerRef?: string;
+  assigneeRef?: string;
+  color?: string;
+  ready?: boolean;
+  blocked?: boolean;
+  blockedReason?: string;
+  expedite?: boolean;
+  scheduleState?: string;
+  flowStateRef?: string;
+  /** State de una tarea o de un defecto. */
+  state?: string;
+  planEstimate?: number | null;
+  estimate?: number | null;
+  toDo?: number | null;
+  releaseRef?: string;
+  iterationRef?: string;
+  tagRefs?: string[];
+  milestoneRefs?: string[];
+  severity?: string;
+  priority?: string;
+  environment?: string;
+  custom?: Record<string, string>;
+}
+
+/** Colores de tarjeta de Rally (DisplayColor). */
+export const RALLY_COLORS: { name: string; hex: string }[] = [
+  { name: 'Azul', hex: '#105cab' }, { name: 'Celeste', hex: '#21a2e0' }, { name: 'Verde azulado', hex: '#107c83' },
+  { name: 'Verde', hex: '#4a7c1e' }, { name: 'Lima', hex: '#8dc63f' }, { name: 'Amarillo', hex: '#fac71e' },
+  { name: 'Naranja', hex: '#f76c02' }, { name: 'Rojo', hex: '#ee1c25' }, { name: 'Rosa', hex: '#df1a7b' },
+  { name: 'Morado', hex: '#7832a5' }, { name: 'Gris', hex: '#848689' }, { name: 'Gris claro', hex: '#c0c0c0' },
+];
 
 /** Elemento de Rally (asignado a la persona o de los proyectos elegidos), tal como lo devuelve `GET /api/rally/items`. */
 export interface RallyItem {
@@ -27,6 +111,8 @@ export interface RallyItem {
   owner: string | null;
   /** Asignado a la persona conectada. */
   mine: boolean;
+  /** Etiquetas de Rally (los test sets se reparten por etiqueta, porque no tienen Assignee). */
+  tags: string[];
   updatedAt: string;
   url: string;
 }
@@ -59,7 +145,7 @@ export interface RallyDetail {
   attachments: { name: string; size: number }[];
 }
 
-export type RallyGroupBy = 'category' | 'state' | 'iteration' | 'assignee';
+export type RallyGroupBy = 'category' | 'state' | 'iteration' | 'assignee' | 'tag';
 
 export interface RallyStatus {
   connected: boolean;
@@ -70,8 +156,10 @@ export interface RallyStatus {
 }
 
 export const RALLY_KINDS: { kind: RallyKind; label: string }[] = [
+  { kind: 'FE', label: 'Features' },
   { kind: 'US', label: 'User Stories' },
   { kind: 'DE', label: 'Defectos' },
+  { kind: 'DS', label: 'Defect Suites' },
   { kind: 'TA', label: 'Tareas' },
   { kind: 'TS', label: 'Test Sets' },
   { kind: 'TC', label: 'Test Cases' },
@@ -101,7 +189,7 @@ export function rallyOwners(tasks: Task[], ownerOf: (rallyId: string) => string 
 
 export const linkedTask = (item: RallyItem, byId: Map<string, Task>) => byId.get(norm(item.id));
 
-const RALLY_ID = /^(US|DE|TA|TS|TC)-?\d{1,12}$/i;
+const RALLY_ID = /^(US|DE|DS|TA|TS|TC|FE|F)-?\d{1,12}$/i;
 
 /** ID externo con forma de Rally ("US1764574", "DE-9"…). */
 export const isRallyId = (id: string | null | undefined): id is string => !!id && RALLY_ID.test(id);
@@ -160,7 +248,8 @@ export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemT
     if (!from || !to || to.deleted_at || to.status === 'archived' || !to.external_id || !RALLY_ID.test(to.external_id)) continue;
     const id = norm(to.external_id);
     const category = stateOf(types, to).category;
-    if (!id.startsWith('TC') && stateOf(types, from).category !== category) out.push({ id, category });
+    // Los test cases (se mueven con su resultado) y las features (su State es de Rally) no se mueven desde aquí.
+    if (!/^(TC|F)/.test(id) && stateOf(types, from).category !== category) out.push({ id, category });
   }
   return out;
 }
@@ -179,6 +268,7 @@ export function taskFromRally(item: RallyItem, types: ItemType[], projectId: str
       !item.mine && item.assignee && `Assignee en Rally: ${item.assignee}`,
     ]
       .filter(Boolean).join('\n'),
+    tags: item.tags,
     raw_input: item.id,
   };
 }
@@ -190,16 +280,17 @@ const nullsLast = (a: string | null, b: string | null, cmp: (a: string, b: strin
 
 /**
  * Agrupa por categoría (Por hacer, Bloqueado, En curso, Hecho, Accepted, aunque estén vacías), por columna del tablero
- * de Rally (en su orden), por iteración (la más reciente primero) o por persona (alfabético). Lo que no tiene
- * iteración o persona va al final.
+ * de Rally (en su orden), por iteración (la más reciente primero), por persona o por etiqueta (alfabético). Lo que no
+ * tiene iteración, persona o etiqueta va al final. Por etiqueta, un elemento con varias sale en cada una.
  */
 export function groupRally(items: RallyItem[], by: RallyGroupBy): { key: string | null; items: RallyItem[] }[] {
   if (by === 'category') {
     return RALLY_CATEGORIES.map(({ category, label }) => ({ key: label, items: items.filter((it) => it.category === category) }));
   }
-  const keyOf = (it: RallyItem) => (by === 'state' ? it.state : by === 'iteration' ? it.iteration : it.assignee);
+  const keysOf = (it: RallyItem): (string | null)[] => (by === 'tag' ? (it.tags.length ? it.tags : [null])
+    : [by === 'state' ? it.state : by === 'iteration' ? it.iteration : it.assignee]);
   const groups = new Map<string | null, RallyItem[]>();
-  for (const it of items) groups.set(keyOf(it), [...(groups.get(keyOf(it)) ?? []), it]);
+  for (const it of items) for (const key of keysOf(it)) groups.set(key, [...(groups.get(key) ?? []), it]);
   const order = (list: RallyItem[]) => Math.min(...list.map((it) => it.stateOrder));
   return [...groups.entries()]
     .map(([key, list]) => ({ key, items: list }))

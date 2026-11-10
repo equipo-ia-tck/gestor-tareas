@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ExternalLink, Layers, Plus, RefreshCw, Unplug } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { ExternalLink, Layers, Pin, Plus, RefreshCw, Search, Unplug, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ActionButton, Section } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
@@ -8,15 +8,18 @@ import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import {
   groupRally, linkedTask, RALLY_KINDS, taskFromRally, tasksByRallyId,
-  type RallyGroupBy, type RallyItem, type RallyKind, type RallyProject, type RallyStatus,
+  type RallyGroupBy, type RallyItem, type RallyKind, type RallyProject, type RallyRef, type RallyStatus,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import type { Task } from '../../domain/types';
+import { fold } from '../../domain/text';
 import { useWideLayout } from '../../app/Layout';
 import { ViewHeader } from '../views/ViewHeader';
+import { RallyCreateForm } from './RallyCreateForm';
 import { RallyDetailPanel } from './RallyDetailPanel';
 import { rallyApi } from './rallyApi';
 import { applyRallyStates } from './rallyStates';
+import { ValuesField } from './RallyPickers';
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -76,7 +79,7 @@ function ConnectForm({ initialUrl, onConnected }: { initialUrl: string; onConnec
         <ol className="list-decimal space-y-1 pl-5 text-zinc-600 dark:text-zinc-300">
           <li>Abre <a className="text-indigo-600 hover:underline" href="https://eu1.rallydev.com/login" target="_blank" rel="noreferrer">eu1.rallydev.com/login</a> y entra con tu usuario.</li>
           <li>Haz clic en <b>API Keys</b> (arriba a la derecha de esa página, o en tu perfil de Rally).</li>
-          <li>Pulsa <b>Create New API Key</b>, ponle una descripción (p. ej. «Gestor de tareas») y elige <b>Read-Only</b>.</li>
+          <li>Pulsa <b>Create New API Key</b>, ponle una descripción (p. ej. «Gestor de tareas») y elige <b>Full Access</b> (para crear, mover y comentar desde aquí; con Read-Only solo se puede leer).</li>
           <li>Copia la clave (empieza por <code>_</code>) y pégala aquí debajo.</li>
         </ol>
         <p className="mt-2 text-xs text-zinc-500">
@@ -100,7 +103,96 @@ const chipClass = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs fo
   ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`;
 
 const NO_ONE = '__nadie';
-const GROUP_LABEL: Record<RallyGroupBy, string> = { category: 'categoría', state: 'columna de Rally', iteration: 'iteración', assignee: 'persona' };
+/** Proyectos que se ven de entrada (además de los fijados y los elegidos); el resto, con el buscador. */
+const SHOWN_PROJECTS = 10;
+
+/**
+ * Proyectos de Rally como chips: primero los fijados, después los elegidos y hasta 10 en total con el resto (por
+ * nombre). Un buscador encuentra cualquier otro; el alfiler fija o suelta (se recuerda en este navegador).
+ */
+function ProjectChips({ projects, selected, onToggle, pinned, onPin }: {
+  projects: RallyProject[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  pinned: string[];
+  onPin: (id: string) => void;
+}) {
+  const [q, setQ] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  // La lista de resultados se cierra al pulsar fuera de ella (o con Esc).
+  useEffect(() => {
+    if (!q) return;
+    const onDown = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setQ(''); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setQ(''); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [q]);
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const first = [...new Set([...pinned, ...selected])].map((id) => byId.get(id)).filter((p): p is RallyProject => !!p);
+  const rest = projects.filter((p) => !first.includes(p)).slice(0, Math.max(0, SHOWN_PROJECTS - first.length));
+  const shown = [...first, ...rest];
+  const hidden = projects.length - shown.length;
+  const query = fold(q.trim());
+  const matches = query ? projects.filter((p) => fold(p.name).includes(query)).slice(0, 30) : [];
+
+  const pinButton = (p: RallyProject, on: boolean) => (
+    <button type="button" onClick={() => onPin(p.id)} title={on ? 'Soltar (deja de salir arriba)' : 'Fijar arriba'} aria-label={on ? `Soltar ${p.name}` : `Fijar ${p.name}`}
+      className={`rounded p-0.5 ${on ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200'}`}>
+      <Pin className={`size-3.5 ${on ? 'fill-current' : ''}`} />
+    </button>
+  );
+
+  return (
+    <>
+      {shown.map((p) => {
+        const on = selected.includes(p.id);
+        const isPinned = pinned.includes(p.id);
+        return (
+          <span key={p.id} className={`group inline-flex items-center gap-0.5 rounded-full border pr-1 ${on
+            ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`}>
+            <button type="button" onClick={() => onToggle(p.id)} className="py-0.5 pl-2.5 text-xs font-medium">{p.name}</button>
+            <span className={isPinned ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}>
+              <button type="button" onClick={() => onPin(p.id)} title={isPinned ? 'Soltar (deja de salir arriba)' : 'Fijar arriba'}
+                aria-label={isPinned ? `Soltar ${p.name}` : `Fijar ${p.name}`}
+                className={`rounded p-0.5 ${on ? 'text-white' : isPinned ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400'}`}>
+                <Pin className={`size-3 ${isPinned ? 'fill-current' : ''}`} />
+              </button>
+            </span>
+          </span>
+        );
+      })}
+      <div ref={box} className="relative">
+        <div className="flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 dark:border-zinc-600 dark:bg-zinc-900">
+          <Search className="size-3.5 text-zinc-400" />
+          <input className="w-44 bg-transparent py-0.5 text-xs outline-none" value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder={hidden > 0 ? `Buscar entre ${projects.length} proyectos…` : 'Buscar proyecto…'} aria-label="Buscar proyecto de Rally" />
+          {q && <button type="button" onClick={() => setQ('')} aria-label="Borrar búsqueda"><X className="size-3.5 text-zinc-400" /></button>}
+        </div>
+        {query && (
+          <div className="absolute top-full left-0 z-20 mt-1 max-h-80 w-80 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            {matches.length === 0 && <p className="px-2 py-1 text-xs text-zinc-400">Ningún proyecto con ese nombre.</p>}
+            {matches.map((p) => {
+              const on = selected.includes(p.id);
+              return (
+                <div key={p.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                    <input type="checkbox" checked={on} onChange={() => onToggle(p.id)} />
+                    <span className="truncate" title={p.name}>{p.name}</span>
+                  </label>
+                  {pinButton(p, pinned.includes(p.id))}
+                </div>
+              );
+            })}
+            <p className="border-t border-zinc-100 px-2 pt-1 text-[11px] text-zinc-400 dark:border-zinc-800">Marca para verlo; con el alfiler sale siempre arriba.</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+const GROUP_LABEL: Record<RallyGroupBy, string> = { category: 'categoría', state: 'columna de Rally', iteration: 'iteración', assignee: 'persona', tag: 'etiqueta' };
+const NO_GROUP: Partial<Record<RallyGroupBy, string>> = { iteration: 'Sin iteración', assignee: 'Sin asignar', tag: 'Sin etiqueta' };
 
 function RallyItems() {
   const { tasks, itemTypes, projects, editTask, closeDetail } = useApp();
@@ -109,7 +201,12 @@ function RallyItems() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  // Tipos con más elementos de los que se traen (5.000 por tipo): se avisa para acotar.
+  const [truncated, setTruncated] = useState<{ kind: RallyKind; total: number; shown: number }[]>([]);
   const [selected, setSelected] = usePersistentState<string[]>('rally-projects', []);
+  const [pinned, setPinned] = usePersistentState<string[]>('rally-pinned-projects', []);
+  // Filtro por etiquetas de Rally: los test sets no tienen Assignee y se reparten por etiqueta.
+  const [tags, setTags] = usePersistentState<RallyRef[]>('rally-tag-filter', []);
   const [kinds, setKinds] = usePersistentState<RallyKind[]>('rally-kinds', RALLY_KINDS.map((k) => k.kind));
   const [hideDone, setHideDone] = usePersistentState('rally-hide-done', false);
   const [onlyMine, setOnlyMine] = usePersistentState('rally-only-mine', false);
@@ -119,6 +216,7 @@ function RallyItems() {
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
+  const [creating, setCreating] = useState(false);
   const closePanel = useCallback(() => setOpen(null), []);
   // Con el panel abierto, la vista usa todo el ancho y el panel es una columna más (como en el Tablero).
   useWideLayout(!!open);
@@ -130,14 +228,19 @@ function RallyItems() {
   // Proyectos elegidos que siguen existiendo (en una cadena, para no recargar en cada render).
   const projectKey = rallyProjects ? selected.filter((id) => rallyProjects.some((p) => p.id === id)).join(',') : null;
   const projectMode = !!projectKey;
+  // Nombres de las etiquetas en una cadena, para no recargar en cada render.
+  const tagKey = tags.map((t) => t.name).join('\n');
+  // Viendo proyectos o etiquetas (no solo «lo asignado a mí»): ahí sirven «Solo lo mío» y el filtro por persona.
+  const browsing = projectMode || !!tagKey;
 
   const load = useCallback(async () => {
     if (projectKey === null) return;
     setLoading(true);
     setError(null);
     try {
-      const loaded = await rallyApi.items(days, projectKey ? projectKey.split(',') : []);
+      const { items: loaded, truncated: cut } = await rallyApi.items(days, projectKey ? projectKey.split(',') : [], tagKey ? tagKey.split('\n') : []);
       setItems(loaded);
+      setTruncated(cut);
       // De paso, las tareas enlazadas se ponen en la categoría que tienen en Rally.
       void applyRallyStates(loaded).catch(() => {});
       setLoadedAt(new Date());
@@ -146,7 +249,7 @@ function RallyItems() {
     } finally {
       setLoading(false);
     }
-  }, [days, projectKey]);
+  }, [days, projectKey, tagKey]);
 
   useEffect(() => {
     setItems(null);
@@ -157,7 +260,7 @@ function RallyItems() {
   }, [load]);
 
   const byId = useMemo(() => tasksByRallyId(tasks), [tasks]);
-  const base = (items ?? []).filter((it) => (!hideDone || !it.done) && (!projectMode || !onlyMine || it.mine)
+  const base = (items ?? []).filter((it) => (!hideDone || !it.done) && (!browsing || !onlyMine || it.mine)
     && (!person || (person === NO_ONE ? !it.assignee : it.assignee === person)));
   const visible = base.filter((it) => kinds.includes(it.kind));
   const people = [...new Set((items ?? []).map((it) => it.assignee).filter((a): a is string => !!a))].sort((a, b) => a.localeCompare(b, 'es'));
@@ -168,6 +271,12 @@ function RallyItems() {
   const show = (it: RallyItem) => { closeDetail(); setOpen(it); };
   const openTask = (task: Task) => { setOpen(null); editTask(task); };
   const toggleProject = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const created = (it: RallyItem, addToGestor: boolean) => {
+    setCreating(false);
+    setItems((list) => [it, ...(list ?? []).filter((x) => x.objectId !== it.objectId)]);
+    if (addToGestor) void add([it]);
+    show(it);
+  };
   const add = (list: RallyItem[]) => repo.batch(list.length === 1 ? `${list[0].id} añadida desde Rally` : `${list.length} añadidas desde Rally`, async () => {
     for (const it of list) await repo.createTask(taskFromRally(it, itemTypes, target));
   });
@@ -178,13 +287,24 @@ function RallyItems() {
       <section className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/40">
         <h2 className="mb-2 text-xs font-semibold tracking-wide text-indigo-700 uppercase dark:text-indigo-300">Qué ver de Rally</h2>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={chipClass(!projectMode)} onClick={() => setSelected([])} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
-          {rallyProjects?.map((p) => (
-            <button key={p.id} type="button" className={chipClass(selected.includes(p.id))} onClick={() => toggleProject(p.id)}>{p.name}</button>
-          ))}
+          <button type="button" className={chipClass(!browsing)} onClick={() => { setSelected([]); setTags([]); }} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
+          {rallyProjects && (
+            <ProjectChips projects={rallyProjects} selected={selected} onToggle={toggleProject} pinned={pinned}
+              onPin={(id) => setPinned(pinned.includes(id) ? pinned.filter((x) => x !== id) : [...pinned, id])} />
+          )}
           {rallyProjects === null && <span className="text-xs text-zinc-400">Cargando proyectos…</span>}
         </div>
-        {projectMode && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Etiquetas</span>
+          <div className="w-full max-w-md">
+            <ValuesField title="Filtrar por etiquetas" value={tags} onChange={setTags} load={rallyApi.tags} recentKey="rally-recent-tags" />
+          </div>
+          <span className="text-xs text-zinc-500">
+            {tagKey ? `Lo que tenga ${tags.length > 1 ? 'alguna de estas etiquetas' : 'esta etiqueta'}, ${projectMode ? 'en los proyectos elegidos' : 'en todo Rally'}.`
+              : 'Para los TS, que se reparten por etiqueta (no tienen Assignee).'}
+          </span>
+        </div>
+        {browsing && (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
             <label className="inline-flex items-center gap-1.5">
               <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> Solo lo mío
@@ -222,6 +342,7 @@ function RallyItems() {
         </select>
         <span className="ml-auto inline-flex items-center gap-2">
           {loadedAt && <span className="text-xs text-zinc-400">Actualizado {loadedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>}
+          <ActionButton icon={<Plus className="size-4" />} onClick={() => setCreating(!!rallyProjects)}>Nuevo en Rally</ActionButton>
           <ActionButton icon={<RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />} onClick={() => void load()}>Actualizar</ActionButton>
         </span>
       </div>
@@ -236,11 +357,21 @@ function RallyItems() {
         <span className="text-xs text-zinc-400">Las tareas añadidas se mueven solas a la categoría que tengan en Rally.</span>
       </div>
 
+      {creating && rallyProjects && (
+        <RallyCreateForm projects={rallyProjects} defaultProjectId={selected.find((id) => rallyProjects.some((p) => p.id === id)) ?? null} defaultTags={tags}
+          onCreated={created} onCancel={() => setCreating(false)} />
+      )}
       {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+      {truncated.length > 0 && (
+        <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          No cabe todo: {truncated.map((t) => `${t.kind} ${t.shown.toLocaleString('es-ES')} de ${t.total.toLocaleString('es-ES')}`).join(' · ')} (se ven las
+          más recientes). Acota con el periodo, las etiquetas o menos proyectos.
+        </p>
+      )}
       {items === null && !error && <p className="text-sm text-zinc-500">Cargando de Rally…</p>}
       {items !== null && visible.length === 0 && (
         <p className="text-sm text-zinc-500">
-          {projectMode ? 'No hay nada en estos proyectos con estos filtros.' : 'No hay nada asignado a ti (Assignee u Owner) con estos filtros. Prueba con el periodo «Todo» o elige un proyecto arriba.'}
+          {tagKey ? 'No hay nada con estas etiquetas y estos filtros. Prueba con el periodo «Todo».' : projectMode ? 'No hay nada en estos proyectos con estos filtros.' : 'No hay nada asignado a ti (Assignee u Owner) con estos filtros. Prueba con el periodo «Todo» o elige un proyecto arriba.'}
         </p>
       )}
 
@@ -251,7 +382,7 @@ function RallyItems() {
         </div>
       )}
       {groupRally(visible, groupBy).map((g) => (
-        <Section key={g.key ?? '-'} collapsible title={`${g.key ?? (groupBy === 'iteration' ? 'Sin iteración' : 'Sin asignar')} · ${g.items.length}`}>
+        <Section key={g.key ?? '-'} collapsible title={`${g.key ?? NO_GROUP[groupBy] ?? 'Sin asignar'} · ${g.items.length}`}>
           {g.items.length === 0 && <p className="py-1 text-xs text-zinc-400">Nada en esta categoría.</p>}
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {g.items.map((it) => {
@@ -271,6 +402,10 @@ function RallyItems() {
                         → {it.mine ? 'Tú' : it.assignee}
                       </span>
                     )}
+                    {groupBy !== 'tag' && it.tags.slice(0, 2).map((t) => (
+                      <span key={t} className={`hidden max-w-28 shrink-0 truncate rounded px-1.5 text-[11px] 2xl:inline ${tags.some((x) => x.name === t) ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`} title={it.tags.join(', ')}>{t}</span>
+                    ))}
+                    {groupBy !== 'tag' && it.tags.length > 2 && <span className="hidden shrink-0 text-[11px] text-zinc-400 2xl:inline" title={it.tags.join(', ')}>+{it.tags.length - 2}</span>}
                     {!projectMode && it.project && <span className="hidden max-w-40 shrink-0 truncate text-xs text-zinc-400 lg:inline" title={it.project}>{it.project}</span>}
                   </span>
                   <span className="hidden w-40 shrink-0 items-center gap-1.5 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" title="Owner en Rally">
