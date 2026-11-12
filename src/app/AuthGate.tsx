@@ -2,12 +2,22 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { repo } from '../data/services';
 import { sync, type SessionState } from '../data/sync';
 
-type Phase = 'loading' | 'down' | 'login' | 'profile' | 'disabled' | 'confirm' | 'recovery' | 'ask-upload' | 'ready';
+type Phase = 'loading' | 'down' | 'login' | 'forgot' | 'profile' | 'disabled' | 'confirm' | 'recovery' | 'ask-upload' | 'ready';
+
+/** Si se vuelve de un enlace de email caducado o ya usado, Supabase lo dice en la dirección (#error_description=…). */
+function linkError(): boolean {
+  const params = new URLSearchParams(location.hash.replace(/^#/, '') || location.search.replace(/^\?/, ''));
+  if (!params.get('error_description') && !params.get('error_code')) return false;
+  history.replaceState(null, '', location.pathname);
+  return true;
+}
+const EXPIRED_LINK = typeof location !== 'undefined' && linkError();
 
 /** Pide sesión antes de abrir la app y, la primera vez en este navegador, decide qué hacer con sus datos. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [counts, setCounts] = useState({ tasks: 0, notes: 0 });
+  const [forgot, setForgot] = useState({ email: '', expired: false });
 
   const open = async () => {
     await sync().start();
@@ -37,7 +47,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Al volver del email de "olvidé mi contraseña", Supabase avisa para pedir la nueva.
     const { data } = sync().supabase.auth.onAuthStateChange((event) => { if (event === 'PASSWORD_RECOVERY') setPhase('recovery'); });
-    void check();
+    if (EXPIRED_LINK) {
+      setForgot({ email: '', expired: true });
+      setPhase('forgot');
+    } else void check();
     return () => data.subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -57,7 +70,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <button type="button" onClick={() => void check()} className={primary}>Reintentar</button>
           </div>
         )}
-        {phase === 'login' && <LoginForm onDone={(s) => void after(s)} />}
+        {phase === 'login' && <LoginForm onDone={(s) => void after(s)} onForgot={(email) => { setForgot({ email, expired: false }); setPhase('forgot'); }} />}
+        {phase === 'forgot' && <ForgotForm initial={forgot.email} expired={forgot.expired} onDone={(s) => void after(s)} onBack={() => setPhase('login')} />}
         {phase === 'profile' && <ProfileForm onDone={(s) => void after(s)} />}
         {phase === 'confirm' && (
           <div className="space-y-3 text-sm">
@@ -110,20 +124,14 @@ function useForm<K extends string>(initial: Record<K, string>) {
   return { form, field, error, info, setInfo, busy, run };
 }
 
-function LoginForm({ onDone }: { onDone: (s: SessionState | 'confirm') => void }) {
+function LoginForm({ onDone, onForgot }: { onDone: (s: SessionState | 'confirm') => void; onForgot: (email: string) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const { form, field, error, info, setInfo, busy, run } = useForm({ login: '', password: '', name: '', code: '' });
+  const { form, field, error, busy, run } = useForm({ login: '', password: '', name: '', code: '' });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => onDone(mode === 'login' ? await sync().login(form.login, form.password) : await sync().register(form)));
   };
-  const forgot = () => void run(async () => {
-    if (!form.login.trim()) throw new Error('Escribe tu email arriba y vuelve a pulsar.');
-    await sync().sendPasswordReset(form.login);
-    setInfo('Te hemos enviado un email para elegir una contraseña nueva.');
-  });
-
   return (
     <form onSubmit={submit} className="space-y-3 text-sm">
       <div className="grid grid-cols-2 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800">
@@ -146,12 +154,11 @@ function LoginForm({ onDone }: { onDone: (s: SessionState | 'confirm') => void }
       </label>
       {mode === 'register' && <CodeField field={field('code')} />}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
-      {info && <p className="text-emerald-700 dark:text-emerald-400">{info}</p>}
       <button type="submit" disabled={busy} className={primary}>
         {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta y entrar'}
       </button>
       {mode === 'login' && (
-        <button type="button" onClick={forgot} className="w-full text-center text-xs text-indigo-600 hover:underline dark:text-indigo-400">
+        <button type="button" onClick={() => onForgot(form.login)} className="w-full text-center text-xs text-indigo-600 hover:underline dark:text-indigo-400">
           ¿Olvidaste la contraseña?
         </button>
       )}
@@ -194,13 +201,96 @@ function ProfileForm({ onDone }: { onDone: (s: SessionState) => void }) {
   );
 }
 
-/** Al volver del email de "olvidé mi contraseña". */
-function RecoveryForm({ onDone }: { onDone: () => void }) {
-  const { field, error, busy, run, form } = useForm({ password: '' });
+const RESEND_SECONDS = 60;
+
+/**
+ * Olvidé mi contraseña: se envía un email con un código y se escribe aquí con la contraseña nueva, sin salir de la
+ * pantalla (el enlace del mismo email también funciona). Si el email no llega, un administrador puede dar una
+ * contraseña provisional.
+ */
+function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; expired: boolean; onDone: (s: SessionState) => void; onBack: () => void }) {
+  const { form, field, error, info, setInfo, busy, run } = useForm({ login: initial, code: '', password: '', repeat: '' });
+  const [sent, setSent] = useState(false);
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait(wait - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  const send = () => void run(async () => {
+    if (!form.login.trim()) throw new Error('Escribe tu email.');
+    await sync().sendPasswordReset(form.login);
+    setSent(true);
+    setWait(RESEND_SECONDS);
+    setInfo(`Te hemos enviado un email a ${form.login.trim()} con un código.`);
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!sent) return send();
+    void run(async () => {
+      if (form.password !== form.repeat) throw new Error('Las dos contraseñas no coinciden.');
+      onDone(await sync().resetWithCode(form.login, form.code, form.password));
+    });
+  };
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void run(async () => { await sync().setNewPassword(form.password); onDone(); }); }} className="space-y-3 text-sm">
+    <form onSubmit={submit} className="space-y-3 text-sm">
+      <p className="font-medium">Recuperar la contraseña</p>
+      {expired && !sent && <p className="text-amber-700 dark:text-amber-400">El enlace del email ha caducado o ya se usó. Pide un código nuevo.</p>}
+      <label className="block space-y-1" htmlFor="auth-login">
+        <span className="text-zinc-600 dark:text-zinc-400">Email</span>
+        <input {...field('login')} required type="email" autoComplete="username" autoCapitalize="none" readOnly={sent} className={input} />
+      </label>
+      {sent && (
+        <>
+          {info && <p className="text-emerald-700 dark:text-emerald-400">{info}</p>}
+          <label className="block space-y-1" htmlFor="auth-code">
+            <span className="text-zinc-600 dark:text-zinc-400">Código del email</span>
+            <input {...field('code')} required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className={`${input} tracking-widest`} />
+            <span className="block text-xs text-zinc-500">Si el email trae un enlace en vez de un código, púlsalo: te traerá aquí para elegir la contraseña.</span>
+          </label>
+          <label className="block space-y-1" htmlFor="auth-password">
+            <span className="text-zinc-600 dark:text-zinc-400">Contraseña nueva</span>
+            <input {...field('password')} required type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo 8 caracteres" className={input} />
+          </label>
+          <label className="block space-y-1" htmlFor="auth-repeat">
+            <span className="text-zinc-600 dark:text-zinc-400">Repítela</span>
+            <input {...field('repeat')} required type="password" minLength={8} autoComplete="new-password" className={input} />
+          </label>
+        </>
+      )}
+      {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
+      <button type="submit" disabled={busy} className={primary}>
+        {busy ? 'Un momento…' : sent ? 'Guardar y entrar' : 'Enviarme un código'}
+      </button>
+      {sent && (
+        <button type="button" disabled={busy || wait > 0} onClick={send} className={secondary}>
+          {wait > 0 ? `Reenviar el código (${wait} s)` : 'Reenviar el código'}
+        </button>
+      )}
+      <p className="text-xs text-zinc-500">
+        ¿No llega? Mira en correo no deseado (lo envía Supabase). Si sigue sin llegar, pide a un administrador una contraseña
+        provisional (Ajustes → Administración).
+      </p>
+      <button type="button" onClick={onBack} className="w-full text-center text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a entrar</button>
+    </form>
+  );
+}
+
+/** Al volver del enlace del email de "olvidé mi contraseña". */
+function RecoveryForm({ onDone }: { onDone: () => void }) {
+  const { field, error, busy, run, form } = useForm({ password: '', repeat: '' });
+  return (
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      void run(async () => {
+        if (form.password !== form.repeat) throw new Error('Las dos contraseñas no coinciden.');
+        await sync().setNewPassword(form.password);
+        onDone();
+      });
+    }} className="space-y-3 text-sm">
       <p>Elige tu contraseña nueva.</p>
-      <input {...field('password')} required type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo 8 caracteres" className={input} />
+      <input {...field('password')} required type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo 8 caracteres" aria-label="Contraseña nueva" className={input} />
+      <input {...field('repeat')} required type="password" minLength={8} autoComplete="new-password" placeholder="Repítela" aria-label="Repite la contraseña" className={input} />
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
       <button type="submit" disabled={busy} className={primary}>{busy ? 'Un momento…' : 'Guardar y entrar'}</button>
     </form>

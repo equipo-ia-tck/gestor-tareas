@@ -65,7 +65,12 @@ function friendly(message: string): string {
   if (/email not confirmed/i.test(message)) return 'Falta confirmar tu email: abre el correo que te ha llegado y vuelve a entrar.';
   if (/user already registered/i.test(message)) return 'Ya hay una cuenta con ese email y la contraseña no coincide. Entra con ella o usa «¿Olvidaste la contraseña?».';
   if (/password should be at least/i.test(message)) return 'La contraseña tiene que tener al menos 8 caracteres.';
+  if (/email rate limit/i.test(message)) return 'Se han enviado demasiados emails (Supabase permite pocos por hora). Pide a un administrador una contraseña provisional.';
   if (/rate limit/i.test(message)) return 'Demasiados intentos seguidos. Espera unos minutos.';
+  const wait = /only request this after (\d+) seconds/i.exec(message);
+  if (wait) return `Espera ${wait[1]} segundos para pedir otro código.`;
+  if (/token has expired|invalid.*token|otp/i.test(message)) return 'El código no es correcto o ha caducado. Pide otro.';
+  if (/should be different from the old/i.test(message)) return 'La contraseña nueva tiene que ser distinta de la anterior.';
   if (/failed to fetch|network/i.test(message)) return 'No hay conexión con la base de datos del equipo.';
   return message;
 }
@@ -170,6 +175,28 @@ export class SyncClient {
     if (error) throw new Error(friendly(error.message));
   }
 
+  /** Con el código del email de recuperación: entra y pone la contraseña nueva, sin depender de abrir el enlace. */
+  async resetWithCode(email: string, code: string, password: string): Promise<SessionState> {
+    const { error } = await this.supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.replace(/\s/g, ''), type: 'recovery' });
+    if (error) throw new Error(friendly(error.message));
+    await this.setNewPassword(password);
+    return this.session();
+  }
+
+  /**
+   * Darse de baja: la base de datos borra lo privado, deja lo de los espacios y elimina la cuenta
+   * (`delete_my_account`). Después se vacía este navegador como al cerrar sesión.
+   */
+  async deleteAccount() {
+    await this.flush().catch(() => undefined);
+    await this.rpc('delete_my_account');
+    this.stop();
+    await this.supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    await this.clearLocal();
+    await this.db.meta.bulkDelete(['sync-user', 'sync-backend', 'sync-cursor', 'sync-owners']);
+    location.reload();
+  }
+
   async setNewPassword(password: string) {
     const { error } = await this.supabase.auth.updateUser({ password });
     if (error) throw new Error(friendly(error.message));
@@ -212,13 +239,8 @@ export class SyncClient {
     return users;
   };
   setDisabled = (userId: string, disabled: boolean) => this.rpc<AdminUser[]>('set_disabled', { p_user: userId, p_value: disabled });
-  /** Sin servidor propio no se pueden crear contraseñas: se envía a la persona el email para elegir una nueva. */
-  resetPassword = async (userId: string) => {
-    const login = (await this.adminData()).users.find((u) => u.id === userId)?.login;
-    if (!login) throw new Error('Esa cuenta no existe.');
-    await this.sendPasswordReset(login);
-    return login;
-  };
+  /** Contraseña provisional (se ve una vez): no depende del email. Cierra las sesiones abiertas de esa cuenta. */
+  setProvisionalPassword = (userId: string) => this.rpc<string>('admin_set_password', { p_user: userId });
   regenerateAdminCode = async () => {
     const code = await this.rpc<string>('regenerate_admin_code');
     this.set({ adminCode: code });

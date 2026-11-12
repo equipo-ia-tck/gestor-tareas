@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Copy, LogOut, RefreshCw, Shield, UserMinus } from 'lucide-react';
+import { Copy, LogOut, RefreshCw, Shield, UserMinus, UserX } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { Popover } from '../../components/ui/Popover';
+import { downloadBackup } from '../../data/backup';
+import { repo } from '../../data/services';
 import { sync, useSync } from '../../data/sync';
 import { PROJECT_COLORS } from '../../domain/types';
 import type { Space } from '../../domain/spaces';
@@ -53,6 +55,7 @@ export function SpacesCard() {
           <button type="button" onClick={() => void sync().logout()} className={button}><LogOut className="size-3.5" />Cerrar sesión</button>
         </div>
         <ChangePassword run={run} />
+        <DeleteAccount login={user?.login ?? ''} />
       </div>
     </section>
   );
@@ -177,6 +180,56 @@ function ChangePassword({ run }: { run: Run }) {
       </label>
       <button type="submit" className={button}>Cambiar contraseña</button>
     </form>
+  );
+}
+
+/** Darse de baja: lo privado se borra, lo de los espacios se queda para el equipo. Antes se descarga una copia. */
+function DeleteAccount({ login }: { login: string }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ok = typed.trim().toLowerCase() === login.toLowerCase();
+  const confirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadBackup(repo);
+      await sync().deleteAccount();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo dar de baja.');
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-4 flex items-center gap-1.5 text-xs text-red-600 hover:underline dark:text-red-400">
+        <UserX className="size-3.5" />Darme de baja
+      </button>
+    );
+  }
+  return (
+    <div className="mt-4 space-y-2 rounded-md border border-red-200 bg-red-50/60 p-3 dark:border-red-900 dark:bg-red-950/30">
+      <p className="font-medium text-red-700 dark:text-red-300">Darme de baja</p>
+      <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-600 dark:text-zinc-400">
+        <li>Se borran tu cuenta y todo lo privado: tareas, notas y proyectos que no están en un espacio, fichas y ajustes.</li>
+        <li>Lo que está en un espacio se queda para el equipo.</li>
+        <li>Si eres la única persona que administra un espacio, pasa a administrarlo otra del espacio.</li>
+        <li>Antes se descarga una copia de tus datos en un archivo. No se puede deshacer.</li>
+      </ul>
+      <label className="block space-y-1" htmlFor="delete-confirm">
+        <span className="block text-xs text-zinc-500">Escribe tu email ({login}) para confirmar</span>
+        <input id="delete-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" className={`${field} w-full max-w-sm`} />
+      </label>
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex gap-1.5">
+        <button type="button" disabled={!ok || busy} onClick={() => void confirm()}
+          className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50">
+          {busy ? 'Dando de baja…' : 'Borrar mi cuenta'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => { setOpen(false); setTyped(''); setError(null); }} className={button}>Cancelar</button>
+      </div>
+    </div>
   );
 }
 

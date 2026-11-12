@@ -1,18 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 /**
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = readFileSync('supabase/migrations/001_equipo.sql', 'utf8');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
   create role anon nologin; create role authenticated nologin;
   create schema auth;
-  create table auth.users (id uuid primary key, email text);
+  create schema extensions;
+  create table auth.users (id uuid primary key, email text, encrypted_password text);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
   create function auth.email() returns text language sql stable as $$ select nullif(current_setting('test.email', true), '') $$;
   grant usage on schema auth to authenticated, anon;
@@ -45,7 +47,7 @@ const visible = async (u: User) => (await as<{ id: string }>(u, `select tbl || '
 const task = (id: string, extra: object = {}) => ({ id, title: id, people: [], project_id: null, my_day: null, remind_at: null, ...extra });
 
 beforeEach(async () => {
-  db = new PGlite();
+  db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(SUPABASE_STUB);
   await db.exec(MIGRATION);
 });
@@ -147,5 +149,47 @@ describe('base de datos del equipo en Supabase', () => {
     await expect(push(marta, [{ tbl: 'tasks', key: 'a', data: task('a') }])).rejects.toThrow(/activa/);
     const code = await rpc(mark, 'regenerate_admin_code');
     expect((await rpc(mark, 'admin_overview') as { adminCode: string }).adminCode).toBe(code);
+  });
+
+  it('darse de baja: borra lo privado, deja lo del espacio y pasa la administración', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const [exc] = await rpc(marta, 'create_space', { p_name: 'Excelencia', p_color: '#f00' }) as { id: string; inviteCode: string }[];
+    const mark = await newUser('mark@vml.com');
+    await rpc(mark, 'register_profile', { p_name: 'Mark Ruiz', p_code: exc.inviteCode });
+    await push(mark, [
+      { tbl: 'projects', key: 'p', data: { id: 'p', name: 'Común', parent_id: null, space_id: exc.id } },
+      { tbl: 'tasks', key: 'comun', data: task('comun', { project_id: 'p' }) },
+      { tbl: 'tasks', key: 'privada', data: task('privada') },
+      { tbl: 'tasks', key: 'mencion', data: task('mencion', { people: ['Marta García'] }) },
+    ]);
+    // Mark no es administrador de la herramienta: puede darse de baja.
+    await rpc(mark, 'delete_my_account');
+    expect(await visible(marta)).toEqual(['projects:p', 'tasks:comun']);
+    expect((await as(marta, 'select 1 from profiles where id = $1', [mark.id]))).toHaveLength(0);
+
+    // Marta es la única administradora y ya no hay más cuentas: también puede; su espacio vacío desaparece.
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: exc.inviteCode });
+    await expect(rpc(marta, 'delete_my_account')).rejects.toThrow(/única persona administradora/);
+    await rpc(marta, 'set_admin', { p_user: ana.id, p_value: true });
+    await rpc(marta, 'delete_my_account');
+    const members = await as<{ role: string }>(ana, 'select role from space_members where space_id = $1', [exc.id]);
+    expect(members).toEqual([{ role: 'admin' }]);
+    expect(await visible(ana)).toEqual(['projects:p', 'tasks:comun']);
+  });
+
+  it('contraseña provisional: solo administradores, y sirve para entrar', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const [exc] = await rpc(marta, 'create_space', { p_name: 'Excelencia', p_color: '#f00' }) as { inviteCode: string }[];
+    const mark = await newUser('mark@vml.com');
+    await rpc(mark, 'register_profile', { p_name: 'Mark Ruiz', p_code: exc.inviteCode });
+    await expect(rpc(mark, 'admin_set_password', { p_user: marta.id })).rejects.toThrow();
+    const password = await rpc(marta, 'admin_set_password', { p_user: mark.id }) as string;
+    expect(password).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    await db.query('reset role');
+    const ok = await db.query<{ ok: boolean }>('select encrypted_password = extensions.crypt($1, encrypted_password) as ok from auth.users where id = $2', [password, mark.id]);
+    expect(ok.rows[0].ok).toBe(true);
   });
 });

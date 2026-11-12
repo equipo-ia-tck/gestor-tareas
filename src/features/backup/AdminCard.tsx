@@ -13,6 +13,7 @@ export function AdminCard() {
   const [spaces, setSpaces] = useState<AdminSpace[]>([]);
   const [adminCode, setAdminCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [provisional, setProvisional] = useState<{ name: string; login: string; password: string } | null>(null);
 
   const load = async () => {
     try {
@@ -76,10 +77,12 @@ export function AdminCard() {
                     {!u.disabled && (u.isAdmin
                       ? <button type="button" className={button} onClick={() => void run(() => sync().setAdmin(u.id, false), `${u.name} ya no es administrador`)}><ShieldOff className="size-3" />Quitar admin</button>
                       : <button type="button" className={button} onClick={() => void run(() => sync().setAdmin(u.id, true), `${u.name} es administrador`)}><Shield className="size-3" />Hacer admin</button>)}
-                    <button type="button" className={button} title="Le llega un email para elegir una contraseña nueva"
-                      onClick={() => void run(async () => { await sync().resetPassword(u.id); }, `Email enviado a ${u.login}`)}>
-                      <KeyRound className="size-3" />Enviar email de contraseña
-                    </button>
+                    {u.id !== user?.id && (
+                      <button type="button" className={button} title="Crea una contraseña nueva para pasársela a la persona (se ve una vez)"
+                        onClick={() => void run(async () => setProvisional({ name: u.name, login: u.login, password: await sync().setProvisionalPassword(u.id) }))}>
+                        <KeyRound className="size-3" />Contraseña provisional
+                      </button>
+                    )}
                     {u.id !== user?.id && (u.disabled
                       ? <button type="button" className={button} onClick={() => void run(() => sync().setDisabled(u.id, false), 'Cuenta reactivada')}><UserCheck className="size-3" />Reactivar</button>
                       : <button type="button" className={button} onClick={() => void run(() => sync().setDisabled(u.id, true), 'Cuenta desactivada')}><Ban className="size-3" />Desactivar</button>)}
@@ -90,6 +93,22 @@ export function AdminCard() {
           </tbody>
         </table>
       </div>
+
+      {provisional && (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+          <p>
+            Contraseña provisional de <strong>{provisional.name}</strong> ({provisional.login}):{' '}
+            <code className="rounded bg-white px-1.5 py-0.5 font-semibold dark:bg-zinc-900">{provisional.password}</code>
+          </p>
+          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+            Solo se ve ahora. Pásasela por Teams; entra con ella y la cambia en Ajustes → Mi cuenta. Sus sesiones abiertas se han cerrado.
+          </p>
+          <div className="mt-2 flex gap-1.5">
+            <button type="button" className={button} onClick={() => void navigator.clipboard.writeText(provisional.password).then(() => toast('Contraseña copiada'), () => undefined)}>Copiar</button>
+            <button type="button" className={button} onClick={() => setProvisional(null)}>Hecho</button>
+          </div>
+        </div>
+      )}
 
       <h3 className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Todos los espacios · {spaces.length}</h3>
       <ul className="mb-4 space-y-1 text-sm">

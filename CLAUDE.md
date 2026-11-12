@@ -596,6 +596,15 @@ espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
   Supabase (`Authorization: Bearer`, `src/data/serverApi.ts`) y `servidor/auth.ts` la comprueba con `rpc/me` (un minuto en
   caché; sin conexión con Supabase responde 503). Las claves de los conectores siguen en `servidor/datos/equipo.sqlite`,
   pero ahora van por el id de Supabase: **cada persona tiene que volver a conectar sus conectores**.
+- **Baja y contraseñas** (`supabase/migrations/002_baja_y_contrasenas.sql`, hay que aplicarla después de la 001):
+  `delete_my_account` (Ajustes → Mi cuenta → "Darme de baja", confirmando con el email y descargando antes una copia) borra
+  lo privado (lo compartido por mención se marca borrado para que se entere quien lo veía), deja lo de los espacios, pasa la
+  administración de un espacio a otro miembro y borra el usuario de Auth; no deja si es la única administradora y hay más
+  cuentas. `admin_set_password` genera una contraseña provisional (pgcrypto en `extensions`, cierra sus sesiones) que el
+  administrador ve una vez: el email gratuito de Supabase solo llega a la organización de Supabase y permite pocos envíos.
+  "¿Olvidaste la contraseña?" pide un **código** del email (`verifyOtp` tipo `recovery`, plantilla con `{{ .Token }}`) y la
+  contraseña nueva en la misma pantalla; el enlace sigue valiendo, y si llega caducado (`#error_description=…`) la app lo
+  explica y pide otro código.
 - **Crear con un espacio elegido** en el filtro de la barra lateral: los proyectos nuevos van a ese espacio y las tareas
   sin proyecto, al proyecto con el nombre del espacio (`repo.defaultSpace`, `spaceProject`; se crea la primera vez con su
   color, en el mismo "Deshacer"). Así no se quedan privadas ni desaparecen de la vista filtrada. No se aplica a la
