@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, Users as Users2, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, Clock, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, Users as Users2, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
 } from 'lucide-react';
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
@@ -19,12 +19,11 @@ import type { ActivityEntry } from '../domain/types';
 import { useApp } from '../app/AppContext';
 import { repo } from '../data/services';
 import { LABEL_COLORS, labelColor } from '../domain/colors';
-import { formatDay, formatMinutes } from '../domain/dates';
+import { formatDay } from '../domain/dates';
 import { describeRule } from '../domain/recurrence';
 import { fuzzyScore, nameKey } from '../domain/text';
 import type { ChecklistItem, Priority, Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
-import { parseEstimateText } from '../parser/fields';
 import { isEditable } from '../features/command/CommandCenter';
 import { Avatar, LabelChip, PRIORITY_COLOR, PRIORITY_LABEL, StatePill } from './ui/Badges';
 import { MenuItem, Popover } from './ui/Popover';
@@ -144,7 +143,6 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
           </Prop>
           <Prop icon={<User className="size-4" />} label="Personas"><PeopleField task={task} /></Prop>
           <Prop icon={<Tag className="size-4" />} label="Etiquetas"><LabelsField task={task} /></Prop>
-          <Prop icon={<Clock className="size-4" />} label="Estimación"><EstimateField task={task} /></Prop>
           {task.recurrence_rule && (
             <Prop icon={<Repeat className="size-4" />} label="Se repite">
               <span className="flex items-center gap-2 px-2">
@@ -356,24 +354,6 @@ function ReleaseField({ task }: { task: Task }) {
         </>
       )}
     </Popover>
-  );
-}
-
-function EstimateField({ task }: { task: Task }) {
-  return (
-    <InlineText
-      initial={task.estimated_minutes ? `${task.estimated_minutes}m` : ''}
-      placeholder="30m, 2h, 1h30…"
-      display={task.estimated_minutes ? formatMinutes(task.estimated_minutes) : <span className="text-zinc-400">Sin estimar</span>}
-      parse={(t) => {
-        const r = parseEstimateText(t);
-        return { ok: r.ok, preview: r.ok ? '' : 'Usa 30m, 2h o 1h30' };
-      }}
-      onSave={(t) => {
-        const r = parseEstimateText(t);
-        if (r.ok && r.value !== task.estimated_minutes) void repo.batch('Estimación cambiada', () => repo.updateTask(task.id, { estimated_minutes: r.value }));
-      }}
-    />
   );
 }
 
