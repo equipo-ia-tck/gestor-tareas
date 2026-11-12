@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { trimOutlookEvents, type OutlookEvent } from '../src/domain/outlookEvents.ts';
 import { ApiError } from './api.ts';
-import type { TeamUser } from './visibility.ts';
+import type { TeamUser } from './auth.ts';
 
 /**
  * Calendario de Outlook/Teams por su enlace ICS publicado (Outlook → Configuración → Calendario → Calendarios

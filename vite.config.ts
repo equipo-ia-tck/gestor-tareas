@@ -35,14 +35,14 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         // Rutas por hash: cualquier navegación sirve index.html desde la caché.
         navigateFallback: 'index.html',
-        // La API del servidor del equipo nunca se sirve desde la caché.
+        // La API del servidor (conectores) nunca se sirve desde la caché.
         navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],
   base: './',
-  // En desarrollo (5173), la API la da el servidor del equipo (npm start, en 4173).
-  server: { proxy: { '/api': 'http://localhost:4173' } },
+  // En desarrollo (5173), los conectores los da el servidor (npm start, 4173; GESTOR_API para otro).
+  server: { proxy: { '/api': process.env.GESTOR_API ?? 'http://localhost:4173' } },
   // App local y cacheada como PWA: ~220 kB gzip es aceptable y no merece trocear el bundle.
   build: { chunkSizeWarningLimit: 1000 },
   test: {

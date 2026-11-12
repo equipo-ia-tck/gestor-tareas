@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
-import type { TeamUser } from './visibility.ts';
+import type { TeamUser } from './auth.ts';
 
 /**
  * Conector de Rally (WSAPI v2) con la clave personal de cada usuario. La clave se guarda solo aquí (nunca vuelve

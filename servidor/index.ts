@@ -1,11 +1,13 @@
-// Servidor del equipo: sirve la app compilada (dist/) y la API (/api) en http://localhost:4173.
-// Los datos se guardan en servidor/datos/equipo.sqlite (fuera de Git).
+// Servidor del equipo: sirve la app compilada (dist/) en http://localhost:4173 y hace de puente con los conectores
+// (Rally, Confluence, calendario, chats y Microsoft List). Los datos y las cuentas del equipo están en Supabase; aquí
+// solo se guardan las claves de los conectores, en servidor/datos/equipo.sqlite (fuera de Git).
 // Uso: `npm start` (compila y arranca). Para abrirlo a la red local: GESTOR_HOST=0.0.0.0 npm start.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { Api, ApiError, type Change } from './api.ts';
+import { ApiError } from './api.ts';
+import { bearerOf, SupabaseAuth, supabaseConfig } from './auth.ts';
 import { Calendar } from './calendar.ts';
 import { Chats } from './chats.ts';
 import { Confluence } from './confluence.ts';
@@ -17,11 +19,10 @@ const DIST = join(ROOT, 'dist');
 const DATA = process.env.GESTOR_DATOS ? resolve(process.env.GESTOR_DATOS) : join(ROOT, 'servidor', 'datos');
 const PORT = Number(process.env.PORT ?? 4173);
 const HOSTS = process.env.GESTOR_HOST ? [process.env.GESTOR_HOST] : ['127.0.0.1', '::1'];
-const COOKIE = 'gestor_sesion';
 
-mkdirSync(join(DATA, 'copias'), { recursive: true });
+mkdirSync(DATA, { recursive: true });
 const db = new DatabaseSync(join(DATA, 'equipo.sqlite'));
-const api = new Api(db);
+const auth = new SupabaseAuth(supabaseConfig(ROOT));
 const rally = new Rally(db);
 const calendar = new Calendar(db);
 const chats = new Chats(db);
@@ -34,15 +35,10 @@ const TYPES: Record<string, string> = {
   '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
-const send = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+const send = (res: ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 };
-
-const cookieOf = (req: IncomingMessage) =>
-  /(?:^|;\s*)gestor_sesion=([a-f0-9]+)/.exec(req.headers.cookie ?? '')?.[1];
-const sessionCookie = (token: string, maxAge = 30 * 86_400) =>
-  `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -62,46 +58,10 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   const route = `${req.method} ${url.pathname}`;
-  if (route === 'POST /api/register' || route === 'POST /api/login') {
-    const body = await readJson(req);
-    const { user, token } = route === 'POST /api/register' ? api.register(body) : api.login(body);
-    return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(token) });
-  }
-  if (route === 'POST /api/logout') {
-    api.logout(cookieOf(req));
-    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
-  }
-  const user = api.userForToken(cookieOf(req));
+  // La sesión es la de Supabase: el servidor solo comprueba quién eres para usar tus conectores.
+  const user = await auth.userFor(bearerOf(req.headers.authorization));
   if (!user) throw new ApiError(401, 'Inicia sesión.');
   switch (route) {
-    case 'GET /api/me': {
-      const admin = api.isAdmin(user);
-      return send(res, 200, { user, team: api.team(), spaces: api.spaces(user), isAdmin: admin, adminCode: admin ? api.teamCode : null });
-    }
-    case 'GET /api/pull':
-      return send(res, 200, {
-        ...api.pull(user, Number(url.searchParams.get('since') ?? 0) || 0), team: api.team(), spaces: api.spaces(user),
-      });
-    case 'POST /api/password':
-      return send(res, 200, api.changePassword(user, await readJson(req)));
-    case 'GET /api/admin':
-      return send(res, 200, { users: api.adminUsers(user), spaces: api.adminSpaces(user), adminCode: api.teamCode });
-    case 'POST /api/admin/role':
-      return send(res, 200, { users: api.setAdmin(user, await readJson(req)) });
-    case 'POST /api/admin/disable':
-      return send(res, 200, { users: api.setDisabled(user, await readJson(req)) });
-    case 'POST /api/admin/password':
-      return send(res, 200, api.resetPassword(user, await readJson(req)));
-    case 'POST /api/admin/code':
-      return send(res, 200, api.regenerateAdminCode(user));
-    case 'POST /api/spaces':
-      return send(res, 200, { spaces: api.createSpace(user, await readJson(req)) });
-    case 'POST /api/spaces/join':
-      return send(res, 200, { spaces: api.joinSpace(user, await readJson(req)) });
-    case 'POST /api/push': {
-      const body = await readJson(req);
-      return send(res, 200, api.push(user, Array.isArray(body.changes) ? (body.changes as Change[]) : []));
-    }
     case 'GET /api/rally':
       return send(res, 200, rally.status(user));
     case 'POST /api/rally/connect':
@@ -235,21 +195,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       const tags = url.searchParams.getAll('tag').filter(Boolean);
       return send(res, 200, await rally.itemsReport(user, Number(url.searchParams.get('days') ?? 90) || 0, projects, tags));
     }
-    case 'POST /api/snapshot': {
-      // Copia de seguridad de lo que había en el navegador antes de vaciarlo (por si acaso).
-      const body = await readJson(req);
-      const file = join(DATA, 'copias', `${user.login}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-      writeFileSync(file, JSON.stringify(body, null, 2));
-      return send(res, 200, { ok: true });
-    }
-  }
-  // Acciones sobre un espacio: /api/spaces/<id>/<acción>
-  const m = /^POST \/api\/spaces\/([\w-]+)\/(update|remove|role|admin-join)$/.exec(route);
-  if (m) {
-    const body = await readJson(req);
-    const spaces = m[2] === 'update' ? api.updateSpace(user, m[1], body) : m[2] === 'remove' ? api.removeMember(user, m[1], body)
-      : m[2] === 'admin-join' ? api.adminJoinSpace(user, m[1]) : api.setRole(user, m[1], body);
-    return send(res, 200, { spaces });
   }
   throw new ApiError(404, 'No existe.');
 }
@@ -290,8 +235,7 @@ for (const host of HOSTS) {
     .listen(PORT, host, () => {
       if (started++) return;
       console.log(`\n✓ Gestor del equipo en http://localhost:${PORT}`);
-      console.log(`  Código de administración (crea cuentas administradoras): ${api.teamCode}`);
-      console.log('  Los compañeros entran con la invitación de su espacio (Ajustes → Espacios).');
+      console.log('  Datos y cuentas en Supabase; aquí, los conectores (Rally, Confluence, calendario, chats, lista).');
       console.log('  Deja esta ventana abierta mientras uséis la app.\n');
     });
 }

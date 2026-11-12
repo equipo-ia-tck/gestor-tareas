@@ -613,6 +613,45 @@ Petición de la usuaria (nov 2026): en vez de una lista de personas, grupos crea
 - **Barra lateral**: sección Grupos con "+", cada grupo plegable con sus personas y destino de arrastre. Sin grupos se ve
   la lista de antes.
 
+## Fase 25: Supabase como base de datos del equipo
+
+Sustituye la base de datos y las cuentas del servidor propio (fases 15, 16 y 18). Lo que esas fases cuentan de quién ve qué,
+espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
+
+- **Esquema** en `supabase/migrations/001_equipo.sql` (se aplica en el editor SQL del proyecto): `profiles`, `spaces`,
+  `space_members`, `app_settings`, `records` (cada registro de Dexie como jsonb, con dueño, versión y borrado) y `overlays`
+  (`my_day` y `remind_at` de cada persona). Leer va por reglas RLS; escribir, solo por funciones `SECURITY DEFINER`
+  (`push_changes`, `me`, `register_profile`, espacios y administración). Probado con PGlite en `tests/supabase.test.ts`.
+- **Cuentas**: Supabase Auth (email y contraseña; confirmación de email opcional; recuperar contraseña por email). La primera
+  cuenta es administradora; las demás entran con la invitación de un espacio. Nunca se usa la clave `service_role` en la
+  app ni en el repositorio: solo la `anon` del `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+- **Sincronización** (`src/data/sync.ts`): los hooks de Dexie marcan lo cambiado y `push_changes` lo sube; se piden los
+  registros con `version` mayor que el cursor, con tiempo real para enterarse al momento y una sincronización completa al
+  cambiar el acceso o cada 10 min. Claves en `meta`: `sync-user`, `sync-backend`, `sync-cursor`, `sync-owners`.
+- **Paso desde el servidor local**: `AuthGate` detecta datos del servidor antiguo, pregunta si subirlos a la cuenta y, antes de
+  vaciar nada, descarga una copia en JSON.
+- **El servidor de Node se queda solo para los conectores** (Rally, Confluence, calendario, chats y Microsoft List), porque
+  guarda claves secretas y lee archivos locales de OneDrive. Ya no tiene cuentas ni sesiones: la app manda su sesión de
+  Supabase (`Authorization: Bearer`, `src/data/serverApi.ts`) y `servidor/auth.ts` la comprueba con `rpc/me` (un minuto en
+  caché; sin conexión con Supabase responde 503). Las claves de los conectores siguen en `servidor/datos/equipo.sqlite`,
+  pero ahora van por el id de Supabase: **cada persona tiene que volver a conectar sus conectores**.
+- **Baja y contraseñas** (`supabase/migrations/002_baja_y_contrasenas.sql`, hay que aplicarla después de la 001):
+  `delete_my_account` (Ajustes → Mi cuenta → "Darme de baja", confirmando con el email y descargando antes una copia) borra
+  lo privado (lo compartido por mención se marca borrado para que se entere quien lo veía), deja lo de los espacios, pasa la
+  administración de un espacio a otro miembro y borra el usuario de Auth; no deja si es la única administradora y hay más
+  cuentas. `admin_set_password` genera una contraseña provisional (pgcrypto en `extensions`, cierra sus sesiones) que el
+  administrador ve una vez: el email gratuito de Supabase solo llega a la organización de Supabase y permite pocos envíos.
+  "¿Olvidaste la contraseña?" pide un **código** del email (`verifyOtp` tipo `recovery`, plantilla con `{{ .Token }}`) y la
+  contraseña nueva en la misma pantalla; el enlace sigue valiendo, y si llega caducado (`#error_description=…`) la app lo
+  explica y pide otro código. **Ojo**: en proyectos gratuitos de Supabase creados desde junio de 2026 la plantilla no se
+  puede editar sin un SMTP propio, así que hasta configurarlo el email solo trae el enlace (que el correo de empresa puede
+  gastar al revisarlo) y lo fiable es la contraseña provisional.
+- **Crear con un espacio elegido** en el filtro de la barra lateral: los proyectos nuevos van a ese espacio y las tareas
+  sin proyecto, al proyecto con el nombre del espacio (`repo.defaultSpace`, `spaceProject`; se crea la primera vez con su
+  color, en el mismo "Deshacer"). Así no se quedan privadas ni desaparecen de la vista filtrada. No se aplica a la
+  siguiente ocurrencia de una recurrente ni a "Añadir desde archivo".
+- Prueba local: `equipo-prueba` (servidor en 4180) y `dev-prueba` (Vite en 5174 con `GESTOR_API=http://localhost:4180`).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -637,6 +676,7 @@ Petición de la usuaria (nov 2026): en vez de una lista de personas, grupos crea
 - [x] Fase 19: conector de Rally (dos sentidos, Accepted, Owner, comentarios y adjuntos)
 - [x] Fase 20: calendario estilo Teams con reuniones de Outlook (Power Automate), agenda por horas y reuniones nuevas
 - [x] Fase 21: chats de Teams en solo lectura (Power Automate) con «→ Tarea»
+- [x] Fase 25: Supabase como base de datos y cuentas; el servidor queda para los conectores
 
 ## Fases
 

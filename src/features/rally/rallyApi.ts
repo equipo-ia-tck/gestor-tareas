@@ -1,17 +1,6 @@
 import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
+import { serverCall as call } from '../../data/serverApi';
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => null);
-  if (json === null) throw new Error('El servidor del equipo no responde.');
-  if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
-  return json as T;
-}
 
 /** Conector de Rally del servidor (`servidor/rally.ts`): la clave nunca llega al navegador. */
 export const rallyApi = {

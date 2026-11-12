@@ -235,3 +235,33 @@ describe('Añadir desde archivo (mergeBackup)', () => {
     expect(await repo.listNotes()).toHaveLength(0);
   });
 });
+
+describe('tareas con un espacio elegido en el filtro', () => {
+  it('sin proyecto van al proyecto del espacio (que se crea una vez)', async () => {
+    repo.defaultSpaceId = 'esp-1';
+    repo.defaultSpace = { id: 'esp-1', name: 'AI Geeks', color: '#10b981' };
+    const a = await repo.createTask({ title: 'una' });
+    const b = await repo.createTask({ title: 'otra' });
+    const projects = await repo.db.projects.toArray();
+    expect(projects).toHaveLength(1);
+    expect(projects[0]).toMatchObject({ name: 'AI Geeks', space_id: 'esp-1', color: '#10b981', parent_id: null });
+    expect(a.project_id).toBe(projects[0].id);
+    expect(b.project_id).toBe(projects[0].id);
+  });
+
+  it('con proyecto o sin espacio elegido no cambia nada', async () => {
+    const own = await repo.createProject('Mío', { space_id: null });
+    repo.defaultSpace = { id: 'esp-1', name: 'AI Geeks', color: '#10b981' };
+    expect((await repo.createTask({ title: 'x', project_id: own.id })).project_id).toBe(own.id);
+    repo.defaultSpace = null;
+    expect((await repo.createTask({ title: 'y' })).project_id).toBeNull();
+  });
+
+  it('un solo deshacer quita la tarea y el proyecto creado', async () => {
+    repo.defaultSpace = { id: 'esp-1', name: 'AI Geeks', color: '#10b981' };
+    await repo.createTask({ title: 'una' });
+    await repo.undo();
+    expect(await repo.db.projects.count()).toBe(0);
+    expect(await repo.db.tasks.count()).toBe(0);
+  });
+});

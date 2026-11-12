@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { parseMsList, parseMsListChanges, type MsListChange, type MsListItem } from '../src/domain/msListParse.ts';
 import { ApiError } from './api.ts';
 import { findGestorFile } from './calendar.ts';
-import type { TeamUser } from './visibility.ts';
+import type { TeamUser } from './auth.ts';
 
 /**
  * Microsoft List (SharePoint) sin permisos de Microsoft, igual que el calendario: un flujo de Power Automate guarda los

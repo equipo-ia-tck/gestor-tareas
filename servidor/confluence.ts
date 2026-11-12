@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ConfluenceStatus, ConfluenceTask } from '../src/domain/confluence.ts';
 import { ApiError } from './api.ts';
 import { htmlToText } from './rally.ts';
-import type { TeamUser } from './visibility.ts';
+import type { TeamUser } from './auth.ts';
 
 /**
  * Conector de Confluence Data Center/Server con el Personal Access Token de cada usuario (cabecera

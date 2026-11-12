@@ -4,7 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { trimTeamsChats, type TeamsChat } from '../src/domain/teamsChats.ts';
 import { ApiError } from './api.ts';
 import { findGestorFile } from './calendar.ts';
-import type { TeamUser } from './visibility.ts';
+import type { TeamUser } from './auth.ts';
 
 /**
  * Chats de Teams (solo lectura), igual que las reuniones: un flujo de Power Automate guarda la respuesta de Microsoft

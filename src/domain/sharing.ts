@@ -4,7 +4,7 @@ import { nameKey } from './text';
 export interface TeamMember { id: string; login: string; name: string }
 
 /**
- * Igual que en el servidor (servidor/visibility.ts): una persona mencionada es una cuenta solo si coincide
+ * Igual que en la base de datos (name_key y mentions_of en supabase/migrations): una persona mencionada es una cuenta solo si coincide
  * su nombre completo o su usuario (email). El nombre de pila no basta, para no compartir con quien no es.
  */
 export function isMember(person: string, u: TeamMember): boolean {

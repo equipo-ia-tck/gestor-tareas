@@ -3,6 +3,7 @@ import { parseIcs, type CalendarEvent } from '../../domain/ics';
 import { outlookToCalendar, type OutlookEvent } from '../../domain/outlookEvents';
 import { nameKey } from '../../domain/text';
 import type { ISODate } from '../../domain/types';
+import { serverCall as call } from '../../data/serverApi';
 
 export interface CalendarStatus {
   /** Enlace ICS publicado (solo disponibilidad en WPP). */
@@ -15,18 +16,6 @@ export interface CalendarStatus {
 /** Hay alguna fuente de reuniones: el archivo del flujo o el enlace ICS. */
 export const hasCalendar = (s: CalendarStatus | null) => !!s && (s.connected || s.file.linked);
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => null);
-  if (json === null) throw new Error('El servidor del equipo no responde.');
-  if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
-  return json as T;
-}
 
 /** Calendario de Outlook del servidor (`servidor/calendar.ts`): el enlace ICS nunca llega al navegador. */
 export const calendarApi = {

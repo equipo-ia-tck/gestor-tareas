@@ -52,7 +52,7 @@ export type HistoryEvent = { type: 'push' | 'undo' | 'redo'; entry: HistoryEntry
 export interface Repository {
   listTasks(): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
-  createTask(input: NewTask): Promise<Task>;
+  createTask(input: NewTask, opts?: { spaceDefault?: boolean }): Promise<Task>;
   updateTask(id: string, patch: TaskPatch): Promise<Task | undefined>;
   setCompleted(id: string, done: boolean): Promise<void>;
   /** Mueve la tarea a un estado de su flujo (y la completa o reabre según la categoría). */
@@ -155,6 +155,8 @@ export class DexieRepository implements Repository {
   readonly db: TasksDB;
   /** Espacio para los proyectos nuevos sin espacio indicado (el del filtro de la barra lateral). */
   defaultSpaceId: string | null = null;
+  /** Nombre y color del espacio del filtro: una tarea sin proyecto creada con él va a su proyecto de espacio. */
+  defaultSpace: { id: string; name: string; color: string } | null = null;
 
   constructor(db: TasksDB = new TasksDB()) {
     this.db = db;
@@ -265,7 +267,16 @@ export class DexieRepository implements Repository {
     return this.db.tasks.get(id);
   }
 
-  async createTask(input: NewTask) {
+  async createTask(input: NewTask, opts: { spaceDefault?: boolean } = {}): Promise<Task> {
+    // Con un espacio elegido en el filtro, una tarea sin proyecto no puede quedarse privada (desaparecería de la vista):
+    // va al proyecto con el nombre del espacio, que se crea si no existe. Un solo "Deshacer" quita las dos cosas.
+    const space = opts.spaceDefault === false ? null : this.defaultSpace;
+    if (space && !input.project_id) {
+      return this.batch('Tarea creada', async () => {
+        const project_id = await this.spaceProject(space);
+        return this.createTask({ ...input, project_id }, { spaceDefault: false });
+      });
+    }
     const ts = now();
     const type = findType(await this.listItemTypes(), input.type_id ?? DEFAULT_TYPE_ID);
     const state = input.state_id ? stateOf([type], { type_id: type.id, state_id: input.state_id, status: 'todo' })
@@ -344,7 +355,7 @@ export class DexieRepository implements Repository {
       await this.patchTask(id, done
         ? { status: 'done', completed_at: now(), state_id: doneState(type).id }
         : { status: 'todo', completed_at: null, state_id: initialState(type).id }, label);
-      if (next) await this.createTask(next);
+      if (next) await this.createTask(next, { spaceDefault: false });
     });
   }
 
@@ -402,6 +413,13 @@ export class DexieRepository implements Repository {
 
   getProject(id: string) {
     return this.db.projects.get(id);
+  }
+
+  /** Proyecto de nivel superior con el nombre del espacio (el sitio de lo que no tiene otro proyecto). */
+  private async spaceProject(space: { id: string; name: string; color: string }) {
+    const found = (await this.db.projects.toArray())
+      .find((p) => !p.archived && !p.parent_id && p.space_id === space.id && nameKey(p.name) === nameKey(space.name));
+    return (found ?? await this.createProject(space.name, { color: space.color, space_id: space.id })).id;
   }
 
   async createProject(name: string, opts: { color?: string; parent_id?: string | null; space_id?: string | null } = {}) {
@@ -820,7 +838,7 @@ export class DexieRepository implements Repository {
           type_id: types.some((x) => x.id === t.type_id) ? t.type_id : DEFAULT_TYPE_ID,
           project_id,
           release_id: t.release_id ? releaseIds.get(t.release_id) ?? null : null,
-        });
+        }, { spaceDefault: false });
         tasks.push(created);
         taskIds.set(t.id, created.id);
         res.tasks++;

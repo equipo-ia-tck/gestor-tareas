@@ -69,7 +69,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const needsAccepted = isAdmin && itemTypes.some((t) => withAcceptedState(t));
   useEffect(() => { if (needsAccepted) void repo.ensureAcceptedStates(); }, [needsAccepted]);
   // Con un espacio elegido en el filtro, los proyectos nuevos (desde cualquier sitio) van a ese espacio.
-  useEffect(() => { repo.defaultSpaceId = spaceFilter === 'all' || spaceFilter === 'personal' ? null : spaceFilter; }, [spaceFilter]);
+  // Y las tareas sin proyecto, al proyecto con el nombre del espacio.
+  const filterSpace = spaces.find((s) => s.id === spaceFilter);
+  useEffect(() => {
+    repo.defaultSpaceId = filterSpace?.id ?? null;
+    repo.defaultSpace = filterSpace ? { id: filterSpace.id, name: filterSpace.name, color: filterSpace.color } : null;
+  }, [filterSpace?.id, filterSpace?.name, filterSpace?.color]);
   const labels = useLabels();
   const releases = useReleases();
   const peopleCards = usePeople();

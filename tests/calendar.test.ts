@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { Api } from '../servidor/api.ts';
+import { Api } from './fakeAccounts.ts';
 import { Calendar, normalizeIcsUrl } from '../servidor/calendar.ts';
 import { parseIcs } from '../src/domain/ics';
 import { nameFromEmail, outlookToCalendar, trimOutlookEvents } from '../src/domain/outlookEvents';

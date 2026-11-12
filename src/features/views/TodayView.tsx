@@ -38,7 +38,7 @@ export function TodayView() {
         </a>
       )}
       <DailySummary />
-      <QuickAdd defaults={{ due_date: today }} placeholder="Añadir para hoy… (#proyecto @persona !1 ~30m)" />
+      <QuickAdd defaults={{ due_date: today }} placeholder="Añadir para hoy… (#proyecto @persona !1)" />
 
       <Section
         title={<span className="inline-flex items-center gap-1.5"><Sun className="size-3.5 text-amber-500" />Mi día · {myDay.length}</span>}

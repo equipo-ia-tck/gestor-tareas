@@ -30,6 +30,19 @@
         "servidor/index.ts"
       ],
       "port": 4180
+    },
+    {
+      "name": "dev-prueba",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "GESTOR_API=http://localhost:4180",
+        "npx",
+        "vite",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
     }
   ]
 }

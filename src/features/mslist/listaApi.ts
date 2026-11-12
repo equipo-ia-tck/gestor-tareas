@@ -1,18 +1,7 @@
 import type { MsListConfig } from '../../domain/msList';
 import type { MsListChange, MsListItem } from '../../domain/msListParse';
+import { serverCall as call } from '../../data/serverApi';
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => null);
-  if (json === null) throw new Error('El servidor del equipo no responde.');
-  if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
-  return json as T;
-}
 
 export interface ListaStatus { linked: boolean; found: boolean }
 export interface ListaData { items: MsListItem[]; updatedAt: string; pending: MsListChange[] }

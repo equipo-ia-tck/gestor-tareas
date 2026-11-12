@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { Api } from '../servidor/api.ts';
+import { Api } from './fakeAccounts.ts';
 import { Confluence, normalizeConfluenceUrl, toConfluenceTask, toIsoDate } from '../servidor/confluence.ts';
 import { linkedConfluenceTask, taskFromConfluence, type ConfluenceTask } from '../src/domain/confluence';
 import { makeTask } from './factories';

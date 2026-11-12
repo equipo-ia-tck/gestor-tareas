@@ -8,16 +8,10 @@ import { useSync } from '../../data/sync';
 import { chatTitle, isUnread, type TeamsChat, type TeamsMessage } from '../../domain/teamsChats';
 import { fold } from '../../domain/text';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
+import { serverCall as call } from '../../data/serverApi';
 
 interface ChatsStatus { linked: boolean; found: boolean }
 
-async function call<T>(method: 'GET' | 'POST', path: string): Promise<T> {
-  const res = await fetch(path, { method, credentials: 'same-origin', headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined, body: method === 'POST' ? '{}' : undefined });
-  const json = await res.json().catch(() => null);
-  if (json === null) throw new Error('El servidor del equipo no responde.');
-  if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
-  return json as T;
-}
 
 /** Chats del servidor (`servidor/chats.ts`). */
 const chatsApi = {
