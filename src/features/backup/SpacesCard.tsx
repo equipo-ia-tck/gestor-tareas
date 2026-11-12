@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Copy, LogOut, RefreshCw, Shield, UserMinus } from 'lucide-react';
 import { useToast } from '../../components/Toast';
+import { Popover } from '../../components/ui/Popover';
 import { sync, useSync } from '../../data/sync';
 import { PROJECT_COLORS } from '../../domain/types';
 import type { Space } from '../../domain/spaces';
@@ -75,7 +76,9 @@ function SpaceItem({ space, run }: { space: Space; run: Run }) {
   return (
     <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="size-3 rounded-full" style={{ background: space.color }} />
+        {admin
+          ? <ColorPicker color={space.color} onPick={(c) => void run(() => sync().updateSpace(space.id, { color: c }), 'Color cambiado')} size="size-3.5" />
+          : <span className="size-3 rounded-full" style={{ background: space.color }} />}
         <strong className="text-sm">{space.name}</strong>
         <span className="text-xs text-zinc-500">{admin ? 'Administras' : 'Miembro'} · {space.members.length} {space.members.length === 1 ? 'persona' : 'personas'}</span>
         <span className="ml-auto flex flex-wrap gap-1.5">
@@ -130,9 +133,7 @@ function CreateSpace({ run }: { run: Run }) {
       <label htmlFor="space-name" className="block text-xs text-zinc-500">Crear un espacio (p. ej. Excelencia, Pagos)</label>
       <div className="flex gap-1.5">
         <input id="space-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del espacio" className={`${field} min-w-0 flex-1`} />
-        <select aria-label="Color" value={color} onChange={(e) => setColor(e.target.value)} className={field} style={{ color }}>
-          {PROJECT_COLORS.map((c) => <option key={c} value={c} style={{ color: c }}>●</option>)}
-        </select>
+        <ColorPicker color={color} onPick={setColor} size="size-8 border border-zinc-200 dark:border-zinc-700" />
         <button type="submit" className={button}>Crear</button>
       </div>
     </form>
@@ -176,5 +177,23 @@ function ChangePassword({ run }: { run: Run }) {
       </label>
       <button type="submit" className={button}>Cambiar contraseña</button>
     </form>
+  );
+}
+
+/** Punto de color que abre la paleta (un <select> no pinta los colores de las opciones en Mac). */
+function ColorPicker({ color, onPick, size }: { color: string; onPick: (c: string) => void; size: string }) {
+  return (
+    <Popover width="w-auto" trigger={(toggle) => (
+      <button type="button" onClick={toggle} title="Color" aria-label="Color" className={`${size} shrink-0 rounded-full`} style={{ background: color }} />
+    )}>
+      {(close) => (
+        <div className="grid grid-cols-5 gap-1.5 p-2">
+          {PROJECT_COLORS.map((c) => (
+            <button key={c} type="button" aria-label={c} onClick={() => { onPick(c); close(); }}
+              className={`size-5 rounded-full ${c === color ? 'ring-2 ring-zinc-900 ring-offset-1 dark:ring-white' : ''}`} style={{ background: c }} />
+          ))}
+        </div>
+      )}
+    </Popover>
   );
 }
