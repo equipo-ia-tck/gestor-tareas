@@ -235,7 +235,7 @@ function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; exp
   return (
     <form onSubmit={submit} className="space-y-3 text-sm">
       <p className="font-medium">Recuperar la contraseña</p>
-      {expired && !sent && <p className="text-amber-700 dark:text-amber-400">El enlace del email ha caducado o ya se usó. Pide un código nuevo.</p>}
+      {expired && !sent && <p className="text-amber-700 dark:text-amber-400">El enlace del email ya no vale: el correo de empresa a veces lo abre antes para revisarlo y lo gasta. Pide un código y escríbelo aquí.</p>}
       <label className="block space-y-1" htmlFor="auth-login">
         <span className="text-zinc-600 dark:text-zinc-400">Email</span>
         <input {...field('login')} required type="email" autoComplete="username" autoCapitalize="none" readOnly={sent} className={input} />
@@ -246,7 +246,7 @@ function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; exp
           <label className="block space-y-1" htmlFor="auth-code">
             <span className="text-zinc-600 dark:text-zinc-400">Código del email</span>
             <input {...field('code')} required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className={`${input} tracking-widest`} />
-            <span className="block text-xs text-zinc-500">Si el email trae un enlace en vez de un código, púlsalo: te traerá aquí para elegir la contraseña.</span>
+            <span className="block text-xs text-zinc-500">Usa el código del último email (al pedir otro, los anteriores dejan de valer). Mejor no pulses el enlace.</span>
           </label>
           <label className="block space-y-1" htmlFor="auth-password">
             <span className="text-zinc-600 dark:text-zinc-400">Contraseña nueva</span>
