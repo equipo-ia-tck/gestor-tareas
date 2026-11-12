@@ -11,7 +11,12 @@ import { findType, stateOf } from '../../domain/workflows';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
-import { useRallyItem } from '../rally/rallyStore';
+import { useRallyItem, useRallyLookup } from '../rally/rallyStore';
+import { moveToRallyColumn, moveToNeedReview } from '../rally/rallyStates';
+import { useToast } from '../../components/Toast';
+import { isRallyId, RALLY_COLUMNS, rallyColumnOf } from '../../domain/rally';
+
+const NEED_REVIEW = 'Need Review';
 
 /** Las completadas hace más de esto no se muestran en la columna "hecho" (para no saturarla). */
 const DONE_VISIBLE_DAYS = 14;
@@ -84,6 +89,54 @@ export function CategoryBoard({ tasks, defaults, showProject = true }: Omit<Prop
     }),
     add: { label, defaults: { ...defaults }, category },
   })), [tasks, itemTypes, today, defaults]);
+  return <BoardColumns columns={columns} showProject={showProject} />;
+}
+
+/**
+ * Tablero «Como en Rally»: las columnas del tablero de Rally en su orden (New, Defined, Blocked, In-Progress, Need Review,
+ * Completed, Accepted; sin To Do ni Desarrollo, que van a la de su grupo). Las tarjetas enlazadas van a su columna de Rally; soltarlas
+ * en otra las mueve allí en Rally (con su comentario) y en el gestor. Las que no están en Rally van por su grupo.
+ */
+export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 'type'>) {
+  const { itemTypes, today } = useApp();
+  const rallyOf = useRallyLookup();
+  const toast = useToast();
+  const columns = useMemo<ColumnDef[]>(() => {
+    const visible = tasks.filter((t) => boardable(t, today));
+    const columnOf = new Map(visible.map((t) => [t.id, rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category)]));
+    return RALLY_COLUMNS.map(({ name, category, color }) => ({
+      id: name,
+      label: name,
+      color,
+      tasks: sortTasks(visible.filter((t) => columnOf.get(t.id) === name)),
+      onDrop: (ids) => {
+        let dropped = ids.map((id) => tasks.find((x) => x.id === id)).filter((t): t is Task => !!t && columnOf.get(t.id) !== name);
+        // Need Review es solo para TS (se abre defecto, se bloquea y se comenta, todo a la vez).
+        if (name === NEED_REVIEW) {
+          const isTs = (t: Task) => (rallyOf(t.external_id)?.kind ?? findType(itemTypes, t.type_id).short?.toUpperCase()) === 'TS';
+          if (dropped.some((t) => !isTs(t))) toast('Solo los TS pueden ir a Need Review');
+          dropped = dropped.filter(isTs);
+          for (const t of dropped) {
+            if (isRallyId(t.external_id) && rallyOf(t.external_id)) void moveToNeedReview(t, toast);
+            else toast(`${t.external_id ?? t.title}: no está en Rally, no se puede llevar a Need Review`);
+          }
+          return;
+        }
+        const inRally = dropped.filter((t) => isRallyId(t.external_id) && rallyOf(t.external_id));
+        for (const t of inRally) void moveToRallyColumn(t, name, category, toast);
+        const local = dropped.filter((t) => !inRally.includes(t));
+        if (!local.length) return;
+        void repo.batch(moveLabel(local.length, name), async () => {
+          for (const t of local) {
+            const state = findType(itemTypes, t.type_id).states.find((st) => st.category === category)
+              ?? (category === 'accepted' ? findType(itemTypes, t.type_id).states.find((st) => st.category === 'done') : undefined);
+            if (state) await repo.setState(t.id, state.id);
+          }
+        });
+      },
+      add: { label: name, defaults: { ...defaults }, category },
+    }));
+  }, [tasks, itemTypes, today, defaults, rallyOf, toast]);
   return <BoardColumns columns={columns} showProject={showProject} />;
 }
 

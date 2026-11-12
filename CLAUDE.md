@@ -173,9 +173,9 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   cubre `^`.
 - **Personas en el título**: el nombre se queda solo detrás de una preposición o conjunción ("a @Diana", "con @Luis");
   suelto ("revisar login @Diana") se quita.
-- **Releases** (`#/releases`, `G R`): agrupadas en pasadas sin publicar, próximas y publicadas/canceladas. Cada tarjeta
-  muestra la cuenta atrás, el progreso (terminadas y bloqueadas) y una barra por tipo con el reparto de estados
-  (`releaseProgress`). Al eliminar una release se quita de sus tareas en un lote deshacible.
+- **Releases**: la pantalla `#/releases` (y `G R`, «Nueva release») se quitó a petición de la usuaria (nov 2026); `#/releases`
+  lleva a Hoy. Las releases siguen como dato: campo del panel, `^release` en la captura, filtro del tablero y calendario.
+  Quedan en `domain/releases.ts` `releaseProgress` y `groupReleases`, con sus tests.
 - **Calendario** (`#/calendar`, `G C`): mes de lunes a domingo (`monthGrid`) con vencimientos y releases; soltar una
   tarea en un día cambia su fecha. El mes visible y "mostrar completadas" se recuerdan en localStorage.
 - **Configurar tipos** (Ajustes → Tipos y estados): nombre, abreviatura, color, plantilla y estados (añadir, renombrar,
@@ -295,8 +295,12 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
   proyecto entero (pendientes, en curso, bloqueadas, atrasadas, hechas en 7 días, notas) y una tarjeta por subproyecto
   directo, más "General" con lo que cuelga del propio proyecto. Cada tarjeta suma sus descendientes y muestra avance,
   estados, sub-subproyectos, tareas abiertas (atrasadas primero, completar, abrir, arrastrar a otra tarjeta), alta rápida
-  con la sintaxis de captura y las últimas notas. **Lista**: agrupada por subproyecto con su ruta. **Tablero**: todos los
-  tipos (`CategoryBoard`) o los estados de un tipo. Debajo, notas por elemento y actas del proyecto (con subproyectos).
+  con la sintaxis de captura y las últimas notas. **Lista**: agrupada por subproyecto con su ruta.
+  **Personas en el tablero** (`ProjectPeople`, `boardPeople`): debajo de las cifras, las personas de las tareas pendientes y
+  el Owner de Rally de las enlazadas, con cuántas tiene cada una; pulsar una deja Lista o Tablero solo con sus tareas (desde
+  Resumen pasa al Tablero) y «ficha» abre su ficha. **Tablero**: el mismo del
+  Tablero general (`BoardControls` + `BoardContent` de `BoardView.tsx`: tipos, filtros, «Como en Rally» con Need Review o por
+  grupo) sobre las tareas del proyecto; filtro en `project-board-filter:<id>`, sin vistas guardadas. Debajo, notas por elemento y actas del proyecto (con subproyectos).
 - **Personas** (`domain/people.ts`, `peopleDirectory`): une las personas de las tareas, las mencionadas con @ en notas y las
   que tienen ficha (por `nameKey`). Se usa en la barra lateral (todas; a partir de 10, "Ver las N") y en la vista Personas.
   En la ficha, cada línea de "Lo que dijo o se habló" tiene "→ Tarea" y "→ Tema" (con la persona y el proyecto de la nota;
@@ -305,7 +309,7 @@ reunión, estado de US (User Stories) y TS (Test Scenarios), releases, quién di
 ## Fase 14: auditoría (menos pantallas, más hábitos)
 
 - **Barra lateral**: Hoy · Bandeja · Tablero · Calendario · Notas; proyectos (con "+" para crear y archivados plegados),
-  personas y "Más" plegado (Revisión semanal, Releases, Registro). Se eliminó la pantalla Proyectos (`#/projects` → Hoy).
+  personas y "Más" plegado (Revisión semanal, Registro). Se eliminó la pantalla Proyectos (`#/projects` → Hoy).
 - **Calendario** con modo Semana/Mes (`calendar-mode` en localStorage); `#/week` abre el calendario en modo semana.
 - **Resumen del día** dentro de Hoy, no encima de todas las vistas.
 - **Mi día** (`Task.my_day: ISODate | null`, sin índice ni migración: zod pone `null`): lista elegida a mano para hoy, que
@@ -446,6 +450,24 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   proyecto, miembros y permisos del proyecto, etiquetas y milestones; en caché 10 min). Las referencias se validan por
   tipo (`/release/123`…). Si el tipo no tiene `c_Assignee`, se reintenta sin él. La ficha de una US/DE sigue teniendo el
   alta rápida de tareas (`NewRallyTask`).
+- **Crear con petición** (`domain/rallyRequest.ts` `parseRallyRequest`, `RallyRequestDialog`): intérprete propio, sin IA ni
+  servicios externos. De una frase saca tipo, nombre (o entre comillas), owner, asignado a, proyecto, estado o columna
+  (`rallyStateOf`: «en curso», «undefined» → Defined…), release, sprint, etiquetas, padre/feature por ID, puntos, Preliminary Estimate («preliminary estimate M», «talla S», «estimación L»
+  sin número), fecha de inicio y fecha fin de una feature (con `parseDateText`), milestones, ready,
+  bloqueada porque…, urgente, color, severidad, prioridad, entorno, descripción y notas; «yo» = `@me`. Lo que no entiende va
+  a `unknown`. La ventana enseña al momento lo entendido; «Rellenar formulario» busca en Rally personas, etiquetas, padre y
+  proyecto (`resolveRequest`) y abre «Nuevo elemento» con `prefill` (estado, release, iteración y campos de defecto se buscan
+  al cargar las opciones) y un aviso con lo que hay que revisar. Nunca crea solo: se pulsa Create.
+  Plantillas (`REQUEST_TEMPLATES`): una por tipo, en la ventana; sin Ready ni Blocked, sin valores de ejemplo que no existen en
+  Rally (sprint, milestones, padre PI, feature, entorno); la feature va en «Discovering»; con «asignado a mí» (la persona de la clave); un test comprueba que cada una se lee
+  entera, así que si se cambia el intérprete o una plantilla, el test avisa.
+  «Modificar plantillas» (`TemplatesEditor`): cada persona tiene las suyas en `settings.rally_templates` (null = las de serie,
+  `requestTemplates`; sin migración, zod pone null), así se sincronizan y entran en las copias. Nombre y frase, orden con
+  flechas o arrastrando por el asa, añadir (también la petición escrita), eliminar y «Volver a las de serie»; debajo de cada
+  frase se ve qué entiende el intérprete.
+- **Pie del alta como en Rally**: Discard (cierra sin crear), Create + New (crea y deja el formulario abierto para el
+  siguiente: vacía nombre, descripción, notas, adjuntos, estimaciones, color y Ready/Blocked, y conserva tipo, proyecto,
+  personas, padre, etiquetas, release, iteración y estados) y Create (crea, cierra y abre su ficha).
 - **Selectores como en Rally** (`RallyPickers.tsx`): Owner/Assignee con «Quick picks» (nadie, tú), miembros del equipo y
   búsqueda en todo Rally (`GET /api/rally/users`, desde 2 letras); «Elegir padre» (Parent, User Story del defecto, Work
   Product de la tarea y Feature) con tipo, proyecto, palabra o ID, release y páginas de 50 (`GET /api/rally/pick`, sobre
@@ -494,6 +516,21 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
   lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no
   cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
+- **Mensaje al marcar Ready** (`RallyMessage`, `POST /api/rally/message`, `messageHtml`): las plantillas de «Preparar mensaje»
+  con las personas buscadas en Rally; cada «@Nombre» elegido se publica como mención de Rally (avisa). «Etiquetar a» añade más.
+- **Enlaces**: `commentHtml` convierte http(s):// y www. en `<a>` (Rally no enlaza el texto plano). Vale para comentarios,
+  mensajes, descripción y notas al crear.
+- **Tablero «Como en Rally»** (`RallyBoard`, por defecto en el Tablero mixto; «Por grupo» vuelve a las categorías,
+  `board-columns`): columnas `RALLY_COLUMNS` en el orden de Rally (New, Defined, Blocked, In-Progress, Need Review, Completed,
+  Accepted; To Do y Desarrollo no, a petición de la usuaria: van a la columna de su grupo). La tarjeta enlazada va a su columna de Rally (`rallyColumnOf`, `useRallyLookup`); sin
+  dato, a la columna «home» de su grupo. Soltarla llama a `moveToRallyColumn`: `move` con `flow` (columna exacta si el
+  proyecto la tiene), misma ventana de comentario y analista, y después la tarea del gestor cambia de grupo sin reenviarse.
+- **TS a Need Review** (`NeedReviewPrompt`, `moveToNeedReview`, `POST /api/rally/need-review`): en el Tablero «Como en Rally»
+  solo los TS entran en Need Review (el resto se rechaza con aviso). Se abre una ventana con buscador de defectos de Rally
+  (`pick` con `types: ['DE']`, que ahora devuelve también `url`) que pone el enlace en «@PO se abre defect <enlace> por errores
+  encontrado en la validación…» + «Analista: @X», y después pide el motivo del bloqueo. Todo es obligatorio y se hace a la vez
+  en el servidor (`needReview`: FlowState Need Review + Blocked + BlockedReason en un solo cambio y después el comentario); el
+  motivo no va a la discusión. Cerrar en cualquier paso cancela todo.
 - **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
   «solo lo mío», ficha lateral con todos los campos, discusión (con caja para comentar) y adjuntos (con subida). La misma ficha
   sale en el panel de una tarea enlazada (`RallyTaskSection`).
@@ -516,6 +553,8 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
 - **Reunión nueva**: doble clic en una hora vacía → `NewMeeting` abre en Teams la reunión rellenada (`teamsMeetingUrl`, enlace
   `l/meeting/new`); se envía allí. Se ve como pendiente (localStorage) hasta que llega del calendario; al llegar se borra para
   siempre, así una reunión eliminada en Teams no reaparece. «Crear acta» desde cualquier reunión (`createMeetingNote`).
+  La ficha de una persona tiene «Nueva reunión» con la misma ventana (`NewMeeting` con `title` e `invite`): «Reunión con X»,
+  hoy a la próxima media hora y la persona como asistente (con el email de su ficha o, si no, el de sus reuniones).
 - **Teams en la app**: los enlaces de teams.microsoft.com se abren como `msteams:` (`useTeamsApp`, Ajustes, activado por defecto),
   sin dejar una pestaña en Chrome.
 

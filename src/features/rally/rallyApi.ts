@@ -18,9 +18,15 @@ export const rallyApi = {
   status: () => call<RallyStatus>('GET', '/api/rally'),
   connect: (apiKey: string, baseUrl: string) => call<RallyStatus>('POST', '/api/rally/connect', { apiKey, baseUrl }),
   disconnect: () => call<RallyStatus>('POST', '/api/rally/disconnect', {}),
-  /** `blockedReason`: al bloquear, el motivo que se escribe en Rally (el texto del comentario). */
-  move: (id: string, category: RallyCategory, dryRun = false, blockedReason?: string) =>
-    call<{ item: RallyItem }>('POST', '/api/rally/move', { id, category, ...(dryRun ? { dryRun } : {}), ...(blockedReason ? { blockedReason } : {}) }).then((r) => r.item),
+  /**
+   * Mueve a la columna de la categoría, o a `flow` (nombre de la columna: «Need Review») si el proyecto la tiene.
+   * `dryRun`: no escribe, solo dice cómo quedaría y el comentario. `blockedReason`: motivo al bloquear.
+   */
+  move: (id: string, category: RallyCategory, opts: { dryRun?: boolean; blockedReason?: string; flow?: string } = {}) =>
+    call<{ item: RallyItem }>('POST', '/api/rally/move', {
+      id, category, ...(opts.dryRun ? { dryRun: true } : {}), ...(opts.blockedReason ? { blockedReason: opts.blockedReason } : {}),
+      ...(opts.flow ? { flow: opts.flow } : {}),
+    }).then((r) => r.item),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
   create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>
@@ -34,6 +40,12 @@ export const rallyApi = {
   /** Botones Ready y Blocked (sin cambiar de columna). `reason`: motivo al bloquear (el texto del comentario). */
   flag: (id: string, change: { ready?: boolean; blocked?: boolean; reason?: string }) =>
     call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => r.item),
+  /** Mensaje en la discusión; las personas de `mentions` que salgan como «@Nombre» se mencionan (avisa por correo). */
+  message: (id: string, text: string, mentions: RallyRef[]) =>
+    call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }),
+  /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO, defecto y analista. */
+  needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string }) =>
+    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input),
   /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
   moveComment: (id: string, text: string, analyst: RallyRef | null) =>
     call<{ text: string; owner: string | null; analyst: string | null }>('POST', '/api/rally/move-comment', { id, text, analyst }),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ExternalLink, Layers, Pin, Plus, RefreshCw, Search, Unplug, X } from 'lucide-react';
+import { ExternalLink, Layers, Pin, Plus, RefreshCw, Search, Unplug, Wand2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ActionButton, Section } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
@@ -15,7 +15,8 @@ import type { Task } from '../../domain/types';
 import { fold } from '../../domain/text';
 import { useWideLayout } from '../../app/Layout';
 import { ViewHeader } from '../views/ViewHeader';
-import { RallyCreateForm } from './RallyCreateForm';
+import { RallyCreateForm, type RallyPrefill } from './RallyCreateForm';
+import { RallyRequestDialog } from './RallyRequestDialog';
 import { RallyDetailPanel } from './RallyDetailPanel';
 import { rallyApi } from './rallyApi';
 import { applyRallyStates } from './rallyStates';
@@ -217,6 +218,9 @@ function RallyItems() {
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
   const [creating, setCreating] = useState(false);
+  // «Crear con petición»: la frase y, ya interpretada, el formulario relleno.
+  const [asking, setAsking] = useState(false);
+  const [prefill, setPrefill] = useState<RallyPrefill | null>(null);
   const closePanel = useCallback(() => setOpen(null), []);
   // Con el panel abierto, la vista usa todo el ancho y el panel es una columna más (como en el Tablero).
   useWideLayout(!!open);
@@ -271,11 +275,12 @@ function RallyItems() {
   const show = (it: RallyItem) => { closeDetail(); setOpen(it); };
   const openTask = (task: Task) => { setOpen(null); editTask(task); };
   const toggleProject = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  const created = (it: RallyItem, addToGestor: boolean) => {
-    setCreating(false);
+  // «Create + New» deja el formulario abierto: el nuevo se suma a la lista sin abrir su ficha.
+  const created = (it: RallyItem, addToGestor: boolean, keepOpen: boolean) => {
+    if (!keepOpen) { setCreating(false); setPrefill(null); }
     setItems((list) => [it, ...(list ?? []).filter((x) => x.objectId !== it.objectId)]);
     if (addToGestor) void add([it]);
-    show(it);
+    if (!keepOpen) show(it);
   };
   const add = (list: RallyItem[]) => repo.batch(list.length === 1 ? `${list[0].id} añadida desde Rally` : `${list.length} añadidas desde Rally`, async () => {
     for (const it of list) await repo.createTask(taskFromRally(it, itemTypes, target));
@@ -342,7 +347,8 @@ function RallyItems() {
         </select>
         <span className="ml-auto inline-flex items-center gap-2">
           {loadedAt && <span className="text-xs text-zinc-400">Actualizado {loadedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>}
-          <ActionButton icon={<Plus className="size-4" />} onClick={() => setCreating(!!rallyProjects)}>Nuevo en Rally</ActionButton>
+          <ActionButton icon={<Plus className="size-4" />} onClick={() => { setPrefill(null); setCreating(!!rallyProjects); }}>Nuevo en Rally</ActionButton>
+          <ActionButton icon={<Wand2 className="size-4" />} onClick={() => setAsking(!!rallyProjects)}>Crear con petición</ActionButton>
           <ActionButton icon={<RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />} onClick={() => void load()}>Actualizar</ActionButton>
         </span>
       </div>
@@ -357,9 +363,13 @@ function RallyItems() {
         <span className="text-xs text-zinc-400">Las tareas añadidas se mueven solas a la categoría que tengan en Rally.</span>
       </div>
 
+      {asking && rallyProjects && (
+        <RallyRequestDialog projects={rallyProjects} defaultProjectId={selected.find((id) => rallyProjects.some((p) => p.id === id)) ?? null}
+          onClose={() => setAsking(false)} onReady={(p) => { setAsking(false); setPrefill(p); setCreating(true); }} />
+      )}
       {creating && rallyProjects && (
-        <RallyCreateForm projects={rallyProjects} defaultProjectId={selected.find((id) => rallyProjects.some((p) => p.id === id)) ?? null} defaultTags={tags}
-          onCreated={created} onCancel={() => setCreating(false)} />
+        <RallyCreateForm key={prefill ? `p:${prefill.source}` : 'nuevo'} prefill={prefill ?? undefined} projects={rallyProjects} defaultProjectId={selected.find((id) => rallyProjects.some((p) => p.id === id)) ?? null} defaultTags={tags}
+          onCreated={created} onCancel={() => { setCreating(false); setPrefill(null); }} />
       )}
       {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       {truncated.length > 0 && (

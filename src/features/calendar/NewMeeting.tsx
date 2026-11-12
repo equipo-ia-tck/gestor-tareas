@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { Video, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
@@ -17,16 +17,24 @@ const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
 /**
  * Reunión nueva de Teams desde el Calendario (doble clic en una hora vacía). No escribe en Outlook: abre en Teams el
  * formulario de reunión ya rellenado y, al enviarlo allí, queda en el calendario real. Mientras llega del calendario,
- * el gestor la muestra como pendiente.
+ * el gestor la muestra como pendiente. También se abre desde la ficha de una persona («Nueva reunión»): `title` y `invite`
+ * vienen ya puestos, y a quien no trae email se le busca entre los contactos por su nombre.
  */
-export function NewMeeting({ date: initialDate, time: initialTime, onClose }: { date: ISODate; time: string; onClose: () => void }) {
+export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], onClose }: {
+  date: ISODate;
+  time: string;
+  title?: string;
+  invite?: { name: string; email?: string | null }[];
+  onClose: () => void;
+}) {
   const { peopleCards, today } = useApp();
   const { events } = useOutlook();
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle);
   const [date, setDate] = useState(initialDate);
   const [time, setTime] = useState(initialTime);
   const [minutes, setMinutes] = useState(30);
-  const [attendees, setAttendees] = useState<{ name: string; email: string }[]>([]);
+  const [attendees, setAttendees] = useState<{ name: string; email: string }[]>(
+    () => invite.filter((p) => p.email && isEmail(p.email)).map((p) => ({ name: p.name, email: p.email!.trim() })));
   const [query, setQuery] = useState('');
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +45,15 @@ export function NewMeeting({ date: initialDate, time: initialTime, onClose }: { 
     () => meetingContacts(events ? outlookToCalendar(events, addDays(today, -60), addDays(today, 60)) : [], peopleCards),
     [events, peopleCards, today],
   );
+  // Invitados sin email en su ficha: el de sus reuniones, si sale con el mismo nombre.
+  const [missing, setMissing] = useState(() => invite.filter((p) => !p.email || !isEmail(p.email)).map((p) => p.name));
+  useEffect(() => {
+    if (!missing.length || !contacts.length) return;
+    const found = missing.map((n) => contacts.find((c) => fold(c.name) === fold(n))).filter((c): c is { name: string; email: string } => !!c);
+    if (!found.length) return;
+    setAttendees((list) => [...list, ...found.filter((c) => !list.some((a) => a.email.toLowerCase() === c.email.toLowerCase()))]);
+    setMissing((m) => m.filter((n) => !found.some((c) => fold(c.name) === fold(n))));
+  }, [contacts, missing]);
   const q = fold(query.trim());
   const suggestions = q
     ? contacts.filter((c) => !attendees.some((a) => a.email.toLowerCase() === c.email.toLowerCase())
@@ -115,6 +132,9 @@ export function NewMeeting({ date: initialDate, time: initialTime, onClose }: { 
           )}
         </div>
 
+        {missing.length > 0 && (
+          <p className="text-xs text-amber-600">Sin email: {missing.join(', ')}. Escríbelo en Asistentes (o ponlo en su ficha).</p>
+        )}
         <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={3} placeholder="Descripción o agenda (opcional)" className={`${field} resize-y`} />
 
         {error && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}

@@ -116,10 +116,18 @@ export function htmlToText(html: string): string {
 
 /** HTML de un comentario escrito en el gestor (texto plano: se escapa y los saltos de línea pasan a `<br>`). */
 export function commentHtml(text: string): string {
-  return text.trim()
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    .replace(/\r?\n/g, '<br />');
+  // Los enlaces van como <a> (si no, Rally los muestra como texto que no se puede pulsar).
+  return text.trim().split(URL_RE).map((part, i) => {
+    if (i % 2 === 0) return escapeHtml(part);
+    const [, url, tail] = /^(.*?)([.,;:!?)\]]*)$/.exec(part)!;
+    const href = escapeHtml(/^www\./i.test(url) ? `https://${url}` : url);
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>${escapeHtml(tail)}`;
+  }).join('').replace(/\r?\n/g, '<br />');
 }
+
+/** Enlaces http(s) y www. dentro de un texto (con paréntesis de captura, para `split`). */
+const URL_RE = /((?:https?:\/\/|www\.)[^\s<>"]+)/gi;
+const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const isHtml = (v: string) => /<\/?[a-z][^>]*>/i.test(v);
 
@@ -204,6 +212,20 @@ export function mentionHtml(m: Mention): string {
 }
 
 /** Comentario de un movimiento: «@PO texto» y, si lo hay, «Analista: @X» en otra línea. */
+/**
+ * Mensaje libre (plantilla del «Mensaje» al marcar Ready) con menciones: cada «@Nombre» de una persona elegida en Rally
+ * pasa a la mención de Rally (la que avisa por correo). Primero los nombres más largos, para que «@Ana» no se coma
+ * «@Ana María».
+ */
+export function messageHtml(text: string, mentions: Mention[]): string {
+  let html = commentHtml(text);
+  const sorted = [...mentions].sort((a, b) => b.name.length - a.name.length);
+  // Marcadores para no volver a sustituir dentro de una mención ya puesta.
+  sorted.forEach((m, i) => { html = html.split(`@${commentHtml(m.name)}`).join(`\u0000${i}\u0000`); });
+  html = html.replace(/\u0000(\d+)\u0000/g, (_, i: string) => mentionHtml(sorted[Number(i)]));
+  return `<p>${html}</p>`;
+}
+
 /** Motivo de bloqueo a partir del comentario: sin saltos de línea y como mucho 256 caracteres. */
 export function blockedReasonText(text: unknown): string | null {
   if (typeof text !== 'string') return null;
@@ -450,7 +472,7 @@ export class Rally {
    * Mueve un elemento a la columna de la categoría. Con `dryRun` no escribe nada: devuelve cómo quedaría y el comentario
    * que tocaría, para que la app pregunte por el analista (y se pueda cancelar) antes de mover de verdad.
    */
-  async move(user: TeamUser, input: { id?: unknown; category?: unknown; dryRun?: unknown; blockedReason?: unknown }): Promise<RallyItem> {
+  async move(user: TeamUser, input: { id?: unknown; category?: unknown; dryRun?: unknown; blockedReason?: unknown; flow?: unknown }): Promise<RallyItem> {
     const a = this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const category = input.category as RallyCategory;
@@ -462,9 +484,13 @@ export class Rally {
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
     const current = toRallyItem({ _type: type, ...o }, a.base_url, a.rally_user_id)!;
+    // Columna concreta del tablero (Tablero «Como en Rally»: Need Review, Defined…); si el proyecto no la tiene, por categoría.
+    const flowWanted = typeof input.flow === 'string' ? input.flow.trim().slice(0, 80) : '';
+    const sameFlow = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const toOtherColumn = !!flowWanted && type !== 'task' && !sameFlow(current.state, flowWanted);
     // Por hacer dentro de Por hacer solo sirve para pasar de New a Defined.
-    const define = category === 'todo' && current.category === 'todo' && isNew(current.state);
-    if (current.category === category && !define) return current;
+    const define = !flowWanted && category === 'todo' && current.category === 'todo' && isNew(current.state);
+    if (current.category === category && !define && !toOtherColumn) return current;
 
     const patch: RallyObject = {};
     let flowName: string | null = null;
@@ -473,8 +499,9 @@ export class Rally {
     } else {
       const projectId = refId(o.Project);
       const flows = projectId ? await this.flowStates(a, projectId) : [];
+      const exact = flowWanted ? flows.find((f) => sameFlow(f.name, flowWanted)) : undefined;
       const targets = define ? ['defined'] : TARGET_FLOW[category];
-      const flow = targets.map((n) => flows.find((f) => f.name.toLowerCase() === n)).find(Boolean);
+      const flow = exact ?? targets.map((n) => flows.find((f) => f.name.toLowerCase() === n)).find(Boolean);
       if (flow) { patch.FlowState = flow.ref; flowName = flow.name; }
       else if (TARGET_SCHEDULE[category]) patch.ScheduleState = TARGET_SCHEDULE[category];
     }
@@ -516,15 +543,60 @@ export class Rally {
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
+    const owner = await this.postMoveComment(a, type, o, text, analyst);
+    return { text, owner, analyst: analyst?.name ?? null };
+  }
+
+  /** Publica «@PO texto» + «Analista: @X» en la discusión de `o`. Devuelve el nombre del Owner mencionado. */
+  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null): Promise<string | null> {
     const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
     const ownerId = refId(ownerRef);
     const owner: Mention | null = ownerRef && ownerId && /^\d+$/.test(ownerId)
       ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : await this.userUuid(a, ownerId) }
       : null;
     const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: await this.userUuid(a, analyst.ref.split('/').pop()!) } : null;
-    const html = moveCommentHtml(text, owner, analystMention);
-    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: html } });
-    return { text, owner: owner?.name ?? null, analyst: analyst?.name ?? null };
+    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: moveCommentHtml(text, owner, analystMention) } });
+    return owner?.name ?? null;
+  }
+
+  /**
+   * TS a Need Review por errores de validación, todo a la vez: columna Need Review, Blocked con su motivo (que no va a la
+   * discusión) y el comentario «@PO se abre defect <enlace>…» + «Analista: @X». Todo es obligatorio: defecto, analista,
+   * comentario y motivo. Solo test sets.
+   */
+  async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown }):
+    Promise<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }> {
+    const a = this.connected(user);
+    const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
+    const entry = kindOfId(id);
+    if (!entry || entry[1].kind !== 'TS') throw new ApiError(400, 'Solo los TS pueden ir a Need Review.');
+    const defectId = String(input.defectId ?? '').replace(/-/g, '').toUpperCase();
+    if (!/^DE\d{1,12}$/.test(defectId)) throw new ApiError(400, 'Elige el defecto que se abre.');
+    const text = String(input.text ?? '').trim();
+    if (!text || text.length > 10_000) throw new ApiError(400, 'Escribe el comentario.');
+    const analyst = parseUserRef(input.analyst);
+    if (!analyst) throw new ApiError(400, 'Elige el analista.');
+    const reason = blockedReasonText(input.reason);
+    if (!reason) throw new ApiError(400, 'Escribe el motivo del bloqueo.');
+    const [type, info] = entry;
+    const [[o], [defect]] = await Promise.all([
+      this.query(a, type, `(FormattedID = "${id}")`),
+      this.query(a, 'defect', `(FormattedID = "${defectId}")`),
+    ]);
+    if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
+    if (!defect) throw new ApiError(404, `${defectId} no existe en Rally.`);
+    const projectId = refId(o.Project);
+    const flows = projectId ? await this.flowStates(a, projectId) : [];
+    const flow = flows.find((f) => f.name.toLowerCase().replace(/[^a-z0-9]/g, '') === 'needreview');
+    if (!flow) throw new ApiError(400, `El proyecto de ${id} no tiene columna Need Review en Rally.`);
+    const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: { FlowState: flow.ref, Blocked: true, BlockedReason: reason } });
+    const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
+    try {
+      const owner = await this.postMoveComment(a, type, o, text, analyst);
+      return { item, owner, analyst: analyst.name };
+    } catch (e) {
+      return { item, owner: null, analyst: analyst.name, commentError: (e as Error).message };
+    }
   }
 
   /**
@@ -552,6 +624,26 @@ export class Rally {
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: patch });
     return toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
+  }
+
+  /** Publica un mensaje en la discusión con las personas elegidas en Rally mencionadas (`messageHtml`). */
+  async messagePost(user: TeamUser, input: { id?: unknown; text?: unknown; mentions?: unknown }): Promise<{ mentioned: string[] }> {
+    const a = this.connected(user);
+    const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
+    const text = String(input.text ?? '').trim();
+    const entry = kindOfId(id);
+    if (!entry || !text || text.length > 10_000) throw new ApiError(400, 'Mensaje de Rally no válido.');
+    const raw = Array.isArray(input.mentions) ? input.mentions.slice(0, 20) : [];
+    const refs = raw.map(parseUserRef);
+    if (refs.some((r) => !r)) throw new ApiError(400, 'Persona no válida.');
+    // Solo las que siguen en el texto (se pueden haber borrado al retocarlo).
+    const used = (refs as RallyRef[]).filter((r, i, all) => text.includes(`@${r.name}`) && all.findIndex((x) => x.ref === r.ref) === i);
+    const [type] = entry;
+    const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
+    if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
+    const mentions = await Promise.all(used.map(async (r) => ({ name: r.name, uuid: await this.userUuid(a, r.ref.split('/').pop()!) })));
+    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: messageHtml(text, mentions) } });
+    return { mentioned: used.map((r) => r.name) };
   }
 
   /** ObjectUUID de un usuario de Rally por su ObjectID (lo necesita la mención para que Rally avise). */
@@ -687,13 +779,17 @@ export class Rally {
     }
     const page = Math.max(1, Math.min(1000, Math.floor(Number(input.page) || 1)));
     const params = new URLSearchParams({
-      types: types.join(','), fetch: 'FormattedID,Name,Project', order: 'CreationDate DESC', pagesize: String(PICK_PAGE), start: String((page - 1) * PICK_PAGE + 1),
+      types: types.join(','), fetch: 'FormattedID,Name,Project,ObjectID', order: 'CreationDate DESC', pagesize: String(PICK_PAGE), start: String((page - 1) * PICK_PAGE + 1),
       ...(conditions.length ? { query: joinQuery(conditions, 'AND') } : {}),
     });
     const result = (await this.get(a.base_url, a.api_key, `/artifact?${params}`)).QueryResult as RallyObject;
     const rows = (result?.Results ?? []) as RallyObject[];
     return {
-      items: rows.map((r) => ({ id: String(r.FormattedID ?? ''), name: String(r.Name ?? ''), project: refName(r.Project) })).filter((r) => r.id),
+      items: rows.map((r) => {
+        const info = KINDS[String(r._type ?? '').toLowerCase()];
+        return { id: String(r.FormattedID ?? ''), name: String(r.Name ?? ''), project: refName(r.Project),
+          ...(info && r.ObjectID != null ? { url: `${a.base_url}/#/detail/${info.path}/${r.ObjectID}` } : {}) };
+      }).filter((r) => r.id),
       total: Number(result?.TotalResultCount ?? rows.length),
     };
   }

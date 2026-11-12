@@ -1,15 +1,16 @@
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { AlertTriangle, Archive, Check, CheckCircle2, Clock, FileText, LayoutGrid, List, KanbanSquare, Pencil, Plus, X } from 'lucide-react';
+import { AlertTriangle, Archive, Users, Check, CheckCircle2, Clock, FileText, LayoutGrid, List, KanbanSquare, Pencil, Plus, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { routeHref } from '../../app/router';
 import { QuickAdd } from '../../components/QuickAdd';
 import { ActionButton, Section, TaskList } from '../../components/TaskList';
-import { AvatarStack, PriorityFlag, StatePill, TypeBadge } from '../../components/ui/Badges';
+import { Avatar, AvatarStack, PriorityFlag, StatePill, TypeBadge } from '../../components/ui/Badges';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import { addDays, formatDay } from '../../domain/dates';
 import { noteExcerpt, sortNotes } from '../../domain/notes';
+import { boardPeople, type BoardPerson } from '../../domain/people';
 import { ancestry, flattenTree, MAX_PROJECT_DEPTH, projectTree, withDescendants } from '../../domain/projects';
 import { isActive, sortTasks } from '../../domain/selectors';
 import { PROJECT_COLORS, type Note, type Project, type Task } from '../../domain/types';
@@ -18,9 +19,11 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
-import { Board, CategoryBoard } from '../board/Board';
+import { BoardContent, BoardControls, useBoardColumns, useBoardFilter } from '../board/BoardView';
+import { EMPTY_FILTER } from '../../domain/filters';
 import { submitCapture } from '../capture/submitCapture';
 import { ItemNotes } from '../notes/ItemNotes';
+import { useRallyOwners } from '../rally/rallyStore';
 import { ViewHeader } from '../views/ViewHeader';
 import { MoveProject, ProjectNotes, ProjectSpace } from '../views/ProjectViews';
 
@@ -36,12 +39,22 @@ export function ProjectView({ id }: { id: string }) {
   useWideLayout(true);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
+  // Persona elegida en «Personas en el tablero» (por proyecto: al cambiar de proyecto se olvida).
+  const [personFilter, setPersonFilter] = useState<{ id: string; name: string } | null>(null);
+  const rallyOwners = useRallyOwners(tasks);
 
   if (!project) return <p className="text-sm text-zinc-500">Proyecto no encontrado.</p>;
 
   const scope = withDescendants(id, allProjects);
   const mine = tasks.filter((t) => t.project_id !== null && scope.has(t.project_id) && t.status !== 'archived');
   const active = mine.filter(isActive);
+  const people = boardPeople(mine, (taskId) => rallyOwners.get(taskId));
+  const chosen = personFilter?.id === id ? people.find((p) => p.name === personFilter.name) ?? null : null;
+  const shown = chosen ? mine.filter((t) => chosen.taskIds.includes(t.id)) : mine;
+  const pickPerson = (p: BoardPerson | null) => {
+    setPersonFilter(p ? { id, name: p.name } : null);
+    if (p && mode === 'summary') setMode('board');
+  };
 
   async function rename(e: FormEvent) {
     e.preventDefault();
@@ -88,15 +101,45 @@ export function ProjectView({ id }: { id: string }) {
         }
       />
       <Stats tasks={mine} notes={notes.filter((n) => !n.deleted_at && ((n.project_id && scope.has(n.project_id)) || (n.task_id && mine.some((t) => t.id === n.task_id))))} today={today} />
+      <ProjectPeople people={people} selected={mode === 'summary' ? null : chosen} onSelect={pickPerson} />
       {mode === 'summary' && <Summary project={project} />}
-      {mode === 'list' && <ProjectList project={project} tasks={mine} />}
-      {mode === 'board' && <ProjectBoard project={project} tasks={mine} hasChildren={scope.size > 1} />}
+      {mode === 'list' && <ProjectList project={project} tasks={shown} />}
+      {mode === 'board' && <ProjectBoard project={project} tasks={shown} scope={scope} />}
       <div className="mt-6">
         <ItemNotes taskIds={new Set(mine.map((t) => t.id))} />
         <ProjectNotes projectIds={scope} projectId={id} />
       </div>
       {active.length === 0 && mode !== 'summary' && <p className="mt-2 text-sm text-zinc-400">No hay nada pendiente en este proyecto.</p>}
     </>
+  );
+}
+
+/**
+ * Personas que salen ahora en las tarjetas pendientes del proyecto (personas de la tarea y Owner de Rally), con cuántas
+ * tiene cada una. Pulsar una deja en Lista o Tablero solo sus tareas (desde Resumen pasa al Tablero); otra vez, todas.
+ * El enlace del nombre lleva a su ficha.
+ */
+function ProjectPeople({ people, selected, onSelect }: { people: BoardPerson[]; selected: BoardPerson | null; onSelect: (p: BoardPerson | null) => void }) {
+  if (!people.length) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 inline-flex items-center gap-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase"><Users className="size-3.5" />Personas en el tablero</span>
+      {people.map((p) => {
+        const on = selected?.name === p.name;
+        return (
+          <span key={p.name} className={`inline-flex items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-sm ${on
+            ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200'
+            : 'border-zinc-200 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}>
+            <button type="button" onClick={() => onSelect(on ? null : p)} aria-pressed={on} title={on ? 'Ver todas las tareas' : `Ver solo las tareas de ${p.name}`}
+              className="inline-flex items-center gap-1.5">
+              <Avatar name={p.name} size={22} />{p.name}<span className="text-xs text-zinc-400">{p.taskIds.length}</span>
+            </button>
+            <a href={routeHref({ view: 'person', name: p.name })} className="text-xs text-zinc-400 hover:text-indigo-600 hover:underline" title={`Ficha de ${p.name}`}>ficha</a>
+          </span>
+        );
+      })}
+      {selected && <button type="button" onClick={() => onSelect(null)} className="ml-1 text-xs text-zinc-500 hover:underline">ver todas</button>}
+    </div>
   );
 }
 
@@ -379,31 +422,18 @@ function ProjectList({ project, tasks }: { project: Project; tasks: Task[] }) {
 }
 
 /** Tablero del proyecto: todos los tipos juntos (por grupo de estado) o los estados de un tipo. */
-function ProjectBoard({ project, tasks, hasChildren }: { project: Project; tasks: Task[]; hasChildren: boolean }) {
-  const { itemTypes } = useApp();
-  const [typeIds, setTypeIds] = usePersistentState<string[]>(`project-board-types:${project.id}`, []);
-  const single = typeIds.length === 1 ? itemTypes.find((t) => t.id === typeIds[0]) : undefined;
-  const visible = typeIds.length ? tasks.filter((t) => typeIds.includes(findType(itemTypes, t.type_id).id)) : tasks;
+/**
+ * Tablero del proyecto: el mismo del Tablero general (tipos, filtros, «Como en Rally» con Need Review y el resto de
+ * columnas de Rally, o por grupo), con las tareas del proyecto y sus subproyectos. El filtro se recuerda por proyecto.
+ */
+function ProjectBoard({ project, tasks, scope }: { project: Project; tasks: Task[]; scope: Set<string> }) {
+  const { filter, set, setStored } = useBoardFilter(`project-board-filter:${project.id}`);
+  const [columnsBy, setColumnsBy] = useBoardColumns();
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        {itemTypes.map((t) => {
-          const on = typeIds.includes(t.id);
-          const n = tasks.filter((x) => x.type_id === t.id && x.status === 'todo').length;
-          return (
-            <button key={t.id} type="button" onClick={() => setTypeIds(on ? typeIds.filter((x) => x !== t.id) : [...typeIds, t.id])}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-sm ${on ? 'font-medium text-white' : 'border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300'}`}
-              style={on ? { background: t.color, borderColor: t.color } : undefined}>
-              {on ? <Check className="size-3.5" /> : <span className="size-2 rounded-full" style={{ background: t.color }} />}{t.name}
-              <span className={on ? 'text-white/80' : 'text-zinc-400'}>{n}</span>
-            </button>
-          );
-        })}
-        {typeIds.length > 0 && <button type="button" onClick={() => setTypeIds([])} className="text-xs text-zinc-500 hover:underline">todos los tipos</button>}
-      </div>
-      {single
-        ? <Board tasks={visible} type={single} defaults={{ project_id: project.id }} showProject={hasChildren} />
-        : <CategoryBoard tasks={visible} defaults={{ project_id: project.id }} showProject={hasChildren} />}
+      <BoardControls tasks={tasks} filter={filter} set={set} reset={() => setStored({ ...EMPTY_FILTER, groupBy: filter.groupBy })}
+        mode="board" columnsBy={columnsBy} setColumnsBy={setColumnsBy} projectIds={scope} />
+      <BoardContent tasks={tasks} filter={filter} mode="board" columnsBy={columnsBy} defaults={{ project_id: project.id }} showProject={scope.size > 1} />
     </>
   );
 }
