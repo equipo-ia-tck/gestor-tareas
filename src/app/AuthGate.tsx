@@ -202,6 +202,8 @@ function ProfileForm({ onDone }: { onDone: (s: SessionState) => void }) {
 }
 
 const RESEND_SECONDS = 60;
+const LAST_EMAIL = 'gestor-tareas:last-recovery-email';
+const lastEmail = () => { try { return localStorage.getItem(LAST_EMAIL) ?? ''; } catch { return ''; } };
 
 /**
  * Olvidé mi contraseña: se envía un email con un código y se escribe aquí con la contraseña nueva, sin salir de la
@@ -209,7 +211,7 @@ const RESEND_SECONDS = 60;
  * contraseña provisional.
  */
 function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; expired: boolean; onDone: (s: SessionState) => void; onBack: () => void }) {
-  const { form, field, error, info, setInfo, busy, run } = useForm({ login: initial, code: '', password: '', repeat: '' });
+  const { form, field, error, info, setInfo, busy, run } = useForm({ login: initial || lastEmail(), code: '', password: '', repeat: '' });
   const [sent, setSent] = useState(false);
   const [wait, setWait] = useState(0);
   useEffect(() => {
@@ -220,6 +222,7 @@ function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; exp
   const send = () => void run(async () => {
     if (!form.login.trim()) throw new Error('Escribe tu email.');
     await sync().sendPasswordReset(form.login);
+    try { localStorage.setItem(LAST_EMAIL, form.login.trim()); } catch { /* sin almacenamiento */ }
     setSent(true);
     setWait(RESEND_SECONDS);
     setInfo(`Te hemos enviado un email a ${form.login.trim()} con un código.`);
