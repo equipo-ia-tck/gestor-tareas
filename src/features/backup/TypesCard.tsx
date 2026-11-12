@@ -12,6 +12,7 @@ const CATEGORIES: { value: StateCategory; label: string }[] = [
   { value: 'doing', label: 'En curso' },
   { value: 'blocked', label: 'Bloqueado' },
   { value: 'done', label: 'Terminado' },
+  { value: 'accepted', label: 'Accepted' },
 ];
 
 const small = 'rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900';

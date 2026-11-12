@@ -15,13 +15,34 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "preview",
-        "--",
-        "--port",
-        "4173",
-        "--strictPort"
+        "servidor"
       ],
       "port": 4173
+    },
+    {
+      "name": "equipo-prueba",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4180",
+        "GESTOR_DATOS=servidor/datos-prueba",
+        "GESTOR_LISTA=servidor/datos-prueba/Gestor/lista.json",
+        "node",
+        "servidor/index.ts"
+      ],
+      "port": 4180
+    },
+    {
+      "name": "dev-prueba",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "GESTOR_API=http://localhost:4180",
+        "npx",
+        "vite",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
     }
   ]
 }

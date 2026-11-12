@@ -341,7 +341,7 @@ Decisión de la usuaria (21 oct 2026): para todo el equipo; todo privado salvo l
 conexión; inicio de sesión provisional hasta que WPP permita "Entrar con Microsoft".
 
 - **Servidor** (`servidor/`, TypeScript ejecutado por Node 24 sin compilar: nada de parameter properties ni enums, imports
-  con `.ts`): `index.ts` sirve `dist/` y la API en `localhost:4173` (sustituye a `vite preview`; `npm start` lo arranca);
+  con `.ts`): `index.ts` sirve `dist/` y la API en `localhost:4173` (sustituye a `vite preview`; `npm start` lo arranca y, si ya había uno nuestro en marcha, lo para y lo vuelve a arrancar);
   `api.ts` (cuentas, sesiones, push/pull, sin HTTP para poder probarla); `visibility.ts` (quién ve qué, funciones puras).
   Base de datos `node:sqlite` en `servidor/datos/equipo.sqlite` (fuera de Git; `GESTOR_DATOS` cambia la carpeta). Sin
   dependencias nuevas.
@@ -427,6 +427,177 @@ Petición de la usuaria (23 oct 2026): ella y Mark administran todo; el resto us
   si lo administran (invitación, miembros).
 - Cuentas desactivadas (`users.disabled`): no pueden entrar y sus sesiones caducan; sus datos se conservan.
 
+## Fase 19: conector de Rally
+
+Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (entrada «Rally» debajo de Notas).
+
+- **Servidor** (`servidor/rally.ts`, WSAPI v2 con cabecera `ZSESSIONID`): la clave de API de cada usuario se guarda solo en
+  la tabla `rally_accounts` y nunca vuelve al navegador. URL por defecto `https://eu1.rallydev.com`. Las consultas van
+  anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
+  (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Crear devuelve `CreateResult` y
+  actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
+- **Crear en Rally** (`rally.create`, `POST /api/rally/create`): User Story, Defect, Defect Suite (`DS`) y Test Set en un
+  proyecto; tareas dentro de una US o un defecto (`WorkProduct`). «Nuevo en Rally» (`RallyCreateForm`) es un panel lateral
+  con el mismo formulario que el «New Item» de Rally: Ready/Blocked, color, Owner, Assignee, proyecto, Schedule State y Flow
+  State (elegir uno mueve el otro; se envía solo FlowState si hay columna), estimación, descripción, padre, etiquetas,
+  release, iteración, milestones, Expedite, feature, adjuntos (se suben después de crear), notas, campos de defecto
+  (Severity, Priority, State, Environment) y los **campos personalizados obligatorios** del tipo. Las opciones salen de
+  `GET /api/rally/form` (`formOptions`: columnas, valores permitidos de la definición del tipo, releases e iteraciones del
+  proyecto, miembros y permisos del proyecto, etiquetas y milestones; en caché 10 min). Las referencias se validan por
+  tipo (`/release/123`…). Si el tipo no tiene `c_Assignee`, se reintenta sin él. La ficha de una US/DE sigue teniendo el
+  alta rápida de tareas (`NewRallyTask`).
+- **Selectores como en Rally** (`RallyPickers.tsx`): Owner/Assignee con «Quick picks» (nadie, tú), miembros del equipo y
+  búsqueda en todo Rally (`GET /api/rally/users`, desde 2 letras); «Elegir padre» (Parent, User Story del defecto, Work
+  Product de la tarea y Feature) con tipo, proyecto, palabra o ID, release y páginas de 50 (`GET /api/rally/pick`, sobre
+  `/artifact?types=…`); «Elegir etiquetas» con recientes (localStorage), casillas que no se mueven al marcar y páginas
+  de 50 buscando en Rally (`GET /api/rally/tags`: hay decenas de miles); Milestones igual, con la lista ya cargada.
+  Las búsquedas limpian comillas y paréntesis (`searchText`). Las ventanas van en portal y su Esc no cierra el panel.
+- **Etiquetas de Rally** (`RallyItem.tags`, de `Tags._tagsNameArray`): los TS no tienen Assignee y se reparten por etiqueta.
+  En «Qué ver de Rally», «Etiquetas» (`rally-tag-filter`) pide a Rally lo que tenga alguna (`Tags.Name = …`): en los
+  proyectos elegidos o, sin proyectos, en todo Rally. «Agrupar por etiqueta» pone un elemento en cada una de las suyas.
+  Al añadir al gestor, las etiquetas pasan a `task.tags` (no se vuelven a sincronizar después).
+- **Proyectos de Rally**: `projects()` los trae todos por páginas de 200 (antes solo la primera página). En la pantalla,
+  `ProjectChips`: fijados (`rally-pinned-projects`, alfiler), elegidos y hasta 10 en total; el resto con el buscador.
+- **Features** (`FE`, `portfolioitem/feature`; su ID empieza por FE o F, `kindOfId`): se ven, se buscan y se añaden al
+  gestor, pero no se mueven desde aquí (su State es un objeto de Rally), igual que los TC. Un Rally sin portfolio items
+  no rompe la carga. **Tope**: hasta 5.000 por tipo (`MAX_PAGES = 25`, páginas de 5 en 5 en paralelo); `itemsReport`
+  devuelve `truncated` y la pantalla avisa para acotar.
+- **Crear features**: tipo «Feature» en «Nuevo elemento». Sin Blocked, Assignee, Schedule/Flow State, Iteration ni
+  Expedite; con State de portfolio = columnas de su Portfolio Kanban (`featureStates`: `/state` por el ObjectID de la definición `PortfolioItem/Feature`, si no por `TypeDef.Name` y por `TypeDef.ElementName`; por defecto la primera; aviso si no se leen), Preliminary Estimate
+  (`/preliminaryestimate`), Planned Start/End Date (se envían a mediodía UTC) y Parent = portfolio item de nivel superior
+  (`/portfolioitem` por FormattedID; el buscador abre en «Todos los proyectos»). Se crea en `/portfolioitem/feature/create`.
+- **Etiquetas por defecto al crear**: si la pantalla Rally tiene etiquetas en el filtro, «Nuevo elemento» (cualquier tipo)
+  las trae ya puestas en Tags (`defaultTags`); se pueden quitar o añadir más.
+- **Asignación**: se usa el campo personalizado `c_Assignee` (el Owner suele ser quien lo pidió). `mine` = Assignee u Owner soy yo.
+- **Categorías** (`rallyCategory`): todo · blocked · doing · done · **accepted**. El gestor tiene ahora la categoría de estado
+  `accepted` (cuenta como completada, `isDoneCategory`); la sesión de un administrador añade el estado «Accepted» a Tarea, US y TS
+  (`repo.ensureAcceptedStates`), y la sincronización lo lleva al equipo. Tablero: Por hacer · Bloqueado · En curso · Hecho · Accepted.
+- **Dos sentidos** (`RallySync`, `rallyStates.ts`): cada 5 min, al volver a la ventana y al abrir Rally, las tareas enlazadas
+  (por `external_id`) pasan a la categoría que tienen en Rally (Rally manda). Al mover una tarea aquí (entrada del historial), se
+  mueve en Rally; no se reenvía lo que viene de Rally (WeakSet) ni al deshacer un movimiento traído de Rally.
+- **Comentario al mover** (`moveComment`, `MOVE_COMMENTS` en `servidor/rally.ts`): antes de mover, `pushToRally` pide `move`
+  con `dryRun` (no escribe; devuelve el estado previsto y en `comment` el texto que toca). Si hay comentario, la app pregunta
+  «¿Quieres marcar analista?» (`AnalystPrompt`, cola en memoria, una ventana por elemento). «Sí» busca en Rally
+  (`searchUsers`, recuerda el último analista) y «Aceptar» mueve y publica; «No quiero marcar analista» mueve y publica solo
+  con el PO. **Cerrar (cruz, Esc o clic fuera) cancela**: no se toca Rally y la tarea vuelve a su estado (`fromStateId` de
+  `rallyPushes`, lote «Movimiento cancelado» que no se reenvía a Rally). El lápiz junto al comentario permite cambiar el texto
+  (Enter termina, Esc solo sale de la edición: `Dialog.onEscape`); el servidor acepta cualquier texto no vacío. `POST /api/rally/move-comment` (`moveCommentPost`) menciona al Owner (el PO) y, en otra línea, «Analista:
+  @X» (`mentionHtml`). **Las menciones tienen que ir como las guarda el editor de Rally**,
+  `<span class="mention" data-mention="<_refObjectUUID>">@Nombre</span>`, o Rally no avisa por correo (un enlace a la ficha
+  se ve igual pero no notifica). El UUID del Owner viene en su referencia; el del analista se pide por ObjectID (`userUuid`). Textos: «Guía definida correctamente» (New → Defined), «Se comienza a trabajar en la guía solicitada» (a En
+  curso), «Guía bloqueada» o «Se finaliza la guía a la espera de validación» (a Completed). Al pasar a Bloqueado se marca
+  siempre el botón Blocked y el texto final del comentario (sin menciones, en una línea, máx. 256) va a BlockedReason en el
+  mismo movimiento (`blockedReason` de `move`, `blockedReasonText`). Accepted y volver atrás no
+  comentan; si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un
+  estado de Por hacer que no sea el primero (Refinada, Diseñado) manda `todo` y el servidor lo lleva a Defined si está en New.
+- **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
+  que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
+  lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no
+  cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
+- **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
+  «solo lo mío», ficha lateral con todos los campos, discusión (con caja para comentar) y adjuntos (con subida). La misma ficha
+  sale en el panel de una tarea enlazada (`RallyTaskSection`).
+- **Owner**: `rallyStore.ts` recuerda en memoria el último estado de cada elemento y los Owners en localStorage. El Tablero muestra
+  «Owned By» y Personas incluye a los Owners de las tareas enlazadas (`rallyOwners`, campo `rally` de `peopleDirectory`). El Owner
+  **no** se escribe en `task.people`: eso compartiría la tarea con la cuenta que se llame igual.
+
+## Fase 20: calendario estilo Teams (Outlook)
+
+- **Fuentes** (`servidor/calendar.ts`): enlace ICS publicado (en WPP solo da la disponibilidad: «Busy»/«Tentative») y, para los
+  títulos, un **flujo de Power Automate** («Obtener vista de calendario de eventos (V3)», −14/+45 días, cada 5 min) que escribe
+  `OneDrive/Gestor/calendario.json`. OneDrive lo sincroniza al Mac y el servidor lo lee de la carpeta local (`findGestorFile`),
+  vinculado a una sola cuenta y releído solo si cambia el mtime. Sin permisos de Microsoft. `outlookEvents.ts` acepta V3 o
+  Graph (horas UTC sin zona → locales, `showAs`, Teams del cuerpo, canceladas fuera). Los archivos que importa el servidor no
+  pueden tener imports de valores sin extensión `.ts`.
+- **Pantalla** (`CalendarView`, `useWideLayout('full')`: ocupa la ventana y solo hace scroll la agenda): minicalendario, «Mis
+  calendarios» (reuniones, tareas, completadas, releases), Hoy, flechas, rango y vista (Día, Semana laboral, Semana, Mes, Lista
+  de la semana). `WeekAgenda` coloca las reuniones por horas (80 px/h, de 9 a 20, `layoutDay` reparte las que se solapan) con las
+  tareas del día arriba; provisionales rayadas como en Teams.
+- **Reunión nueva**: doble clic en una hora vacía → `NewMeeting` abre en Teams la reunión rellenada (`teamsMeetingUrl`, enlace
+  `l/meeting/new`); se envía allí. Se ve como pendiente (localStorage) hasta que llega del calendario; al llegar se borra para
+  siempre, así una reunión eliminada en Teams no reaparece. «Crear acta» desde cualquier reunión (`createMeetingNote`).
+- **Teams en la app**: los enlaces de teams.microsoft.com se abren como `msteams:` (`useTeamsApp`, Ajustes, activado por defecto),
+  sin dejar una pestaña en Chrome.
+
+## Fase 21: chats de Teams (solo lectura)
+
+- Mismo patrón que el calendario: un flujo con «Enviar una solicitud HTTP de Microsoft Graph» (solo admite rutas `me`, `users`
+  o `teams`: `/me/chats?$expand=lastMessagePreview&$top=20` y `/me/chats/{id}/messages?$top=20` para los 10 más recientes) escribe
+  `OneDrive/Gestor/chats.json`; `servidor/chats.ts` lo lee. `teamsChats.ts` acepta `{ value }`, `[chat]` o `[{ chat, messages }]`.
+- Pantalla `#/chats`: lista con último mensaje y no leídos (`viewpoint.lastMessageReadDateTime`), conversación, «Responder en
+  Teams» y «→ Tarea». «Actualizado hace X» por el mtime. Los mensajes no se escriben en el registro del servidor.
+- Chat fluido o escribir desde el gestor necesitaría Microsoft Graph con una app registrada en Entra ID (IT).
+
+## Fase 22: conector de Confluence (Data Center)
+
+- **Servidor** (`servidor/confluence.ts`): Personal Access Token de cada usuario (`Authorization: Bearer`), guardado solo en
+  `confluence_accounts`. `connect` comprueba `/rest/api/user/current` (un token malo deja «anónimo» con 200). `tasks` trae
+  las tareas (casillas de las páginas) asignadas con `/rest/api/inlinetasks/search` (`assignee` = userKey, de 100 en 100) y
+  añade título, espacio y enlace de su página con CQL `id in (…)`. Solo lectura por ahora.
+- **Pantalla** `#/confluence` (debajo de Rally): filtro por texto y espacio, completadas opcionales, «Añadir al gestor»
+  (`taskFromConfluence`: primera línea como título, fecha, enlace a la página, `external_id = CF-<id>`).
+- **Ojo**: el Confluence de CaixaBank (`confluence.cloud.lacaixa.es/confluence`) solo es accesible desde su red (escritorio
+  virtual). Desde el Mac el nombre no se resuelve y la pantalla lo explica; funcionará solo donde el servidor llegue a esa
+  dirección. No se debe saltar ese aislamiento (túneles, sacar datos del escritorio virtual).
+
+## Fase 23: Microsoft List por Power Automate (sin permisos de Microsoft)
+
+IT de WPP no registra apps en Entra ID para herramientas propias (nov 2026), así que va como el calendario.
+
+- **Leer** (`servidor/msList.ts`, `domain/msListParse.ts` sin imports de valores): un flujo («Obtener elementos» de SharePoint,
+  cada 5 min) guarda `OneDrive/Gestor/lista.json` (`GESTOR_LISTA` lo cambia). Se vincula a una cuenta y se relee al cambiar el
+  mtime, como el calendario. `parseMsList` convierte opciones, personas, listas y fechas y quita las columnas internas;
+  `columnLabel` descodifica `_x0020_`, `_x00ed_`…
+- **Escribir**: el servidor apunta cada cambio en `OneDrive/Gestor/cambios/lista-cambios.json` (`{ cambios: [{ id, campo, valor,
+  titulo, at }] }`, carpeta aparte para no disparar el segundo flujo con cada exportación; escrito con temporal + renombrar).
+  Un segundo flujo («Cuando se modifica un archivo» → «Actualizar elemento») lo aplica. `pendingChanges` borra los que la lista
+  ya refleja y `withPending` devuelve los elementos con el valor nuevo, así la siguiente exportación no deshace un cambio.
+- **En el gestor** (`domain/msList.ts`, `features/mslist/`): pantalla `#/lista` (debajo de Rally) con columna de estado
+  (se adivina, `guessStatusColumn`) y correspondencia valor → categoría (`guessCategory`, editable en «Estados»; en
+  localStorage `gestor-tareas:lista-config`). Tareas enlazadas por `external_id = LS-<id>`. `ListaSync` (cada 2 min): la lista
+  manda (`listMoves`); al mover una tarea aquí, `listPushes` + `valueForCategory` (primer valor de esa categoría) apuntan el
+  cambio. Tarda unos minutos en cada sentido.
+
+## Fase 24: grupos de personas
+
+Petición de la usuaria (nov 2026): en vez de una lista de personas, grupos creados por ella con cada persona dentro.
+
+- **Datos**: `settings.groups` (`PersonGroup`: id, nombre, color; el orden de la lista es el de pantalla) y `Person.group_id`
+  en la ficha (opcional, sin migración). Así entran en la sincronización (tablas personales) y en las copias sin tocar el
+  servidor. Una persona está en un solo grupo; un `group_id` que ya no existe cuenta como "Sin grupo" (`groupOf`).
+- `repo.setPersonGroup` crea la ficha si hace falta y entra en el historial; `savePerson` ahora conserva los campos que no
+  recibe (editar el rol no saca a nadie de su grupo). Crear, renombrar, recolorear, reordenar y eliminar grupos cambia los
+  ajustes (sin deshacer); al eliminar un grupo sus personas pasan a "Sin grupo" en un lote deshacible.
+- **Pantalla Grupos** (`#/people`, `PeopleView`): alta de grupos, un bloque por grupo (color, nombre editable, subir/bajar,
+  eliminar) y "Sin grupo" al final. Las tarjetas se arrastran entre bloques (`PERSON_MIME`, `features/views/groups.tsx`)
+  o se cambian con `GroupPicker`, que también está en la ficha de la persona y permite crear un grupo al vuelo.
+- **Barra lateral**: sección Grupos con "+", cada grupo plegable con sus personas y destino de arrastre. Sin grupos se ve
+  la lista de antes.
+
+## Fase 25: Supabase como base de datos del equipo
+
+Sustituye la base de datos y las cuentas del servidor propio (fases 15, 16 y 18). Lo que esas fases cuentan de quién ve qué,
+espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
+
+- **Esquema** en `supabase/migrations/001_equipo.sql` (se aplica en el editor SQL del proyecto): `profiles`, `spaces`,
+  `space_members`, `app_settings`, `records` (cada registro de Dexie como jsonb, con dueño, versión y borrado) y `overlays`
+  (`my_day` y `remind_at` de cada persona). Leer va por reglas RLS; escribir, solo por funciones `SECURITY DEFINER`
+  (`push_changes`, `me`, `register_profile`, espacios y administración). Probado con PGlite en `tests/supabase.test.ts`.
+- **Cuentas**: Supabase Auth (email y contraseña; confirmación de email opcional; recuperar contraseña por email). La primera
+  cuenta es administradora; las demás entran con la invitación de un espacio. Nunca se usa la clave `service_role` en la
+  app ni en el repositorio: solo la `anon` del `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+- **Sincronización** (`src/data/sync.ts`): los hooks de Dexie marcan lo cambiado y `push_changes` lo sube; se piden los
+  registros con `version` mayor que el cursor, con tiempo real para enterarse al momento y una sincronización completa al
+  cambiar el acceso o cada 10 min. Claves en `meta`: `sync-user`, `sync-backend`, `sync-cursor`, `sync-owners`.
+- **Paso desde el servidor local**: `AuthGate` detecta datos del servidor antiguo, pregunta si subirlos a la cuenta y, antes de
+  vaciar nada, descarga una copia en JSON.
+- **El servidor de Node se queda solo para los conectores** (Rally, Confluence, calendario, chats y Microsoft List), porque
+  guarda claves secretas y lee archivos locales de OneDrive. Ya no tiene cuentas ni sesiones: la app manda su sesión de
+  Supabase (`Authorization: Bearer`, `src/data/serverApi.ts`) y `servidor/auth.ts` la comprueba con `rpc/me` (un minuto en
+  caché; sin conexión con Supabase responde 503). Las claves de los conectores siguen en `servidor/datos/equipo.sqlite`,
+  pero ahora van por el id de Supabase: **cada persona tiene que volver a conectar sus conectores**.
+- Prueba local: `equipo-prueba` (servidor en 4180) y `dev-prueba` (Vite en 5174 con `GESTOR_API=http://localhost:4180`).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -448,6 +619,10 @@ Petición de la usuaria (23 oct 2026): ella y Mark administran todo; el resto us
 - [x] Fase 16: espacios de equipo (miembros, invitaciones, proyectos compartidos, filtro por espacio, menciones exactas)
 - [x] Fase 17: notas con formato (sin Markdown a la vista), proyecto más claro, guía de captura, IDs de Rally
 - [x] Fase 18: roles de administrador y usuario, panel de administración y cambio de contraseña
+- [x] Fase 19: conector de Rally (dos sentidos, Accepted, Owner, comentarios y adjuntos)
+- [x] Fase 20: calendario estilo Teams con reuniones de Outlook (Power Automate), agenda por horas y reuniones nuevas
+- [x] Fase 21: chats de Teams en solo lectura (Power Automate) con «→ Tarea»
+- [x] Fase 25: Supabase como base de datos y cuentas; el servidor queda para los conectores
 
 ## Fases
 

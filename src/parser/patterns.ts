@@ -215,7 +215,7 @@ export const SYMBOL_PATTERNS = {
   tag: /(?<!\S)\+([\p{L}\p{N}_\-]*[\p{L}\p{N}_])/gu,
   // Clave de Jira/Xray/ADO en mayúsculas: "US-1234", "QA2-17"; y las de Rally sin guion ("US1764574",
   // "TS92615", "DE125701", "TA123", "TC456", "F789"). Las minúsculas ("covid-19") no cuentan. El grupo 1 es el prefijo.
-  key: /(?<![\p{L}\p{N}_\-])((?:US|TS|DE|TA|TC|F)(?=\d{3,9}(?![\p{L}\p{N}_\-]))|[A-Z][A-Z0-9]{0,9}(?=-\d{1,7}(?![\p{L}\p{N}_\-])))-?\d{1,9}(?![\p{L}\p{N}_\-])/gu,
+  key: /(?<![\p{L}\p{N}_\-])((?:US|TS|DE|DS|TA|TC|FE|F)(?=\d{3,9}(?![\p{L}\p{N}_\-]))|[A-Z][A-Z0-9]{0,9}(?=-\d{1,7}(?![\p{L}\p{N}_\-])))-?\d{1,9}(?![\p{L}\p{N}_\-])/gu,
   release: /(?<!\S)\^([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu,
 };
 

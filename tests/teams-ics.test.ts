@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseIcs } from '../src/domain/ics';
 import { notesByTask, notesForTask } from '../src/domain/notes';
-import { findTeamsLink, meetingSummary, teamsChatUrl } from '../src/domain/teams';
+import { findTeamsLink, meetingContacts, meetingSummary, teamsAppUrl, teamsChatUrl, teamsMeetingUrl } from '../src/domain/teams';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -114,4 +114,30 @@ describe('archivo .ics', () => {
     expect(events.map((x) => x.title)).not.toContain('Cancelada');
     expect(events.map((x) => x.title)).not.toContain('Antigua');
   });
+});
+
+describe('reunión nueva en Teams', () => {
+  it('enlace con título, inicio y fin con zona horaria, asistentes válidos y descripción', () => {
+    const url = new URL(teamsMeetingUrl({ title: 'Revisión', date: '2026-10-29', time: '10:30', minutes: 45, attendees: ['ana@empresa.com', 'no-es-email'], content: 'Agenda' }));
+    expect(url.origin + url.pathname).toBe('https://teams.microsoft.com/l/meeting/new');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      subject: 'Revisión', startTime: '2026-10-29T10:30:00+01:00', endTime: '2026-10-29T11:15:00+01:00', attendees: 'ana@empresa.com', content: 'Agenda',
+    });
+    // En verano, +02:00.
+    expect(new URL(teamsMeetingUrl({ title: '', date: '2026-07-01', time: '09:00', minutes: 30, attendees: [] })).searchParams.get('startTime')).toBe('2026-07-01T09:00:00+02:00');
+  });
+
+  it('contactos de las reuniones y las fichas, por frecuencia y sin repetir email', () => {
+    const meetings = [
+      { attendees: [{ name: 'Ana López', email: 'ana@empresa.com' }, { name: 'Luis', email: 'luis@empresa.com' }] },
+      { attendees: [{ name: 'Ana', email: 'ANA@empresa.com' }, { name: 'Sala 3', email: 'sala' }] },
+    ];
+    expect(meetingContacts(meetings, [{ name: 'Diana', email: 'diana@empresa.com' }, { name: 'Sin email' }]).map((c) => c.email))
+      .toEqual(['ana@empresa.com', 'luis@empresa.com', 'diana@empresa.com']);
+  });
+});
+
+it('los enlaces de teams.microsoft.com se abren en la app (msteams:)', () => {
+  expect(teamsAppUrl('https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d')).toBe('msteams:/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d');
+  expect(teamsAppUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
 });

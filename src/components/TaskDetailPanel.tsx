@@ -5,6 +5,7 @@ import {
 import { externalUrl, releaseCountdown } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
 import { TaskNotes } from '../features/notes/TaskNotes';
+import { RallyTaskSection } from '../features/rally/RallyTaskSection';
 import { MessageButton } from '../features/templates/MessageComposer';
 import { useSync } from '../data/sync';
 import { shareInfo } from '../domain/sharing';
@@ -41,8 +42,21 @@ export function TaskDetailPanel() {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape' && !e.defaultPrevented && !isEditable(e.target) && !document.querySelector('[role="dialog"]')) closeDetail();
     };
+    // Clic fuera: se cierra. No cuenta lo que abre otra tarea (filas, tarjetas, Rally), lo que pertenece al panel aunque
+    // se dibuje fuera (desplegables, diálogos), los avisos, la barra de selección ni la barra de scroll.
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!(target instanceof Element) || !target.isConnected) return;
+      if (target.closest('[data-task-panel], [data-task-id], [data-opens-task], [data-rally-row], [data-popover], [role="dialog"], [data-keep-panel]')) return;
+      if (e.offsetX > target.clientWidth || e.offsetY > target.clientHeight) return; // barra de scroll
+      closeDetail();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
   }, [closeDetail]);
 
   if (!task) return null;
@@ -57,6 +71,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
 
   return (
     <aside
+      data-task-panel
       aria-label="Detalle de la tarea"
       // Esc dentro de un campo: primero sale del campo; un segundo Esc cierra el panel.
       onKeyDown={(e) => { if (e.key === 'Escape' && isEditable(e.target)) (e.target as HTMLElement).blur(); }}
@@ -140,6 +155,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
           )}
         </dl>
 
+        <RallyTaskSection key={task.id} task={task} />
         <Section icon={<CheckSquare className="size-4" />} title="Pasos"><Checklist task={task} /></Section>
         <Section icon={<MessageSquareText className="size-4" />} title={`Notas · ${notesForTask(task.id, notes).length}`}>
           <NotesField task={task} />

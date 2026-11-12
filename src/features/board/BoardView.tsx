@@ -16,9 +16,10 @@ import { Board, CategoryBoard } from './Board';
 
 const CATEGORIES: { value: StateCategory; label: string; color: string }[] = [
   { value: 'todo', label: 'Por hacer', color: '#94a3b8' },
-  { value: 'doing', label: 'En curso', color: '#3b82f6' },
   { value: 'blocked', label: 'Bloqueado', color: '#ef4444' },
+  { value: 'doing', label: 'En curso', color: '#3b82f6' },
   { value: 'done', label: 'Terminado', color: '#22c55e' },
+  { value: 'accepted', label: 'Accepted', color: '#047857' },
 ];
 const DUE: { value: DueFilter; label: string }[] = [
   { value: 'any', label: 'Cualquier fecha' }, { value: 'overdue', label: 'Atrasadas' }, { value: 'today', label: 'Hoy' },

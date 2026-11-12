@@ -16,7 +16,7 @@ export function BulkBar() {
   const anchorId = focused && selected.has(focused) ? focused : targets[0].id;
 
   return (
-    <div className="fixed inset-x-0 bottom-16 z-30 flex justify-center px-4" onClick={(e) => e.stopPropagation()}>
+    <div data-keep-panel className="fixed inset-x-0 bottom-16 z-30 flex justify-center px-4" onClick={(e) => e.stopPropagation()}>
       <div role="toolbar" aria-label="Acciones en bloque"
         className="flex flex-wrap items-center gap-1 rounded-xl bg-zinc-900 px-3 py-1.5 text-sm text-white shadow-xl dark:bg-zinc-100 dark:text-zinc-900">
         <span className="mr-2 font-medium">{targets.length} seleccionadas</span>

@@ -5,7 +5,11 @@ import { QuickAdd } from '../../components/QuickAdd';
 import { Section, TaskList } from '../../components/TaskList';
 import { addDays, formatDay, formatMinutes, isoWeek, mondayOf, parseISODate, weekdayName } from '../../domain/dates';
 import { overdueTasks, sortTasks, weekPlan } from '../../domain/selectors';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { useTaskActions } from '../../hooks/useTaskActions';
+import { MeetingItem, OutlookControls } from '../calendar/Meetings';
+import { useMeetings } from '../calendar/outlook';
+import type { ISODate } from '../../domain/types';
 import { LoadBar } from './LoadBar';
 import { ViewHeader } from './ViewHeader';
 
@@ -22,6 +26,10 @@ export function WeekView() {
   const totalCap = plan.reduce((s, d) => s + d.capacity, 0);
   const isCurrent = start === mondayOf(today);
   const end = addDays(start, 6);
+  // Lo completado ese día también se ve (tachado), para saber cómo fue la semana.
+  const doneOn = (date: ISODate) => sortTasks(tasks.filter((t) => t.status === 'done' && !t.deleted_at && t.due_date === date));
+  const [showMeetings, setShowMeetings] = usePersistentState('calendar-meetings', true);
+  const meetings = useMeetings(start, end);
 
   return (
     <>
@@ -30,6 +38,7 @@ export function WeekView() {
         subtitle={`Semana ${isoWeek(start)} · ${short(start)} – ${short(end)} · ${formatMinutes(totalLoad)} de ${formatMinutes(totalCap)}${isCurrent && overdue ? ` · ${overdue} atrasadas en Hoy` : ''}`}
         actions={
           <>
+            <OutlookControls show={showMeetings} setShow={setShowMeetings} />
             <button type="button" onClick={() => setStart(addDays(start, -7))} className="rounded-md p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Semana anterior"><ChevronLeft className="size-4" /></button>
             {!isCurrent && <button type="button" onClick={() => setStart(mondayOf(today))} className="rounded-md px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Esta semana</button>}
             <button type="button" onClick={() => setStart(addDays(start, 7))} className="rounded-md p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Semana siguiente"><ChevronRight className="size-4" /></button>
@@ -39,8 +48,7 @@ export function WeekView() {
       <QuickAdd placeholder="Añadir tarea: el jueves preparar demo ~2h" />
       {plan.map((day) => {
         const past = day.date < today;
-        // Lo completado ese día también se ve (tachado), para saber cómo fue la semana.
-        const done = sortTasks(tasks.filter((t) => t.status === 'done' && !t.deleted_at && t.due_date === day.date));
+        const done = doneOn(day.date);
         const label = `${weekdayName(day.date, true)} ${parseISODate(day.date).getDate()}`;
         return (
           <Section
@@ -55,7 +63,12 @@ export function WeekView() {
             aside={!past && <LoadBar load={day.load} capacity={day.capacity} />}
             onDropTasks={(ids) => void moveIds(ids, { due_date: day.date }, `Movida a ${formatDay(day.date, today).toLowerCase()}`)}
           >
-            <TaskList tasks={[...day.tasks, ...done]} today={today} projects={projectMap} onEdit={editTask} hideDate empty="—" />
+            {showMeetings && (meetings.get(day.date)?.length ?? 0) > 0 && (
+              <ul className="mb-1 space-y-0.5">
+                {meetings.get(day.date)!.map((m) => <li key={`${m.uid}|${m.time}`}><MeetingItem event={m} /></li>)}
+              </ul>
+            )}
+            <TaskList tasks={[...day.tasks, ...done]} today={today} projects={projectMap} onEdit={editTask} hideDate empty={meetings.get(day.date)?.length && showMeetings ? '' : '—'} />
           </Section>
         );
       })}

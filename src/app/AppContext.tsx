@@ -3,6 +3,7 @@ import { repo } from '../data/services';
 import { labelColorMap } from '../domain/colors';
 import { postponeCounts } from '../domain/activity';
 import { isEffectivelyArchived } from '../domain/projects';
+import { withAcceptedState } from '../domain/workflows';
 import { knownPeople } from '../domain/selectors';
 import { matchesSpace, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
 import { useSync } from '../data/sync';
@@ -56,15 +57,19 @@ export function useApp() {
 export function AppProvider({ children }: { children: ReactNode }) {
   const allTasks = useTasks();
   const allProjects = useProjects(true);
-  const { spaces, team, user } = useSync();
+  const { spaces, team, user, isAdmin } = useSync();
   // El filtro es de cada cuenta (en un navegador compartido no se hereda el de la anterior).
   const [storedFilter, setSpaceFilter] = usePersistentState<SpaceFilter>(`space-filter:${user?.id ?? ''}`, 'all');
   // Si dejo de estar en el espacio filtrado, se vuelve a "Todo".
   const spaceFilter = storedFilter === 'all' || storedFilter === 'personal' || spaces.some((s) => s.id === storedFilter) ? storedFilter : 'all';
   const allNotes = useNotes();
+  const itemTypes = useItemTypes();
+  // Los tipos son comunes al equipo y solo los cambia un administrador: desde su sesión se añade "Accepted" a los
+  // tipos de serie que aún no lo tienen, y la sincronización lo lleva a los demás.
+  const needsAccepted = isAdmin && itemTypes.some((t) => withAcceptedState(t));
+  useEffect(() => { if (needsAccepted) void repo.ensureAcceptedStates(); }, [needsAccepted]);
   // Con un espacio elegido en el filtro, los proyectos nuevos (desde cualquier sitio) van a ese espacio.
   useEffect(() => { repo.defaultSpaceId = spaceFilter === 'all' || spaceFilter === 'personal' ? null : spaceFilter; }, [spaceFilter]);
-  const itemTypes = useItemTypes();
   const labels = useLabels();
   const releases = useReleases();
   const peopleCards = usePeople();

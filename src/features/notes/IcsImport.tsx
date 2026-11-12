@@ -9,6 +9,28 @@ import { addDays, formatDay } from '../../domain/dates';
 import { parseIcs, type CalendarEvent } from '../../domain/ics';
 import { meetingTemplate } from '../../domain/notes';
 import { nameKey } from '../../domain/text';
+import type { Note, Person } from '../../domain/types';
+
+/** Acta ya creada para una reunión: una de tipo reunión con el mismo título ese día. */
+export const meetingNoteFor = (e: CalendarEvent, notes: Note[]) =>
+  notes.find((n) => n.kind === 'meeting' && !n.deleted_at && n.date === e.date && nameKey(n.title) === nameKey(e.title));
+
+/**
+ * Crea el acta de una reunión (fecha, asistentes, hora y enlace para unirse) y guarda los emails de los asistentes en sus
+ * fichas, sin pisar uno ya puesto (para los chats de Teams). Va dentro del lote de quien la llama.
+ */
+export async function createMeetingNote(e: CalendarEvent, peopleCards: Person[]): Promise<Note> {
+  const names = e.attendees.map((a) => a.name);
+  const n = await repo.createNote({
+    kind: 'meeting', date: e.date, title: e.title, meeting_url: e.url,
+    body: `${meetingTemplate(names)}${e.time ? `\n\n> ${e.time}${e.location && !e.location.startsWith('http') ? ` · ${e.location}` : ''}` : ''}`,
+  });
+  for (const a of e.attendees) {
+    const card = peopleCards.find((c) => nameKey(c.name) === nameKey(a.name));
+    if (a.email && !card?.email) await repo.savePerson({ name: a.name, role: card?.role ?? '', notes: card?.notes ?? '', email: a.email });
+  }
+  return n;
+}
 
 /**
  * Importar reuniones de Teams/Outlook desde un archivo .ics: cada reunión elegida se convierte en
@@ -25,7 +47,7 @@ export function IcsImport() {
 
   const key = (e: CalendarEvent) => `${e.uid}|${e.date}`;
   /** Ya importada: hay un acta con el mismo título ese día. */
-  const exists = (e: CalendarEvent) => notes.some((n) => n.kind === 'meeting' && n.date === e.date && nameKey(n.title) === nameKey(e.title));
+  const exists = (e: CalendarEvent) => !!meetingNoteFor(e, notes);
 
   /** Preselección: de cada serie, solo su próxima reunión, y solo las de los próximos 7 días. */
   function preselect(found: CalendarEvent[]): string[] {
@@ -55,17 +77,8 @@ export function IcsImport() {
     let first: string | null = null;
     await repo.batch(`${chosen.length} reunion${chosen.length === 1 ? '' : 'es'} importada${chosen.length === 1 ? '' : 's'}`, async () => {
       for (const e of chosen) {
-        const names = e.attendees.map((a) => a.name);
-        const n = await repo.createNote({
-          kind: 'meeting', date: e.date, title: e.title, meeting_url: e.url,
-          body: `${meetingTemplate(names)}${e.time ? `\n\n> ${e.time}${e.location && !e.location.startsWith('http') ? ` · ${e.location}` : ''}` : ''}`,
-        });
+        const n = await createMeetingNote(e, peopleCards);
         first ??= n.id;
-        // Guardar emails en las fichas para los chats de Teams (sin pisar uno ya puesto).
-        for (const a of e.attendees) {
-          const card = peopleCards.find((c) => nameKey(c.name) === nameKey(a.name));
-          if (a.email && !card?.email) await repo.savePerson({ name: a.name, role: card?.role ?? '', notes: card?.notes ?? '', email: a.email });
-        }
       }
     });
     setEvents(null);

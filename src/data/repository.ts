@@ -14,7 +14,7 @@ import {
   type Task,
   type TaskPatch,
 } from '../domain/types';
-import { doneState, equivalentState, findType, initialState, patchForState, stateOf } from '../domain/workflows';
+import { doneState, equivalentState, findType, initialState, isDoneCategory, patchForState, stateOf, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
 import { extractMentions } from '../domain/markdown';
 import { activityFor } from '../domain/activity';
@@ -72,6 +72,11 @@ export interface Repository {
   createItemType(name: string): Promise<ItemType>;
   /** Guarda un tipo; las tareas en estados eliminados pasan al estado equivalente por categoría. */
   saveItemType(type: ItemType): Promise<void>;
+  /**
+   * Añade el estado "Accepted" a Tarea, User Story y Test Scenario si no lo tienen. Sin historial ni aviso: es una
+   * actualización de los tipos comunes, así que solo la lanza un administrador (se sincroniza al resto del equipo).
+   */
+  ensureAcceptedStates(): Promise<void>;
   /** Elimina un tipo (no el de Tarea); sus tareas pasan a Tarea. */
   deleteItemType(id: string): Promise<void>;
 
@@ -104,6 +109,7 @@ export interface Repository {
    * nuevo, las une (la ficha resultante conserva los datos de las dos).
    */
   renamePerson(from: string, to: string): Promise<void>;
+  setPersonGroup(name: string, groupId: string | null): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -288,7 +294,7 @@ export class DexieRepository implements Repository {
       ...input,
       type_id: type.id,
       state_id: state.id,
-      ...(state.category === 'done' ? { status: 'done' as const, completed_at: input.completed_at ?? ts } : {}),
+      ...(isDoneCategory(state.category) ? { status: 'done' as const, completed_at: input.completed_at ?? ts } : {}),
       title: input.title.trim(),
       id: uuid(),
       created_at: ts,
@@ -350,7 +356,7 @@ export class DexieRepository implements Repository {
     const state = type.states.find((s) => s.id === stateId);
     if (!state) return;
     // Pasar a "hecho" es completar: así las recurrentes generan su siguiente ocurrencia.
-    if (state.category === 'done' && task.status !== 'done') {
+    if (isDoneCategory(state.category) && task.status !== 'done') {
       await this.batch(`${state.name}`, async () => {
         await this.setCompleted(id, true);
         await this.patchTask(id, { state_id: state.id }, state.name);
@@ -449,6 +455,13 @@ export class DexieRepository implements Repository {
     this.record({ table: 'item_types', key: id, before: undefined, after: type }, `Tipo ${type.name} creado`);
     this.emit();
     return type;
+  }
+
+  async ensureAcceptedStates() {
+    for (const type of await this.listItemTypes()) {
+      const next = withAcceptedState(type);
+      if (next) await this.db.item_types.put(next);
+    }
   }
 
   async saveItemType(type: ItemType) {
@@ -576,10 +589,18 @@ export class DexieRepository implements Repository {
 
   async savePerson(person: Person) {
     const before = (await this.db.people.toArray()).find((p) => nameKey(p.name) === nameKey(person.name));
-    const after = { ...person, name: before?.name ?? person.name };
+    // Se conserva lo que no venga (p. ej. el grupo al editar el rol).
+    const after: Person = { ...before, ...person, name: before?.name ?? person.name };
     await this.db.people.put(after);
     this.record({ table: 'people', key: after.name, before, after }, 'Ficha guardada');
     this.emit();
+  }
+
+  /** Mete a la persona en un grupo (null = sin grupo). Crea la ficha si no la tenía. */
+  async setPersonGroup(name: string, groupId: string | null) {
+    const card = (await this.db.people.toArray()).find((p) => nameKey(p.name) === nameKey(name));
+    if ((card?.group_id ?? null) === groupId) return;
+    await this.savePerson({ name, role: card?.role ?? '', notes: card?.notes ?? '', email: card?.email ?? '', group_id: groupId });
   }
 
   async renamePerson(from: string, to: string) {
@@ -608,6 +629,7 @@ export class DexieRepository implements Repository {
           role: dest?.role || old?.role || '',
           notes: [dest?.notes, old?.notes].filter(Boolean).join('\n'),
           email: dest?.email || old?.email || '',
+          ...((dest?.group_id ?? old?.group_id) ? { group_id: dest?.group_id ?? old?.group_id } : {}),
         };
         await this.db.people.put(merged);
         this.record({ table: 'people', key: merged.name, before: dest, after: merged }, '');

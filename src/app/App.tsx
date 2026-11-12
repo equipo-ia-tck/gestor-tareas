@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './AppContext';
-import { WideContext } from './Layout';
+import { WideContext, type WideMode } from './Layout';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { BoardView } from '../features/board/BoardView';
 import { CalendarView } from '../features/calendar/CalendarView';
 import { ReleasesView } from '../features/releases/ReleasesView';
 import { NotesView } from '../features/notes/NotesView';
+import { RallyView } from '../features/rally/RallyView';
+import { ConfluenceView } from '../features/confluence/ConfluenceView';
+import { ListaView } from '../features/mslist/ListaView';
+import { ListaSync } from '../features/mslist/ListaSync';
+import { ChatsView } from '../features/chats/ChatsView';
+import { AnalystPrompt } from '../features/rally/AnalystPrompt';
+import { RallySync } from '../features/rally/RallySync';
 import { LogView } from '../features/log/LogView';
 import { ReviewView } from '../features/review/ReviewView';
 import { ReminderCenter } from '../features/reminders/ReminderCenter';
@@ -35,6 +42,10 @@ function View({ route }: { route: Route }) {
     case 'log': return <LogView />;
     case 'review': return <ReviewView />;
     case 'calendar': return <CalendarView />;
+    case 'rally': return <RallyView />;
+    case 'confluence': return <ConfluenceView />;
+    case 'lista': return <ListaView />;
+    case 'chats': return <ChatsView />;
     case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
     case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
@@ -47,18 +58,23 @@ function View({ route }: { route: Route }) {
 
 function Main({ route }: { route: Route }) {
   const { clear } = useSelection();
-  const [wide, setWide] = useState(false);
+  const [wide, setWide] = useState<WideMode>(false);
+  const full = wide === 'full';
   return (
     <main
       className="min-w-0 overflow-y-auto"
       // Clic en una zona vacía: se quita la selección.
       onClick={(e) => { if (!(e.target as HTMLElement).closest('[data-task-id], button, a, input, textarea, select, [role="toolbar"], aside, [data-popover]')) clear(); }}
     >
-      <div className={`mx-auto px-6 py-6 pb-28 max-sm:px-4 ${wide ? 'max-w-none' : 'max-w-4xl'}`}>
+      <div className={full ? 'flex h-full flex-col px-4 py-3' : `mx-auto px-6 py-6 pb-28 max-sm:px-4 ${wide ? 'max-w-none' : 'max-w-4xl'}`}>
         <BackupReminder />
         <ReminderCenter />
+        <RallySync />
+        <AnalystPrompt />
+        <ListaSync />
         <WideContext.Provider value={setWide}>
-          <View route={route} />
+          {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}
+          <div className={full ? 'min-h-0 flex-1' : undefined}><View route={route} /></div>
         </WideContext.Provider>
       </div>
     </main>
@@ -69,12 +85,13 @@ function Main({ route }: { route: Route }) {
 function Shell({ route }: { route: Route }) {
   const { detailId } = useApp();
   return (
-    // En pantallas anchas el panel es una columna más; en las estrechas se superpone por la derecha.
-    <div className={`grid h-dvh grid-cols-[232px_1fr] max-sm:grid-cols-1 ${detailId ? 'xl:grid-cols-[232px_1fr_420px]' : ''}`}>
+    // En pantallas anchas el panel es una columna más; en las estrechas se superpone por la derecha. La fila mide
+    // lo que la pantalla (minmax(0,1fr)): así cada columna hace scroll por su cuenta y no se desplaza la página entera.
+    <div className={`grid h-dvh grid-rows-[minmax(0,1fr)] grid-cols-[232px_1fr] max-sm:grid-cols-1 ${detailId ? 'xl:grid-cols-[232px_1fr_420px]' : ''}`}>
       <div className="max-sm:hidden"><Sidebar route={route} /></div>
       <Main route={route} />
       {detailId && (
-        <div className="fixed inset-y-0 right-0 z-30 w-[420px] max-w-full shadow-2xl xl:static xl:z-auto xl:w-auto xl:min-w-0 xl:shadow-none">
+        <div className="fixed inset-y-0 right-0 z-30 w-[420px] max-w-full shadow-2xl xl:static xl:z-auto xl:h-full xl:min-h-0 xl:w-auto xl:min-w-0 xl:shadow-none">
           <TaskDetailPanel />
         </div>
       )}

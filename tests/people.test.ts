@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { peopleDirectory } from '../src/domain/people';
+import { groupOf, groupPeople, peopleDirectory } from '../src/domain/people';
+import { rallyOwners } from '../src/domain/rally';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -16,11 +17,29 @@ describe('directorio de personas', () => {
       [{ name: 'Ana López', role: '', notes: '', email: '' }, { name: 'Luis', role: 'Dev', notes: '', email: '' }],
     );
     expect(dir).toEqual([
-      { name: 'Diana', tasks: 2, notes: 1 },
-      { name: 'Luis', tasks: 1, notes: 0 },
-      { name: 'Marcos Porto', tasks: 0, notes: 2 },
-      { name: 'Ana', tasks: 0, notes: 1 },
-      { name: 'Ana López', tasks: 0, notes: 0 },
+      { name: 'Diana', tasks: 2, notes: 1, rally: 0 },
+      { name: 'Luis', tasks: 1, notes: 0, rally: 0 },
+      { name: 'Marcos Porto', tasks: 0, notes: 2, rally: 0 },
+      { name: 'Ana', tasks: 0, notes: 1, rally: 0 },
+      { name: 'Ana López', tasks: 0, notes: 0, rally: 0 },
+    ]);
+  });
+
+  it('añade a los Owners de Rally de las tareas enlazadas, sin contar dos veces', () => {
+    const tasks = [
+      makeTask({ external_id: 'US-1' }),
+      makeTask({ external_id: 'US2', people: ['Carla Ruiz'] }),
+      makeTask({ external_id: 'US3', status: 'done' }),
+      makeTask({ external_id: 'US4' }),
+      makeTask({ external_id: 'otra-cosa' }),
+      makeTask({ external_id: 'US5', deleted_at: '2026-10-01T00:00:00Z' }),
+    ];
+    const owners: Record<string, string> = { US1: 'Carla Ruiz', US2: 'carla ruiz', US3: 'Elena', US4: 'Elena', US5: 'Borrada' };
+    const map = rallyOwners(tasks, (id) => owners[id]);
+    expect([...map.values()]).toEqual(['Carla Ruiz', 'carla ruiz', 'Elena', 'Elena']);
+    expect(peopleDirectory(tasks, [], [], map)).toEqual([
+      { name: 'Carla Ruiz', tasks: 1, notes: 0, rally: 1 },
+      { name: 'Elena', tasks: 0, notes: 0, rally: 1 },
     ]);
   });
 });
@@ -49,5 +68,33 @@ describe('renombrar y unir personas', async () => {
     await repo.undo();
     expect((await repo.getTask(t.id))?.people).toEqual(['Diana Pérez', 'Luis']);
     expect((await repo.listPeople()).map((p) => p.name).sort()).toEqual(['Diana', 'Diana Pérez']);
+  });
+});
+
+describe('grupos de personas', () => {
+  const groups = [{ id: 'g1', name: 'QA', color: '#f00' }, { id: 'g2', name: 'Cliente', color: '#0f0' }, { id: 'g3', name: 'Vacío', color: '#00f' }];
+  const cards = [
+    { name: 'Diana', role: '', notes: '', email: '', group_id: 'g2' },
+    { name: 'Luis Pérez', role: '', notes: '', email: '', group_id: 'g1' },
+    { name: 'Ana', role: '', notes: '', email: '', group_id: 'borrado' },
+  ];
+
+  it('reparte en el orden de los grupos, con los vacíos y "Sin grupo" al final', () => {
+    const people = [{ name: 'diana' }, { name: 'Marcos' }, { name: 'luis-perez' }, { name: 'Ana' }];
+    expect(groupPeople(people, cards, groups).map((s) => [s.group?.name ?? null, s.people.map((p) => p.name)])).toEqual([
+      ['QA', ['luis-perez']],
+      ['Cliente', ['diana']],
+      ['Vacío', []],
+      [null, ['Marcos', 'Ana']],
+    ]);
+  });
+
+  it('sin nadie sin grupo no añade la sección', () => {
+    expect(groupPeople([{ name: 'Diana' }], cards, groups).some((s) => s.group === null)).toBe(false);
+  });
+
+  it('un grupo que ya no existe cuenta como sin grupo', () => {
+    expect(groupOf('Ana', cards, groups)).toBeNull();
+    expect(groupOf('DIANA', cards, groups)?.name).toBe('Cliente');
   });
 });

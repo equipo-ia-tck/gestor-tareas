@@ -1,6 +1,6 @@
 # Gestor de tareas
 
-App web personal de tareas. Todo vive en el navegador (IndexedDB): sin backend, sin cuentas y sin conexión obligatoria.
+Gestor de tareas del equipo. La app trabaja sobre el navegador (IndexedDB) y se sincroniza con Supabase, que guarda los datos y las cuentas.
 
 ## Qué incluye
 
@@ -39,16 +39,14 @@ actualizar tras cambios):
 npm start
 ```
 
-- La terminal muestra el **código de administración** (crea cuentas administradoras). Los compañeros crean su cuenta
-  con la **invitación de su espacio** (Ajustes → Espacios).
-- Si el servidor ya estaba en marcha, `npm start` solo compila y te avisa de que recargues. Si han cambiado archivos de
-  `servidor/`, para el servidor con Ctrl+C y vuelve a ejecutar `npm start`.
-- Solo funciona con el servidor en marcha: deja la terminal abierta.
-- Los datos del equipo se guardan en `servidor/datos/equipo.sqlite` (fuera de Git). Haz copia de esa carpeta.
-- La primera vez que entras en un navegador que ya tenía datos de antes, la app te ofrece subirlos a tu cuenta.
-
-Hasta que haya un servidor de empresa, cada persona que lo arranque en su ordenador tiene su propio servidor (datos
-aparte). Para compartir de verdad hay que alojarlo en un sitio común (pendiente de WPP).
+- Los datos y las cuentas del equipo están en **Supabase** (`.env`: `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`;
+  el esquema está en `supabase/migrations/`). La primera cuenta es administradora; los compañeros entran con la
+  **invitación de su espacio** (Ajustes → Espacios).
+- El servidor de `servidor/` ya solo hace falta para los conectores (Rally, Confluence, calendario, chats y lista): guarda
+  sus claves en `servidor/datos/equipo.sqlite` (fuera de Git). Tras pasar a Supabase hay que volver a conectarlos.
+- Si el servidor ya estaba en marcha, `npm start` lo reinicia con lo último.
+- La primera vez que entras en un navegador que ya tenía datos de antes, la app te ofrece subirlos a tu cuenta (y antes
+  descarga una copia).
 
 > `localhost:5173` (`npm run dev`) es solo para desarrollar: usa el servidor de 4173 para la API (tiene que estar en
 > marcha) y no hace falta abrirlo.

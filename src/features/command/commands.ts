@@ -128,7 +128,7 @@ export function buildCommands(env: CommandEnv): Command[] {
       input: { placeholder: 'Nombre de la release (p. ej. R2.3)', run: async (name) => { if (name.trim()) { await repo.createRelease(name); navigate({ view: 'releases' }); } } },
     },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },
-    { id: 'go-people', section: 'Ir a', title: 'Ir a Personas', shortcut: 'G E', run: go({ view: 'people' }) },
+    { id: 'go-people', section: 'Ir a', title: 'Ir a Grupos (personas)', shortcut: 'G E', run: go({ view: 'people' }) },
     { id: 'go-settings', section: 'Ir a', title: 'Ir a Copias y ajustes', shortcut: 'G A', keywords: 'backup configuración', run: go({ view: 'settings' }) },
     ...env.projects.map((p): Command => ({
       id: `go-project-${p.id}`, section: 'Proyectos', title: `Ir a proyecto ${p.name}`, keywords: '#', run: go({ view: 'project', id: p.id }),
