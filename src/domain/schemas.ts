@@ -82,6 +82,7 @@ export const settingsSchema = z.object({
     })
     .default(DEFAULT_SETTINGS.ui),
   saved_views: z.array(z.object({ id: z.string(), name: z.string(), filter: taskFilterSchema })).default([]),
+  groups: z.array(z.object({ id: z.string().min(1), name: z.string().min(1), color: z.string() })).default([]),
 });
 
 const stateSchema = z.object({
@@ -130,7 +131,7 @@ export const noteSchema = z.object({
   deleted_at: isoDateTime.nullable().default(null),
 });
 
-export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default(''), email: z.string().default('') });
+export const personSchema = z.object({ name: z.string().min(1), role: z.string().default(''), notes: z.string().default(''), email: z.string().default(''), group_id: z.string().nullable().optional() });
 
 export const activitySchema = z.object({
   id: z.string().min(1),

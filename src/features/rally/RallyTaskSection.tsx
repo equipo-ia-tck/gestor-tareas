@@ -5,6 +5,7 @@ import type { Task } from '../../domain/types';
 import { RallyDetailBody } from './RallyDetailPanel';
 import { rallyApi } from './rallyApi';
 import { rememberRally } from './rallyStore';
+import { RallyFlags } from './RallyFlags';
 
 /**
  * Ficha de Rally dentro del panel de una tarea enlazada (por su ID externo): la misma información que en la pantalla
@@ -51,6 +52,11 @@ export function RallyTaskSection({ task }: { task: Task }) {
 
   if (!isRallyId(externalId) || hidden) return null;
   const shown = detail?.item ?? current;
+  // Tras Ready/Blocked: se ve al momento y se vuelve a leer la ficha (motivo y comentario nuevos) sin vaciarla.
+  const flagged = (updated: RallyItem) => {
+    setDetail((d) => (d ? { ...d, item: updated } : d));
+    rallyApi.detail(updated).then(setDetail, () => {});
+  };
 
   return (
     <section className="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
@@ -73,11 +79,7 @@ export function RallyTaskSection({ task }: { task: Task }) {
         )}
       </header>
       {nested && <p className="px-4 pt-3 text-sm font-semibold">{nested.name}</p>}
-      {shown?.blocked && (
-        <p className="mx-4 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          <b>Bloqueada</b>{detail?.blockedReason ? `: ${detail.blockedReason}` : ''}
-        </p>
-      )}
+      {shown && <div className="px-4"><RallyFlags item={shown} reason={detail?.blockedReason ?? null} onChanged={flagged} /></div>}
       <div className="pt-3">
         {current
           ? <RallyDetailBody item={current} detail={detail} error={error} onSelect={setNested} />

@@ -475,6 +475,25 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
 - **Dos sentidos** (`RallySync`, `rallyStates.ts`): cada 5 min, al volver a la ventana y al abrir Rally, las tareas enlazadas
   (por `external_id`) pasan a la categoría que tienen en Rally (Rally manda). Al mover una tarea aquí (entrada del historial), se
   mueve en Rally; no se reenvía lo que viene de Rally (WeakSet) ni al deshacer un movimiento traído de Rally.
+- **Comentario al mover** (`moveComment`, `MOVE_COMMENTS` en `servidor/rally.ts`): antes de mover, `pushToRally` pide `move`
+  con `dryRun` (no escribe; devuelve el estado previsto y en `comment` el texto que toca). Si hay comentario, la app pregunta
+  «¿Quieres marcar analista?» (`AnalystPrompt`, cola en memoria, una ventana por elemento). «Sí» busca en Rally
+  (`searchUsers`, recuerda el último analista) y «Aceptar» mueve y publica; «No quiero marcar analista» mueve y publica solo
+  con el PO. **Cerrar (cruz, Esc o clic fuera) cancela**: no se toca Rally y la tarea vuelve a su estado (`fromStateId` de
+  `rallyPushes`, lote «Movimiento cancelado» que no se reenvía a Rally). El lápiz junto al comentario permite cambiar el texto
+  (Enter termina, Esc solo sale de la edición: `Dialog.onEscape`); el servidor acepta cualquier texto no vacío. `POST /api/rally/move-comment` (`moveCommentPost`) menciona al Owner (el PO) y, en otra línea, «Analista:
+  @X» (`mentionHtml`). **Las menciones tienen que ir como las guarda el editor de Rally**,
+  `<span class="mention" data-mention="<_refObjectUUID>">@Nombre</span>`, o Rally no avisa por correo (un enlace a la ficha
+  se ve igual pero no notifica). El UUID del Owner viene en su referencia; el del analista se pide por ObjectID (`userUuid`). Textos: «Guía definida correctamente» (New → Defined), «Se comienza a trabajar en la guía solicitada» (a En
+  curso), «Guía bloqueada» o «Se finaliza la guía a la espera de validación» (a Completed). Al pasar a Bloqueado se marca
+  siempre el botón Blocked y el texto final del comentario (sin menciones, en una línea, máx. 256) va a BlockedReason en el
+  mismo movimiento (`blockedReason` de `move`, `blockedReasonText`). Accepted y volver atrás no
+  comentan; si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un
+  estado de Por hacer que no sea el primero (Refinada, Diseñado) manda `todo` y el servidor lo lleva a Defined si está en New.
+- **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
+  que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
+  lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no
+  cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
 - **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
   «solo lo mío», ficha lateral con todos los campos, discusión (con caja para comentar) y adjuntos (con subida). La misma ficha
   sale en el panel de una tarea enlazada (`RallyTaskSection`).
@@ -538,6 +557,22 @@ IT de WPP no registra apps en Entra ID para herramientas propias (nov 2026), as�
   localStorage `gestor-tareas:lista-config`). Tareas enlazadas por `external_id = LS-<id>`. `ListaSync` (cada 2 min): la lista
   manda (`listMoves`); al mover una tarea aquí, `listPushes` + `valueForCategory` (primer valor de esa categoría) apuntan el
   cambio. Tarda unos minutos en cada sentido.
+
+## Fase 24: grupos de personas
+
+Petición de la usuaria (nov 2026): en vez de una lista de personas, grupos creados por ella con cada persona dentro.
+
+- **Datos**: `settings.groups` (`PersonGroup`: id, nombre, color; el orden de la lista es el de pantalla) y `Person.group_id`
+  en la ficha (opcional, sin migración). Así entran en la sincronización (tablas personales) y en las copias sin tocar el
+  servidor. Una persona está en un solo grupo; un `group_id` que ya no existe cuenta como "Sin grupo" (`groupOf`).
+- `repo.setPersonGroup` crea la ficha si hace falta y entra en el historial; `savePerson` ahora conserva los campos que no
+  recibe (editar el rol no saca a nadie de su grupo). Crear, renombrar, recolorear, reordenar y eliminar grupos cambia los
+  ajustes (sin deshacer); al eliminar un grupo sus personas pasan a "Sin grupo" en un lote deshacible.
+- **Pantalla Grupos** (`#/people`, `PeopleView`): alta de grupos, un bloque por grupo (color, nombre editable, subir/bajar,
+  eliminar) y "Sin grupo" al final. Las tarjetas se arrastran entre bloques (`PERSON_MIME`, `features/views/groups.tsx`)
+  o se cambian con `GroupPicker`, que también está en la ficha de la persona y permite crear un grupo al vuelo.
+- **Barra lateral**: sección Grupos con "+", cada grupo plegable con sus personas y destino de arrastre. Sin grupos se ve
+  la lista de antes.
 
 ### Más adelante
 

@@ -11,6 +11,7 @@ import { ConfluenceView } from '../features/confluence/ConfluenceView';
 import { ListaView } from '../features/mslist/ListaView';
 import { ListaSync } from '../features/mslist/ListaSync';
 import { ChatsView } from '../features/chats/ChatsView';
+import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
 import { LogView } from '../features/log/LogView';
 import { ReviewView } from '../features/review/ReviewView';
@@ -69,6 +70,7 @@ function Main({ route }: { route: Route }) {
         <BackupReminder />
         <ReminderCenter />
         <RallySync />
+        <AnalystPrompt />
         <ListaSync />
         <WideContext.Provider value={setWide}>
           {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}

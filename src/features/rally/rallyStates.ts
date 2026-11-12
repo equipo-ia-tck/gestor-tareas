@@ -1,7 +1,8 @@
 import { repo } from '../../data/services';
 import type { HistoryEntry, HistoryEvent } from '../../data/repository';
-import { rallyIdsOf, rallyMoves, rallyPushes, type RallyItem } from '../../domain/rally';
+import { rallyIdsOf, rallyMoves, rallyPushes, type RallyItem, type RallyRef } from '../../domain/rally';
 import { rallyApi } from './rallyApi';
+import { askAnalyst } from './AnalystPrompt';
 import { rememberRally } from './rallyStore';
 
 let running = false;
@@ -62,12 +63,34 @@ export async function pushToRally(event: HistoryEvent, notify: (message: string)
   }
   if (fromRally.has(event.entry)) return;
   const pushes = rallyPushes(event.entry.changes, event.type === 'undo', await repo.listItemTypes());
-  await Promise.all(pushes.map(async ({ id, category }) => {
+  await Promise.all(pushes.map(async ({ id, category, taskId, fromStateId }) => {
     pending.add(id);
     try {
-      const item = await rallyApi.move(id, category);
+      // Primero se mira (sin escribir) si el movimiento lleva comentario: entonces se pregunta por el analista antes.
+      const preview = await rallyApi.move(id, category, true);
+      let analyst: RallyRef | null = null;
+      let text: string | null = null;
+      if (preview.comment) {
+        const answer = await askAnalyst({ id: preview.id, name: preview.name, text: preview.comment, owner: preview.owner });
+        if (answer === 'cancel') {
+          await revert(taskId, fromStateId);
+          notify(`Movimiento de ${id} cancelado`);
+          return;
+        }
+        analyst = answer.analyst;
+        text = answer.text;
+      }
+      // Al bloquear, el comentario (sin las personas) va también al motivo de bloqueo de Rally.
+      const item = await rallyApi.move(id, category, false, category === 'blocked' ? (text ?? preview.comment ?? undefined) : undefined);
       rememberRally([item]);
-      notify(`${id} en Rally: ${item.state}`);
+      if (!item.comment) { notify(`${id} en Rally: ${item.state}`); return; }
+      try {
+        // El texto que se haya escrito en la ventana (lápiz) manda sobre el previsto.
+        const r = await rallyApi.moveComment(item.id, text ?? item.comment, analyst);
+        notify(`${id} en Rally: ${item.state} · comentado${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
+      } catch (e) {
+        notify(`${id} en Rally: ${item.state}, pero no se ha podido comentar: ${(e as Error).message}`);
+      }
     } catch (e) {
       // Sin Rally conectado no hay nada que avisar.
       if (!/Conecta Rally/.test((e as Error).message)) notify(`No se ha podido mover ${id} en Rally: ${(e as Error).message}`);
@@ -75,4 +98,14 @@ export async function pushToRally(event: HistoryEvent, notify: (message: string)
       pending.delete(id);
     }
   }));
+}
+
+/** Devuelve la tarea a su estado anterior sin mandarlo a Rally (allí no se ha movido). */
+async function revert(taskId: string, stateId: string) {
+  applying = true;
+  try {
+    await repo.batch('Movimiento cancelado', () => repo.setState(taskId, stateId));
+  } finally {
+    applying = false;
+  }
 }

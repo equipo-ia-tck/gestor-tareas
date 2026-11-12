@@ -102,6 +102,8 @@ export interface RallyItem {
   category: RallyCategory;
   done: boolean;
   blocked: boolean;
+  /** Botón Ready de Rally (la tarjeta está lista para pasar a la siguiente columna). */
+  ready: boolean;
   project: string | null;
   iteration: string | null;
   release: string | null;
@@ -115,6 +117,8 @@ export interface RallyItem {
   tags: string[];
   updatedAt: string;
   url: string;
+  /** Solo al mover: comentario que toca dejar en la discusión (lo publica la app tras preguntar por el analista). */
+  comment?: string;
 }
 
 export interface RallyProject { id: string; name: string }
@@ -230,7 +234,21 @@ export interface RecordChange { table: string; before?: unknown; after?: unknown
  * Elementos de Rally que hay que mover porque su tarea ha cambiado de categoría en el gestor (en un cambio, o al
  * deshacerlo, que va de `after` a `before`). No cuentan las altas, las bajas ni los test cases (no tienen columna).
  */
-export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemType[]): { id: string; category: RallyCategory }[] {
+function laterTodo(types: ItemType[], task: Task): boolean {
+  const todo = findType(types, task.type_id).states.filter((st) => st.category === 'todo');
+  return todo.findIndex((st) => st.id === task.state_id) > 0;
+}
+
+export interface RallyPush {
+  /** FormattedID de Rally. */
+  id: string;
+  category: RallyCategory;
+  /** Tarea del gestor y estado del que venía (para devolverla si se cancela el movimiento). */
+  taskId: string;
+  fromStateId: string;
+}
+
+export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemType[]): RallyPush[] {
   // Una entrada puede cambiar la misma tarea varias veces (completar y luego pasar a Accepted): cuenta el estado
   // antes del primer cambio y después del último (al deshacer, al revés).
   const span = new Map<string, { first: Task | undefined; last: Task | undefined }>();
@@ -241,7 +259,7 @@ export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemT
     if (s) s.last = c.after as Task | undefined;
     else span.set(key, { first: c.before as Task | undefined, last: c.after as Task | undefined });
   }
-  const out: { id: string; category: RallyCategory }[] = [];
+  const out: RallyPush[] = [];
   for (const { first, last } of span.values()) {
     const from = undo ? last : first;
     const to = undo ? first : last;
@@ -249,7 +267,11 @@ export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemT
     const id = norm(to.external_id);
     const category = stateOf(types, to).category;
     // Los test cases (se mueven con su resultado) y las features (su State es de Rally) no se mueven desde aquí.
-    if (!/^(TC|F)/.test(id) && stateOf(types, from).category !== category) out.push({ id, category });
+    if (/^(TC|F)/.test(id)) continue;
+    const push = { id, category, taskId: to.id, fromStateId: stateOf(types, from).id };
+    if (stateOf(types, from).category !== category) out.push(push);
+    // Dentro de Por hacer, pasar a un estado posterior al primero (Refinada, Diseñado…) lleva de New a Defined en Rally.
+    else if (category === 'todo' && from.state_id !== to.state_id && laterTodo(types, to)) out.push(push);
   }
   return out;
 }

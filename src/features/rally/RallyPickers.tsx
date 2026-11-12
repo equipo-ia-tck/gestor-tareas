@@ -52,12 +52,16 @@ function Pager({ page, total, onPage }: { page: number; total: number; onPage: (
 }
 
 /** Ventana por encima del panel de alta (portal: Esc la cierra a ella sola y no al panel). */
-function Dialog({ title, onClose, width = 'max-w-2xl', children }: { title: string; onClose: () => void; width?: string; children: ReactNode }) {
+export function Dialog({ title, onClose, onEscape, width = 'max-w-2xl', children }: {
+  title: string; onClose: () => void; width?: string; children: ReactNode;
+  /** Esc hace esto en vez de cerrar (p. ej. salir de un campo en edición). */
+  onEscape?: () => void;
+}) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); (onEscape ?? onClose)(); } };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  }, [onClose, onEscape]);
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/20 px-4 pt-[8vh]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-label={title}

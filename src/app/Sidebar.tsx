@@ -7,7 +7,9 @@ import { useSync } from '../data/sync';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
-import { peopleDirectory } from '../domain/people';
+import { groupPeople, peopleDirectory, type PersonEntry } from '../domain/people';
+import type { PersonGroup } from '../domain/types';
+import { createGroup, movePersonToGroup, setDraggedPerson, usePersonDrop } from '../features/views/groups';
 import { useRallyOwners } from '../features/rally/rallyStore';
 import { dropHighlight, useTaskDrop } from '../hooks/useTaskDrop';
 import { routeHref, type Route } from './router';
@@ -145,12 +147,6 @@ export function Sidebar({ route }: { route: Route }) {
   const { tasks, projects, today, releases } = useApp();
   const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
-  const { notes, peopleCards } = useApp();
-  // Todas las personas: con tareas, mencionadas en notas, con ficha u Owners en Rally de lo que llevo.
-  const rallyOwners = useRallyOwners(tasks);
-  const allPeople = peopleDirectory(tasks, notes, peopleCards, rallyOwners);
-  const [showAllPeople, setShowAllPeople] = usePersistentState('sidebar-all-people', false);
-  const people = showAllPeople ? allPeople : allPeople.slice(0, 10);
   const { moveIds } = useTaskActions();
   const [query, setQuery] = useState(route.view === 'search' ? route.q : '');
 
@@ -207,18 +203,7 @@ export function Sidebar({ route }: { route: Route }) {
       <ArchivedProjects />
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
 
-      <Heading href={routeHref({ view: 'people' })}><Users className="mr-1.5 inline size-3.5" />Personas</Heading>
-      {people.map((p) => (
-        <NavItem key={p.name} href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.tasks + p.rally}
-          lead={<Avatar name={p.name} size={18} />}>
-          {p.name}
-        </NavItem>
-      ))}
-      {allPeople.length > 10 && (
-        <button type="button" onClick={() => setShowAllPeople(!showAllPeople)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
-          {showAllPeople ? 'Ver menos' : `Ver las ${allPeople.length}`}
-        </button>
-      )}
+      <PeopleGroups route={route} />
 
       <MoreSection route={route} releases={releases.filter((r) => r.status === 'planned').length} />
 
@@ -265,6 +250,78 @@ function SpaceSwitcher() {
           {o.name}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Grupos de personas: cada uno plegable con sus personas; "+" crea un grupo y se arrastra a la gente entre ellos. */
+function PeopleGroups({ route }: { route: Route }) {
+  const { tasks, notes, peopleCards, settings } = useApp();
+  // Todas las personas: con tareas, mencionadas en notas, con ficha u Owners en Rally de lo que llevo.
+  const rallyOwners = useRallyOwners(tasks);
+  const people = peopleDirectory(tasks, notes, peopleCards, rallyOwners);
+  const sections = groupPeople(people, peopleCards, settings.groups);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    await createGroup(name, settings.groups);
+    setName('');
+    setAdding(false);
+  }
+  return (
+    <>
+      <Heading href={routeHref({ view: 'people' })} action={
+        <button type="button" onClick={() => setAdding(true)} title="Nuevo grupo" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
+          <Plus className="size-3.5" />
+        </button>
+      }><Users className="mr-1.5 inline size-3.5" />Grupos</Heading>
+      {adding && (
+        <form onSubmit={create} className="mb-1 px-1">
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={() => { if (!name.trim()) setAdding(false); }}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setName(''); setAdding(false); } }} placeholder="Nombre del grupo"
+            className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+        </form>
+      )}
+      {sections.map((s) => <GroupNav key={s.group?.id ?? 'none'} group={s.group} people={s.people} route={route} single={sections.length === 1 && !s.group} />)}
+      {!settings.groups.length && !adding && (
+        <button type="button" onClick={() => setAdding(true)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">+ Crear un grupo</button>
+      )}
+    </>
+  );
+}
+
+function GroupNav({ group, people, route, single }: { group: PersonGroup | null; people: PersonEntry[]; route: Route; single: boolean }) {
+  const [open, setOpen] = usePersistentState<boolean>(`sidebar-group:${group?.id ?? 'none'}`, true);
+  const [showAll, setShowAll] = useState(false);
+  const { over, dropProps } = usePersonDrop((name) => void movePersonToGroup(name, group));
+  const shown = showAll ? people : people.slice(0, 10);
+  const isOpen = open || single;
+  return (
+    <div {...dropProps} className={over ? dropHighlight : ''}>
+      {!single && (
+        <button type="button" onClick={() => setOpen(!open)}
+          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800/60">
+          {open ? <ChevronDown className="size-3 text-zinc-400" /> : <ChevronRight className="size-3 text-zinc-400" />}
+          <span className="size-2.5 shrink-0 rounded-full" style={{ background: group?.color ?? '#a1a1aa' }} />
+          <span className={`flex-1 truncate text-left ${group ? 'font-medium' : 'text-zinc-400'}`}>{group?.name ?? 'Sin grupo'}</span>
+          <span className="text-xs text-zinc-400">{people.length || ''}</span>
+        </button>
+      )}
+      {isOpen && shown.map((p) => (
+        <div key={p.name} draggable onDragStart={(e) => setDraggedPerson(e, p.name)}>
+          <NavItem href={routeHref({ view: 'person', name: p.name })} active={route.view === 'person' && route.name === p.name} count={p.tasks + p.rally}
+            indent={single ? 0 : 1} lead={<Avatar name={p.name} size={18} />}>
+            {p.name}
+          </NavItem>
+        </div>
+      ))}
+      {isOpen && people.length > 10 && (
+        <button type="button" onClick={() => setShowAll(!showAll)} className="px-2 py-0.5 pl-6 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          {showAll ? 'Ver menos' : `Ver las ${people.length}`}
+        </button>
+      )}
+      {isOpen && group && !people.length && <p className="py-0.5 pl-8 text-xs text-zinc-400">Arrastra personas aquí</p>}
     </div>
   );
 }

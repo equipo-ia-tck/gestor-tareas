@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { CheckSquare, FileText, Layers, MessageCircle, MessageSquare, Plus, Quote, UserCog, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckSquare, FileText, FolderPlus, Layers, MessageCircle, MessageSquare, Plus, Quote, Trash2, UserCog, Users } from 'lucide-react';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { fuzzyScore } from '../../domain/text';
 import { navigate } from '../../app/router';
@@ -11,34 +11,96 @@ import { Avatar } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { formatDay } from '../../domain/dates';
 import { meetingsWith, mentionsOf } from '../../domain/notes';
-import { peopleDirectory } from '../../domain/people';
+import { groupPeople, peopleDirectory, type PersonEntry } from '../../domain/people';
 import { isActive, samePerson, sortTasks } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
-import { TOPIC_TYPE_ID } from '../../domain/types';
+import { PROJECT_COLORS, TOPIC_TYPE_ID, type PersonGroup } from '../../domain/types';
+import { createGroup, deleteGroup, GroupPicker, moveGroup, movePersonToGroup, setDraggedPerson, updateGroup, usePersonDrop } from './groups';
 import { newNote } from '../notes/NotesView';
 import { useRallyOwners } from '../rally/rallyStore';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { ViewHeader } from './ViewHeader';
 
 export function PeopleView() {
-  const { tasks, notes, peopleCards } = useApp();
+  const { tasks, notes, peopleCards, settings } = useApp();
   // Personas con tareas, mencionadas en notas, con ficha u Owners en Rally de las tareas enlazadas.
   const rallyOwners = useRallyOwners(tasks);
   const people = peopleDirectory(tasks, notes, peopleCards, rallyOwners);
-  const role = (name: string) => peopleCards.find((c) => nameKey(c.name) === nameKey(name))?.role;
-  const topics = (name: string) => tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'todo' && t.people.some((p) => samePerson(p, name))).length;
+  const groups = settings.groups;
+  const sections = groupPeople(people, peopleCards, groups);
+  const [draft, setDraft] = useState('');
 
   return (
     <>
-      <ViewHeader title="Personas" subtitle="Con quién trabajas, qué tienes pendiente con cada una y qué ha dicho" />
-      <ul className="grid gap-2 sm:grid-cols-2">
+      <ViewHeader title="Grupos" subtitle="Crea grupos y arrastra a cada persona al suyo (o usa el botón de su tarjeta)" />
+      <form className="mb-5 flex items-center gap-2" onSubmit={async (e) => { e.preventDefault(); await createGroup(draft, groups); setDraft(''); }}>
+        <FolderPlus className="size-4 text-zinc-400" />
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Nuevo grupo: QA, Cliente, Equipo de pagos…"
+          className="w-80 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+        <button type="submit" disabled={!draft.trim()} className="rounded-md bg-indigo-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Crear grupo</button>
+      </form>
+      <div className="space-y-5">
+        {sections.map((s) => <GroupBlock key={s.group?.id ?? 'none'} group={s.group} people={s.people} />)}
+      </div>
+      {people.length === 0 && <p className="px-2 text-sm text-zinc-400">Aún no hay personas. Escribe @nombre al capturar una tarea o en una nota.</p>}
+    </>
+  );
+}
+
+function GroupBlock({ group, people }: { group: PersonGroup | null; people: PersonEntry[] }) {
+  const { tasks, peopleCards, settings } = useApp();
+  const groups = settings.groups;
+  const { over, dropProps } = usePersonDrop((name) => void movePersonToGroup(name, group));
+  const [name, setName] = useState(group?.name ?? '');
+  useEffect(() => setName(group?.name ?? ''), [group?.name]);
+  const role = (n: string) => peopleCards.find((c) => nameKey(c.name) === nameKey(n))?.role;
+  const topics = (n: string) => tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'todo' && t.people.some((p) => samePerson(p, n))).length;
+  const rename = () => { if (group && name.trim() && name.trim() !== group.name) void updateGroup(groups, group.id, { name: name.trim() }); else setName(group?.name ?? ''); };
+  const index = group ? groups.indexOf(group) : -1;
+
+  return (
+    <section {...dropProps} className={`rounded-xl border p-3 transition-colors ${over ? 'border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40' : 'border-zinc-200 dark:border-zinc-800'}`}>
+      <header className="group/h mb-2 flex items-center gap-2">
+        {group ? (
+          <>
+            <Popover width="w-auto" trigger={(toggle) => (
+              <button type="button" onClick={toggle} title="Color" className="size-3.5 rounded-full" style={{ background: group.color }} />
+            )}>
+              {(close) => (
+                <div className="grid grid-cols-5 gap-1.5 p-2">
+                  {PROJECT_COLORS.map((c) => (
+                    <button key={c} type="button" aria-label={c} onClick={() => { void updateGroup(groups, group.id, { color: c }); close(); }}
+                      className={`size-5 rounded-full ${c === group.color ? 'ring-2 ring-zinc-900 ring-offset-1 dark:ring-white' : ''}`} style={{ background: c }} />
+                  ))}
+                </div>
+              )}
+            </Popover>
+            <input value={name} onChange={(e) => setName(e.target.value)} onBlur={rename} aria-label="Nombre del grupo"
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setName(group.name); e.currentTarget.blur(); } }}
+              className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none focus:underline" />
+          </>
+        ) : <span className="flex-1 text-sm font-semibold text-zinc-500">Sin grupo</span>}
+        <span className="text-xs text-zinc-400">{people.length} persona{people.length === 1 ? '' : 's'}</span>
+        {group && (
+          <span className="flex gap-0.5 opacity-0 group-hover/h:opacity-100 focus-within:opacity-100">
+            <IconButton title="Subir" disabled={index <= 0} onClick={() => void moveGroup(groups, group.id, -1)}><ArrowUp className="size-3.5" /></IconButton>
+            <IconButton title="Bajar" disabled={index >= groups.length - 1} onClick={() => void moveGroup(groups, group.id, 1)}><ArrowDown className="size-3.5" /></IconButton>
+            <IconButton title="Eliminar grupo (las personas pasan a Sin grupo)" onClick={() => {
+              if (people.length === 0 || window.confirm(`¿Eliminar el grupo «${group.name}»? Sus ${people.length} personas pasarán a Sin grupo.`)) void deleteGroup(groups, group.id, people.map((p) => p.name));
+            }}><Trash2 className="size-3.5" /></IconButton>
+          </span>
+        )}
+      </header>
+      {people.length === 0 && <p className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-700">Arrastra aquí a las personas de este grupo</p>}
+      <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {people.map((p) => (
-          <li key={p.name}>
-            <a href={routeHref({ view: 'person', name: p.name })} className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800">
+          <li key={p.name} draggable onDragStart={(e) => setDraggedPerson(e, p.name)}>
+            <a href={routeHref({ view: 'person', name: p.name })} draggable={false} className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <Avatar name={p.name} size={36} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{p.name}</p>
                 <p className="truncate text-xs text-zinc-500">{role(p.name) || 'Sin rol'}</p>
+                <div className="mt-1"><GroupPicker name={p.name} compact /></div>
               </div>
               <div className="text-right text-xs text-zinc-500">
                 <p>{p.tasks} tarea{p.tasks === 1 ? '' : 's'}{p.notes ? ` · ${p.notes} nota${p.notes === 1 ? '' : 's'}` : ''}</p>
@@ -49,8 +111,14 @@ export function PeopleView() {
           </li>
         ))}
       </ul>
-      {people.length === 0 && <p className="px-2 text-sm text-zinc-400">Aún no hay personas. Escribe @nombre al capturar una tarea o en una nota.</p>}
-    </>
+    </section>
+  );
+}
+
+function IconButton({ title, onClick, disabled, children }: { title: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled}
+      className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800">{children}</button>
   );
 }
 
@@ -77,7 +145,10 @@ export function PersonView({ name }: { name: string }) {
       <header className="mb-6 flex items-start gap-4">
         <Avatar name={name} size={56} />
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">{name}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold">{name}</h1>
+            <GroupPicker name={name} />
+          </div>
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
         {card?.email && teamsChatUrl([card.email]) && (

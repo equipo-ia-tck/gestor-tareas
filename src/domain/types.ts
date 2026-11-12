@@ -116,6 +116,15 @@ export interface Person {
   notes: string;
   /** Para abrir un chat de Teams con la persona. */
   email: string;
+  /** Grupo al que pertenece (`Settings.groups`). Null o un id que ya no existe = sin grupo. */
+  group_id?: string | null;
+}
+
+/** Grupo de personas (equipo, cliente, área…). Se guarda en los ajustes de cada usuario. */
+export interface PersonGroup {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface Project {
@@ -180,6 +189,8 @@ export interface Settings {
   };
   /** Vistas guardadas de "Todo" (filtros con nombre). */
   saved_views: SavedView[];
+  /** Grupos de personas, en el orden en que se muestran. */
+  groups: PersonGroup[];
 }
 
 export type DueFilter = 'any' | 'overdue' | 'today' | 'week' | 'has' | 'none';
@@ -212,6 +223,7 @@ export const DEFAULT_SETTINGS: Settings = {
   last_backup_at: null,
   ui: { summary_dismissed_on: null, last_review_on: null },
   saved_views: [],
+  groups: [],
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

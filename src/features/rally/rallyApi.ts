@@ -18,7 +18,9 @@ export const rallyApi = {
   status: () => call<RallyStatus>('GET', '/api/rally'),
   connect: (apiKey: string, baseUrl: string) => call<RallyStatus>('POST', '/api/rally/connect', { apiKey, baseUrl }),
   disconnect: () => call<RallyStatus>('POST', '/api/rally/disconnect', {}),
-  move: (id: string, category: RallyCategory) => call<{ item: RallyItem }>('POST', '/api/rally/move', { id, category }).then((r) => r.item),
+  /** `blockedReason`: al bloquear, el motivo que se escribe en Rally (el texto del comentario). */
+  move: (id: string, category: RallyCategory, dryRun = false, blockedReason?: string) =>
+    call<{ item: RallyItem }>('POST', '/api/rally/move', { id, category, ...(dryRun ? { dryRun } : {}), ...(blockedReason ? { blockedReason } : {}) }).then((r) => r.item),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
   create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>
@@ -29,6 +31,12 @@ export const rallyApi = {
   tags: (q: string, page: number) => call<{ items: RallyRef[]; total: number }>('GET', `/api/rally/tags?q=${encodeURIComponent(q)}&page=${page}`),
   formOptions: (kind: RallyCreatableKind, projectId: string) =>
     call<RallyFormOptions>('GET', `/api/rally/form?kind=${kind}&project=${projectId}`),
+  /** Botones Ready y Blocked (sin cambiar de columna). `reason`: motivo al bloquear (el texto del comentario). */
+  flag: (id: string, change: { ready?: boolean; blocked?: boolean; reason?: string }) =>
+    call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => r.item),
+  /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
+  moveComment: (id: string, text: string, analyst: RallyRef | null) =>
+    call<{ text: string; owner: string | null; analyst: string | null }>('POST', '/api/rally/move-comment', { id, text, analyst }),
   comment: (item: RallyItem, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>

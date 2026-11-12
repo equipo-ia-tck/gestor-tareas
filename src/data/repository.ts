@@ -109,6 +109,7 @@ export interface Repository {
    * nuevo, las une (la ficha resultante conserva los datos de las dos).
    */
   renamePerson(from: string, to: string): Promise<void>;
+  setPersonGroup(name: string, groupId: string | null): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -588,10 +589,18 @@ export class DexieRepository implements Repository {
 
   async savePerson(person: Person) {
     const before = (await this.db.people.toArray()).find((p) => nameKey(p.name) === nameKey(person.name));
-    const after = { ...person, name: before?.name ?? person.name };
+    // Se conserva lo que no venga (p. ej. el grupo al editar el rol).
+    const after: Person = { ...before, ...person, name: before?.name ?? person.name };
     await this.db.people.put(after);
     this.record({ table: 'people', key: after.name, before, after }, 'Ficha guardada');
     this.emit();
+  }
+
+  /** Mete a la persona en un grupo (null = sin grupo). Crea la ficha si no la tenía. */
+  async setPersonGroup(name: string, groupId: string | null) {
+    const card = (await this.db.people.toArray()).find((p) => nameKey(p.name) === nameKey(name));
+    if ((card?.group_id ?? null) === groupId) return;
+    await this.savePerson({ name, role: card?.role ?? '', notes: card?.notes ?? '', email: card?.email ?? '', group_id: groupId });
   }
 
   async renamePerson(from: string, to: string) {
@@ -620,6 +629,7 @@ export class DexieRepository implements Repository {
           role: dest?.role || old?.role || '',
           notes: [dest?.notes, old?.notes].filter(Boolean).join('\n'),
           email: dest?.email || old?.email || '',
+          ...((dest?.group_id ?? old?.group_id) ? { group_id: dest?.group_id ?? old?.group_id } : {}),
         };
         await this.db.people.put(merged);
         this.record({ table: 'people', key: merged.name, before: dest, after: merged }, '');

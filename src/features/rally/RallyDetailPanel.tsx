@@ -3,6 +3,7 @@ import { ExternalLink, Paperclip, Plus, Send, Upload, X } from 'lucide-react';
 import type { RallyDetail, RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64 } from './rallyApi';
+import { RallyFlags } from './RallyFlags';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
 const PRIMARY = [
@@ -80,6 +81,11 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
   }, [onClose]);
 
   const current = detail?.item ?? item;
+  // Tras Ready/Blocked: se ve al momento y se vuelve a leer la ficha (motivo y comentario nuevos) sin vaciarla.
+  const flagged = (updated: RallyItem) => {
+    setDetail((d) => (d ? { ...d, item: updated } : d));
+    rallyApi.detail(updated).then(setDetail, () => {});
+  };
 
   return (
     // En pantallas anchas es una columna junto a la lista (fija al hacer scroll); en las estrechas se superpone por la derecha.
@@ -114,11 +120,7 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
               )}
             </span>
           </div>
-          {current.blocked && (
-            <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-              <b>Bloqueada</b>{detail?.blockedReason ? `: ${detail.blockedReason}` : ''}
-            </p>
-          )}
+          <RallyFlags item={current} reason={detail?.blockedReason ?? null} onChanged={flagged} />
         </div>
 
         <RallyDetailBody item={current} detail={detail} error={error} onSelect={onSelect} />

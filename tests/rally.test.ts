@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from '../servidor/api.ts';
-import { commentHtml, fieldValue, htmlToText, joinQuery, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
+import { commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
 import { groupRally, isRallyId, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
@@ -11,7 +11,7 @@ const story = { _type: 'HierarchicalRequirement', FormattedID: 'US1764574', Obje
   Blocked: false, Project: { _refObjectName: 'Caixa Web' }, Iteration: { _refObjectName: 'Sprint 14' }, Release: null, LastUpdateDate: '2026-10-20T10:00:00.000Z' };
 
 const item = (extra: Partial<RallyItem> = {}): RallyItem => ({
-  id: 'US1', objectId: '1', kind: 'US', name: 'Uno', state: 'Defined', done: false, blocked: false, project: null,
+  id: 'US1', objectId: '1', kind: 'US', name: 'Uno', state: 'Defined', done: false, blocked: false, ready: false, project: null,
   stateOrder: 2, category: 'todo', iteration: null, release: null, assignee: null, owner: null, mine: true, tags: [], updatedAt: '', url: `${BASE}/#/detail/userstory/1`, ...extra,
 });
 
@@ -30,7 +30,7 @@ function fakeRally(results: Record<string, unknown>[], status = 200) {
 describe('Rally: servidor', () => {
   it('convierte los resultados de la WSAPI y descarta los tipos que no usamos', () => {
     expect(toRallyItem(story, BASE)).toEqual({
-      id: 'US1764574', objectId: '111', kind: 'US', name: 'Login SSO', state: 'In-Progress', stateOrder: 5, category: 'doing', done: false, blocked: false,
+      id: 'US1764574', objectId: '111', kind: 'US', name: 'Login SSO', state: 'In-Progress', stateOrder: 5, category: 'doing', done: false, blocked: false, ready: false,
       project: 'Caixa Web', iteration: 'Sprint 14', release: null, assignee: null, owner: null, mine: false, tags: [], updatedAt: '2026-10-20T10:00:00.000Z',
       url: `${BASE}/#/detail/userstory/111`,
     });
@@ -58,7 +58,9 @@ describe('Rally: servidor', () => {
     expect(rallyCategory('New', 'New', false)).toBe('todo');
     expect(rallyCategory('Defined', 'Defined', false)).toBe('todo');
     expect(rallyCategory('Blocked', 'Defined', false)).toBe('blocked');
-    expect(rallyCategory('Need Review', 'In-Progress', true)).toBe('blocked');
+    // Con columna manda la columna: la marca Blocked no cambia de bloque. Sin columna (tareas), sí cuenta.
+    expect(rallyCategory('Need Review', 'In-Progress', true)).toBe('doing');
+    expect(rallyCategory(null, 'In-Progress', true)).toBe('blocked');
     expect(rallyCategory('Need Review', 'In-Progress', false)).toBe('doing');
     expect(rallyCategory('Desarrollo', 'Defined', false)).toBe('doing');
     expect(rallyCategory('Completed', 'Completed', false)).toBe('done');
@@ -202,6 +204,8 @@ describe('Rally: ficha', () => {
   });
 });
 
+const pushIds = (p: { id: string; category: string }[]) => p.map(({ id, category }) => ({ id, category }));
+
 describe('Rally: mover', () => {
   const ws = `${BASE}/slm/webservice/v2.0`;
   const flows = ['New', 'Defined', 'To Do', 'Blocked', 'In-Progress', 'Need Review', 'Completed', 'Accepted']
@@ -226,7 +230,10 @@ describe('Rally: mover', () => {
         const flow = flows.find((f) => f._ref === patch.FlowState);
         return new Response(JSON.stringify({ OperationResult: { Errors: [], Object: { ...row, ...patch, ...(flow ? { FlowState: { _refObjectName: flow.Name } } : {}) } } }));
       }
-      const results = path === '/user' ? null : path === '/flowstate' ? flows : [row];
+      // Buscar un usuario por ObjectID (para su ObjectUUID); sin consulta, es la comprobación de la clave.
+      const results = path === '/user'
+        ? (u.searchParams.has('query') ? [{ _refObjectUUID: 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB' }] : null)
+        : path === '/flowstate' ? flows : [row];
       return new Response(JSON.stringify(results ? { QueryResult: { Errors: [], Results: results, TotalResultCount: results.length } } : { User: { ObjectID: 42, DisplayName: 'Marta' } }));
     }) as unknown as typeof fetch;
     const rally = new Rally(db, fetcher);
@@ -247,6 +254,64 @@ describe('Rally: mover', () => {
     expect(posts[0].body).toEqual({ HierarchicalRequirement: { FlowState: `${ws}/flowstate/2`, Blocked: false } }); // Defined, no New
   });
 
+  it('al mover propone el comentario y lo publica con el PO y el analista', async () => {
+    const comments = (p: { path: string; body: unknown }[]) => p.filter((x) => x.path === '/conversationpost/create')
+      .map((x) => (x.body as { ConversationPost: { Artifact: string; Text: string } }).ConversationPost);
+    const owner = { _ref: `${ws}/user/55`, _refObjectName: 'Pepa PO', _refObjectUUID: '2a75bf52-cfd9-4550-97ec-fc6383373083' };
+    const nueva = await setup({ ...us, ScheduleState: 'Defined', FlowState: { _refObjectName: 'New' }, Blocked: false, Owner: owner });
+    const item = await nueva.rally.move(nueva.marta, { id: 'US1', category: 'todo' });
+    expect(nueva.posts).toEqual([{ path: '/hierarchicalrequirement/111', body: { HierarchicalRequirement: { FlowState: `${ws}/flowstate/2` } } }]); // New → Defined, sin comentar aún
+    expect(item.comment).toBe(MOVE_COMMENTS.defined);
+
+    const r = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US-1', text: item.comment, analyst: { ref: '/user/77', name: 'Luis <QA>' } });
+    expect(r).toEqual({ text: MOVE_COMMENTS.defined, owner: 'Pepa PO', analyst: 'Luis <QA>' });
+    expect(comments(nueva.posts)).toEqual([{
+      Artifact: '/hierarchicalrequirement/111',
+      // Como el editor de Rally: <span class="mention" data-mention="ObjectUUID">, que es lo que hace que avise por correo.
+      Text: `<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía definida correctamente<br />Analista: <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis &lt;QA&gt;</span></p>`,
+    }]);
+    // Sin analista: solo el PO.
+    await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: MOVE_COMMENTS.blocked, analyst: null });
+    expect(comments(nueva.posts)[1].Text).toBe(`<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía bloqueada</p>`);
+    // Texto modificado con el lápiz (con saltos de línea); vacío no.
+    await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Guía bloqueada\nfalta el diseño', analyst: null });
+    expect(comments(nueva.posts)[2].Text).toBe(`<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía bloqueada<br />falta el diseño</p>`);
+    await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: '  ' })).rejects.toThrow(/no válido/);
+    await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: MOVE_COMMENTS.done, analyst: { ref: 'http://x', name: 'a' } })).rejects.toThrow(/Analista/);
+
+    for (const category of ['doing', 'blocked', 'done', 'accepted']) {
+      const moved = await nueva.rally.move(nueva.marta, { id: 'US1', category });
+      expect(moved.comment).toBe(category === 'accepted' ? undefined : MOVE_COMMENTS[category as 'doing']);
+    }
+  });
+
+  it('con dryRun no escribe y dice qué comentario tocaría', async () => {
+    const { rally, marta, posts } = await setup({ ...us, ScheduleState: 'Defined', FlowState: { _refObjectName: 'New' }, Blocked: false });
+    const doing = await rally.move(marta, { id: 'US1', category: 'doing', dryRun: true });
+    expect(doing).toMatchObject({ state: 'In-Progress', category: 'doing', comment: MOVE_COMMENTS.doing });
+    const defined = await rally.move(marta, { id: 'US1', category: 'todo', dryRun: true });
+    expect(defined).toMatchObject({ state: 'Defined', comment: MOVE_COMMENTS.defined });
+    expect((await rally.move(marta, { id: 'US1', category: 'accepted', dryRun: true })).comment).toBeUndefined();
+    expect(posts).toEqual([]);
+  });
+
+  it('rallyPushes dice la tarea y el estado del que venía', () => {
+    const before = makeTask({ id: 't1', external_id: 'US9', type_id: 'us', state_id: 'us-dev' });
+    expect(rallyPushes([{ table: 'tasks', before, after: { ...before, state_id: 'us-blocked' } }], false, DEFAULT_ITEM_TYPES))
+      .toEqual([{ id: 'US9', category: 'blocked', taskId: 't1', fromStateId: 'us-dev' }]);
+  });
+
+  it('elige el comentario según el paso', () => {
+    const at = (state: string, category: RallyItem['category']) => ({ state, category });
+    expect(moveComment(at('New', 'todo'), at('Defined', 'todo'))).toBe(MOVE_COMMENTS.defined);
+    expect(moveComment(at('In-Progress', 'doing'), at('Defined', 'todo'))).toBeNull(); // volver atrás
+    expect(moveComment(at('Defined', 'todo'), at('In-Progress', 'doing'))).toBe(MOVE_COMMENTS.doing);
+    expect(moveComment(at('In-Progress', 'doing'), at('Need Review', 'doing'))).toBeNull();
+    expect(moveComment(at('In-Progress', 'doing'), at('Blocked', 'blocked'))).toBe(MOVE_COMMENTS.blocked);
+    expect(moveComment(at('In-Progress', 'doing'), at('Completed', 'done'))).toBe(MOVE_COMMENTS.done);
+    expect(moveComment(at('Completed', 'done'), at('Accepted', 'accepted'))).toBeNull();
+  });
+
   it('no escribe si ya está en esa categoría; las tareas cambian su State', async () => {
     const { rally, marta, posts } = await setup({ ...us, Blocked: false });
     await rally.move(marta, { id: 'US1', category: 'doing' }); // Need Review ya es "En curso"
@@ -256,6 +321,34 @@ describe('Rally: mover', () => {
     expect(task.posts[0]).toEqual({ path: '/task/5', body: { Task: { State: 'Completed' } } });
     await task.rally.move(task.marta, { id: 'TA5', category: 'blocked' });
     expect(task.posts[1].body).toEqual({ Task: { Blocked: true } });
+  });
+
+  it('al bloquear marca Blocked y pone el comentario (sin personas) como motivo', async () => {
+    const { rally, marta, posts } = await setup({ ...us, ScheduleState: 'In-Progress', FlowState: { _refObjectName: 'In-Progress' }, Blocked: false });
+    const preview = await rally.move(marta, { id: 'US1', category: 'blocked', dryRun: true, blockedReason: 'x' });
+    expect(preview).toMatchObject({ category: 'blocked', blocked: true, comment: MOVE_COMMENTS.blocked });
+    expect(posts).toEqual([]);
+    await rally.move(marta, { id: 'US1', category: 'blocked', blockedReason: 'Guía bloqueada\n  falta el diseño ' });
+    const patch = (posts[0].body as { HierarchicalRequirement: Record<string, unknown> }).HierarchicalRequirement;
+    // Aunque haya columna Blocked, el botón Blocked también se marca.
+    expect(patch).toMatchObject({ Blocked: true, BlockedReason: 'Guía bloqueada falta el diseño' });
+    expect(blockedReasonText('a'.repeat(300))).toHaveLength(256);
+    expect(blockedReasonText('   ')).toBeNull();
+  });
+
+  it('Ready y Blocked se marcan sin cambiar de columna', async () => {
+    const { rally, marta, posts } = await setup({ ...us, FlowState: { _refObjectName: 'In-Progress' }, Blocked: false });
+    const ready = await rally.flag(marta, { id: 'US-1', ready: true });
+    expect(posts[0]).toEqual({ path: '/hierarchicalrequirement/111', body: { HierarchicalRequirement: { Ready: true } } });
+    expect(ready).toMatchObject({ ready: true, category: 'doing' });
+    const blocked = await rally.flag(marta, { id: 'US1', blocked: true, reason: 'Guía bloqueada\nfalta el diseño' });
+    expect(posts[1].body).toEqual({ HierarchicalRequirement: { Blocked: true, BlockedReason: 'Guía bloqueada falta el diseño' } });
+    // Sigue en su bloque: con columna, la marca no la pasa a Bloqueado.
+    expect(blocked).toMatchObject({ blocked: true, category: 'doing', state: 'In-Progress' });
+    await rally.flag(marta, { id: 'US1', blocked: false });
+    expect(posts[2].body).toEqual({ HierarchicalRequirement: { Blocked: false, BlockedReason: '' } });
+    await expect(rally.flag(marta, { id: 'US1' })).rejects.toThrow(/Nada/);
+    await expect(rally.flag(marta, { id: 'TC1', ready: true })).rejects.toThrow(/no tiene/);
   });
 
   it('publica un comentario en la discusión', async () => {
@@ -497,13 +590,18 @@ describe('Rally: gestor', () => {
       { table: 'tasks', before: makeTask({ external_id: 'TC4', state_id: 'task-todo' }), after: makeTask({ external_id: 'TC4', state_id: 'task-doing' }) },
       { table: 'tasks', before: makeTask({ external_id: 'JIRA-5', state_id: 'task-todo' }), after: makeTask({ external_id: 'JIRA-5', state_id: 'task-doing' }) },
     ];
-    expect(rallyPushes(changes, false, T)).toEqual([{ id: 'US1', category: 'accepted' }]);
-    expect(rallyPushes(changes, true, T)).toEqual([{ id: 'US1', category: 'doing' }]);
+    expect(pushIds(rallyPushes(changes, false, T))).toEqual([{ id: 'US1', category: 'accepted' }]);
+    expect(pushIds(rallyPushes(changes, true, T))).toEqual([{ id: 'US1', category: 'doing' }]);
     // Completar y pasar a Accepted en la misma entrada: se manda Accepted; al deshacer, vuelve a En curso.
     const prod = { ...before, state_id: 'us-prod', status: 'done' as const };
     const twoSteps = [{ table: 'tasks', before, after: prod }, { table: 'tasks', before: prod, after }];
-    expect(rallyPushes(twoSteps, false, T)).toEqual([{ id: 'US1', category: 'accepted' }]);
-    expect(rallyPushes(twoSteps, true, T)).toEqual([{ id: 'US1', category: 'doing' }]);
+    expect(pushIds(rallyPushes(twoSteps, false, T))).toEqual([{ id: 'US1', category: 'accepted' }]);
+    expect(pushIds(rallyPushes(twoSteps, true, T))).toEqual([{ id: 'US1', category: 'doing' }]);
+    // Backlog → Refinada (Por hacer → Por hacer): se manda para pasar de New a Defined; al revés, no.
+    const backlog = makeTask({ external_id: 'US7', type_id: 'us', state_id: 'us-backlog' });
+    const refined = { ...backlog, state_id: 'us-refined' };
+    expect(pushIds(rallyPushes([{ table: 'tasks', before: backlog, after: refined }], false, T))).toEqual([{ id: 'US7', category: 'todo' }]);
+    expect(pushIds(rallyPushes([{ table: 'tasks', before: refined, after: backlog }], false, T))).toEqual([]);
   });
 
   it('reconoce los IDs de Rally (para mostrar su ficha en el panel de la tarea)', () => {

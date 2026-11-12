@@ -26,6 +26,19 @@ describe('DexieRepository', () => {
     expect(u!.last_touched_at > t.last_touched_at).toBe(true);
   });
 
+  it('mete a una persona en un grupo sin perder su ficha y se puede deshacer', async () => {
+    await repo.savePerson({ name: 'Diana', role: 'QA', notes: '', email: 'd@x.es' });
+    await repo.batch('Movida a QA', () => repo.setPersonGroup('diana', 'g1'));
+    expect(await repo.listPeople()).toEqual([{ name: 'Diana', role: 'QA', notes: '', email: 'd@x.es', group_id: 'g1' }]);
+    await repo.savePerson({ name: 'Diana', role: 'Lead QA', notes: '', email: 'd@x.es' });
+    expect((await repo.listPeople())[0]).toMatchObject({ role: 'Lead QA', group_id: 'g1' });
+    await repo.undo();
+    await repo.undo();
+    expect((await repo.listPeople())[0].group_id).toBeUndefined();
+    await repo.setPersonGroup('Luis', 'g2');
+    expect((await repo.listPeople()).find((p) => p.name === 'Luis')).toMatchObject({ role: '', group_id: 'g2' });
+  });
+
   it('completa y descompleta', async () => {
     const t = await repo.createTask({ title: 'a' });
     await repo.setCompleted(t.id, true);

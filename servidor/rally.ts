@@ -73,7 +73,7 @@ const ASSIGNEE_FIELD = 'c_Assignee';
 const DONE = new Set(['accepted', 'completed', 'released', 'closed', 'pass', 'done']);
 /** Orden de las columnas cuando no hay FlowState (tablero sin columnas propias). */
 const SCHEDULE = ['idea', 'new', 'submitted', 'defined', 'open', 'in-progress', 'fixed', 'completed', 'accepted', 'released', 'closed'];
-const FETCH = 'FormattedID,Name,FlowState,OrderIndex,ScheduleState,State,LastVerdict,Blocked,Project,Iteration,Release,'
+const FETCH = 'FormattedID,Name,FlowState,OrderIndex,ScheduleState,State,LastVerdict,Blocked,Ready,Project,Iteration,Release,'
   + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags';
 
 /** Solo servidores de Rally (`https://*.rallydev.com`), sin ruta. */
@@ -143,16 +143,77 @@ export function fieldValue(v: unknown): string | null {
 /**
  * Categoría del gestor a partir de la columna del tablero y el estado: Accepted (o Released/Closed), Hecho (Completed o
  * test pasado), Bloqueado (columna Blocked, marcado como bloqueado sin terminar o test fallido), En curso (In-Progress,
- * Need Review…) y Por hacer (el resto: New, Defined…).
+ * Need Review…) y Por hacer (el resto: New, Defined…). La marca Blocked solo cuenta si no hay columna (FlowState): con
+ * tablero manda la columna, así marcar o desmarcar Blocked no cambia el elemento de bloque (ni en Rally ni en el gestor).
  */
 export function rallyCategory(flow: string | null, schedule: string, blocked: boolean): RallyCategory {
   const f = (flow ?? '').toLowerCase();
+  if (flow) blocked = false;
   const s = schedule.toLowerCase();
   if (['accepted', 'released', 'closed'].includes(s) || f === 'accepted') return 'accepted';
   if (s === 'completed' || s === 'pass' || s === 'done' || f === 'completed') return 'done';
   if (blocked || f.includes('block') || s === 'fail' || s === 'blocked') return 'blocked';
   if (s === 'in-progress' || s === 'fixed' || /progress|review|desarrollo|curso|test|qa/.test(f) || /develop|implement|measur/.test(s)) return 'doing';
   return 'todo';
+}
+
+/** Comentarios que se dejan en la discusión de Rally al mover un elemento desde el gestor. */
+export const MOVE_COMMENTS = {
+  defined: 'Guía definida correctamente',
+  doing: 'Se comienza a trabajar en la guía solicitada',
+  blocked: 'Guía bloqueada',
+  done: 'Se finaliza la guía a la espera de validación',
+} as const;
+
+const isNew = (state: string) => /^new$/i.test(state.trim());
+const isDefined = (state: string) => /^defined$/i.test(state.trim());
+
+/**
+ * Comentario para un movimiento (null si no toca): de New a Defined, a En curso, a Bloqueado o a Completed. Pasar a
+ * Accepted o volver atrás a Por hacer no deja comentario.
+ */
+export function moveComment(from: Pick<RallyItem, 'state' | 'category'>, to: Pick<RallyItem, 'state' | 'category'>): string | null {
+  if (from.category === to.category && from.state === to.state) return null;
+  if (to.category === 'blocked') return from.category === 'blocked' ? null : MOVE_COMMENTS.blocked;
+  if (to.category === 'doing') return from.category === 'doing' ? null : MOVE_COMMENTS.doing;
+  if (to.category === 'done') return MOVE_COMMENTS.done;
+  if (to.category === 'todo' && isNew(from.state) && isDefined(to.state)) return MOVE_COMMENTS.defined;
+  return null;
+}
+
+/** Persona de Rally que llega del navegador (`{ ref: '/user/123', name }`); null si no es válida. */
+export function parseUserRef(v: unknown): RallyRef | null {
+  if (!v || typeof v !== 'object') return null;
+  const { ref, name } = v as { ref?: unknown; name?: unknown };
+  const n = String(name ?? '').trim().slice(0, 120);
+  return typeof ref === 'string' && /^\/user\/\d+$/.test(ref) && n ? { ref, name: n } : null;
+}
+
+/** Persona que se menciona: nombre visible y su ObjectUUID en Rally (sin UUID, Rally no la reconoce ni avisa). */
+export interface Mention { name: string; uuid: string | null }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Mención como la guarda el editor de Rally (`<span class="mention" data-mention="<ObjectUUID>">@Nombre</span>`): así Rally
+ * avisa y manda el correo. Un enlace normal a la ficha se ve igual pero no notifica. Sin UUID queda como texto.
+ */
+export function mentionHtml(m: Mention): string {
+  const name = `@${commentHtml(m.name)}`;
+  return m.uuid && UUID.test(m.uuid) ? `<span class="mention" data-mention="${m.uuid.toLowerCase()}">${name}</span>` : name;
+}
+
+/** Comentario de un movimiento: «@PO texto» y, si lo hay, «Analista: @X» en otra línea. */
+/** Motivo de bloqueo a partir del comentario: sin saltos de línea y como mucho 256 caracteres. */
+export function blockedReasonText(text: unknown): string | null {
+  if (typeof text !== 'string') return null;
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t ? (t.length > 256 ? `${t.slice(0, 255)}…` : t) : null;
+}
+
+export function moveCommentHtml(text: string, owner: Mention | null, analyst: Mention | null): string {
+  const first = owner ? `${mentionHtml(owner)} ${commentHtml(text)}` : commentHtml(text);
+  return `<p>${analyst ? `${first}<br />Analista: ${mentionHtml(analyst)}` : first}</p>`;
 }
 
 /** Une condiciones de la WSAPI, que solo admite dos por paréntesis: ((a OR b) OR c). */
@@ -182,6 +243,7 @@ export function toRallyItem(o: RallyObject, baseUrl: string, meId: string | null
     category: rallyCategory(refName(flow), schedule, o.Blocked === true),
     done: DONE.has(schedule.toLowerCase()),
     blocked: o.Blocked === true,
+    ready: o.Ready === true,
     project: refName(o.Project),
     iteration: refName(o.Iteration),
     release: refName(o.Release),
@@ -384,7 +446,11 @@ export class Rally {
    * Mueve un elemento a la columna de una categoría (cuando se mueve su tarea en el gestor). No escribe si ya está en
    * esa categoría. Al sacarlo de Bloqueado se le quita la marca de bloqueo; las tareas de Rally cambian su State.
    */
-  async move(user: TeamUser, input: { id?: unknown; category?: unknown }): Promise<RallyItem> {
+  /**
+   * Mueve un elemento a la columna de la categoría. Con `dryRun` no escribe nada: devuelve cómo quedaría y el comentario
+   * que tocaría, para que la app pregunte por el analista (y se pueda cancelar) antes de mover de verdad.
+   */
+  async move(user: TeamUser, input: { id?: unknown; category?: unknown; dryRun?: unknown; blockedReason?: unknown }): Promise<RallyItem> {
     const a = this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const category = input.category as RallyCategory;
@@ -396,22 +462,105 @@ export class Rally {
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
     const current = toRallyItem({ _type: type, ...o }, a.base_url, a.rally_user_id)!;
-    if (current.category === category) return current;
+    // Por hacer dentro de Por hacer solo sirve para pasar de New a Defined.
+    const define = category === 'todo' && current.category === 'todo' && isNew(current.state);
+    if (current.category === category && !define) return current;
 
     const patch: RallyObject = {};
+    let flowName: string | null = null;
     if (type === 'task') {
       if (TARGET_TASK_STATE[category]) patch.State = TARGET_TASK_STATE[category];
     } else {
       const projectId = refId(o.Project);
       const flows = projectId ? await this.flowStates(a, projectId) : [];
-      const flow = TARGET_FLOW[category].map((n) => flows.find((f) => f.name.toLowerCase() === n)).find(Boolean);
-      if (flow) patch.FlowState = flow.ref;
+      const targets = define ? ['defined'] : TARGET_FLOW[category];
+      const flow = targets.map((n) => flows.find((f) => f.name.toLowerCase() === n)).find(Boolean);
+      if (flow) { patch.FlowState = flow.ref; flowName = flow.name; }
       else if (TARGET_SCHEDULE[category]) patch.ScheduleState = TARGET_SCHEDULE[category];
     }
-    if (category === 'blocked' && !patch.FlowState) patch.Blocked = true;
+    // Bloqueado marca siempre el botón Blocked (aunque haya columna Blocked) y escribe el motivo: el texto del comentario
+    // sin menciones, en una línea y como mucho 256 caracteres (el límite de BlockedReason).
+    if (category === 'blocked') {
+      if (o.Blocked !== true) patch.Blocked = true;
+      const reason = blockedReasonText(input.blockedReason);
+      if (reason) patch.BlockedReason = reason;
+    }
     if (category !== 'blocked' && o.Blocked === true) patch.Blocked = false;
+    if (!Object.keys(patch).length) return current;
+    if (input.dryRun === true) {
+      const preview = toRallyItem({ _type: type, ...o, ...patch, ...(flowName ? { FlowState: { _refObjectName: flowName } } : {}) }, a.base_url, a.rally_user_id)!;
+      const text = moveComment(current, preview);
+      return { ...preview, ...(text ? { comment: text } : {}) };
+    }
+    const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: patch });
+    const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
+    // El comentario no se publica aquí: la app pregunta antes por el analista y lo manda con `moveCommentPost`.
+    const text = moveComment(current, item);
+    if (text) item.comment = text;
+    return item;
+  }
+
+  /**
+   * Publica en la discusión el comentario de un movimiento, mencionando al Owner (el PO) y, si se ha elegido, al
+   * analista: «@PO Guía bloqueada» + «Analista: @X». El texto es el de `MOVE_COMMENTS` o el que se haya escrito con el lápiz.
+   */
+  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null }> {
+    const a = this.connected(user);
+    const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
+    // El texto parte de MOVE_COMMENTS, pero se puede modificar en la ventana antes de publicarlo.
+    const text = String(input.text ?? '').trim();
+    const entry = kindOfId(id);
+    if (!entry || !text || text.length > 10_000) throw new ApiError(400, 'Comentario de Rally no válido.');
+    const analyst = parseUserRef(input.analyst);
+    if (input.analyst != null && !analyst) throw new ApiError(400, 'Analista no válido.');
+    const [type] = entry;
+    const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
+    if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
+    const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
+    const ownerId = refId(ownerRef);
+    const owner: Mention | null = ownerRef && ownerId && /^\d+$/.test(ownerId)
+      ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : await this.userUuid(a, ownerId) }
+      : null;
+    const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: await this.userUuid(a, analyst.ref.split('/').pop()!) } : null;
+    const html = moveCommentHtml(text, owner, analystMention);
+    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: html } });
+    return { text, owner: owner?.name ?? null, analyst: analyst?.name ?? null };
+  }
+
+  /**
+   * Marca o desmarca Ready y Blocked (los botones de la ficha de Rally) sin cambiar la columna. Al bloquear, el motivo es
+   * el texto del comentario (sin menciones, `blockedReasonText`); al desbloquear se borra.
+   */
+  async flag(user: TeamUser, input: { id?: unknown; ready?: unknown; blocked?: unknown; reason?: unknown }): Promise<RallyItem> {
+    const a = this.connected(user);
+    const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
+    const entry = kindOfId(id);
+    if (!entry) throw new ApiError(400, 'Elemento de Rally no válido.');
+    const [type, info] = entry;
+    if (info.kind === 'TC' || info.kind === 'FE') throw new ApiError(400, 'Este tipo no tiene Ready ni Blocked en Rally.');
+    const patch: RallyObject = {};
+    if (typeof input.ready === 'boolean') patch.Ready = input.ready;
+    if (typeof input.blocked === 'boolean') {
+      patch.Blocked = input.blocked;
+      if (input.blocked) {
+        const reason = blockedReasonText(input.reason);
+        if (reason) patch.BlockedReason = reason;
+      } else patch.BlockedReason = '';
+    }
+    if (!Object.keys(patch).length) throw new ApiError(400, 'Nada que cambiar.');
+    const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
+    if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: patch });
     return toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
+  }
+
+  /** ObjectUUID de un usuario de Rally por su ObjectID (lo necesita la mención para que Rally avise). */
+  private async userUuid(a: { base_url: string; api_key: string }, objectId: string): Promise<string | null> {
+    if (!/^\d+$/.test(objectId)) return null;
+    const [u] = await this.list(a, '/user', { query: `(ObjectID = ${objectId})`, fetch: 'ObjectUUID', pagesize: '1' });
+    // Rally lo devuelve en `_refObjectUUID` (el campo ObjectUUID no viene aunque se pida).
+    const uuid = u?._refObjectUUID ?? u?.ObjectUUID;
+    return typeof uuid === 'string' ? uuid : null;
   }
 
   /** Caché de las opciones que cambian poco (etiquetas, milestones, valores permitidos): 10 minutos. */

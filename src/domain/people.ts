@@ -1,6 +1,6 @@
 import { isActive } from './selectors';
 import { nameKey } from './text';
-import type { Note, Person, Task } from './types';
+import type { Note, Person, PersonGroup, Task } from './types';
 
 export interface PersonEntry {
   name: string;
@@ -55,4 +55,32 @@ export function renameInList(people: string[], from: string, to: string): string
     if (!out.some((o) => nameKey(o) === nameKey(p))) out.push(p);
   }
   return out;
+}
+
+export interface GroupSection<T extends { name: string }> {
+  /** Null = "Sin grupo". */
+  group: PersonGroup | null;
+  people: T[];
+}
+
+/** Grupo de una persona según su ficha; null si no tiene o si el grupo ya no existe. */
+export function groupOf(name: string, cards: Person[], groups: PersonGroup[]): PersonGroup | null {
+  const id = cards.find((c) => nameKey(c.name) === nameKey(name))?.group_id;
+  return (id && groups.find((g) => g.id === id)) || null;
+}
+
+/**
+ * Reparte las personas en sus grupos, en el orden de los grupos y conservando el de la lista dentro de cada uno.
+ * Siempre salen todos los grupos (aunque estén vacíos) y, al final, "Sin grupo" si hay alguien sin grupo.
+ */
+export function groupPeople<T extends { name: string }>(people: T[], cards: Person[], groups: PersonGroup[]): GroupSection<T>[] {
+  const sections: GroupSection<T>[] = groups.map((group) => ({ group, people: [] }));
+  const none: T[] = [];
+  for (const p of people) {
+    const g = groupOf(p.name, cards, groups);
+    if (g) sections[groups.indexOf(g)].people.push(p);
+    else none.push(p);
+  }
+  if (none.length) sections.push({ group: null, people: none });
+  return sections;
 }
