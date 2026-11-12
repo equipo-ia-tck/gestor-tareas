@@ -596,6 +596,10 @@ espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
   Supabase (`Authorization: Bearer`, `src/data/serverApi.ts`) y `servidor/auth.ts` la comprueba con `rpc/me` (un minuto en
   caché; sin conexión con Supabase responde 503). Las claves de los conectores siguen en `servidor/datos/equipo.sqlite`,
   pero ahora van por el id de Supabase: **cada persona tiene que volver a conectar sus conectores**.
+- **Crear con un espacio elegido** en el filtro de la barra lateral: los proyectos nuevos van a ese espacio y las tareas
+  sin proyecto, al proyecto con el nombre del espacio (`repo.defaultSpace`, `spaceProject`; se crea la primera vez con su
+  color, en el mismo "Deshacer"). Así no se quedan privadas ni desaparecen de la vista filtrada. No se aplica a la
+  siguiente ocurrencia de una recurrente ni a "Añadir desde archivo".
 - Prueba local: `equipo-prueba` (servidor en 4180) y `dev-prueba` (Vite en 5174 con `GESTOR_API=http://localhost:4180`).
 
 ### Más adelante
