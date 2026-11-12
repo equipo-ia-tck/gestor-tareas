@@ -271,14 +271,9 @@ export class SyncClient {
     const previous = backend === 'supabase' ? (await this.db.meta.get('sync-user'))?.value : undefined;
     if (previous === user.id) return 'ready';
     const local = (await this.db.tasks.count()) + (await this.db.notes.count()) + (await this.db.projects.count());
-    if (!previous && local > 0) {
-      const { count, error } = await this.supabase.from('records').select('key', { count: 'exact', head: true }).eq('owner', user.id);
-      if (error) throw new Error(friendly(error.message));
-      if (!count) return 'ask-upload';
-    }
-    // Datos de antes cuando la cuenta ya tiene los suyos: se descarga una copia por si acaso. Los de otra
-    // cuenta de Supabase ya están en la base de datos. Después se vacía el navegador.
-    if (!previous && local > 0) await this.downloadCopy();
+    // Datos de antes de tener cuenta (o del servidor local): siempre se pregunta, aunque la cuenta ya tenga cosas
+    // (subirlos los suma a lo que ya hay). Los de otra cuenta de Supabase ya están en la base de datos: se vacía.
+    if (!previous && local > 0) return 'ask-upload';
     await this.clearLocal();
     await this.markUser(user.id);
     return 'ready';

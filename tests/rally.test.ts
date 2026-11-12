@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
-import { commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
-import { groupRally, isRallyId, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
+import { commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
+import { groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
 
@@ -336,6 +336,67 @@ describe('Rally: mover', () => {
     expect(blockedReasonText('   ')).toBeNull();
   });
 
+  it('publica el mensaje de Ready con las personas de Rally etiquetadas', async () => {
+    const ana = { name: 'Ana', uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    const anaMaria = { name: 'Ana María', uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
+    const span = (m: { name: string; uuid: string }) => `<span class="mention" data-mention="${m.uuid}">@${m.name}</span>`;
+    expect(messageHtml('Hola @Ana María y @Ana,\nok <b>', [ana, anaMaria]))
+      .toBe(`<p>Hola ${span(anaMaria)} y ${span(ana)},<br />ok &lt;b&gt;</p>`);
+
+    const { rally, marta, posts } = await setup(us);
+    const r = await rally.messagePost(marta, { id: 'US1', text: 'Hola @Luis QA, lista', mentions: [
+      { ref: '/user/77', name: 'Luis QA' }, { ref: '/user/78', name: 'Borrada' }] });
+    expect(r).toEqual({ mentioned: ['Luis QA'] }); // la que ya no sale en el texto no se menciona
+    expect(posts).toEqual([{ path: '/conversationpost/create', body: { ConversationPost: { Artifact: '/hierarchicalrequirement/111',
+      Text: '<p>Hola <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis QA</span>, lista</p>' } } }]);
+    await expect(rally.messagePost(marta, { id: 'US1', text: ' ' })).rejects.toThrow(/no válido/);
+    await expect(rally.messagePost(marta, { id: 'US1', text: 'x', mentions: [{ ref: 'http://x', name: 'a' }] })).rejects.toThrow(/Persona/);
+  });
+
+  it('mueve a una columna concreta (Tablero «Como en Rally»)', async () => {
+    const { rally, marta, posts } = await setup({ ...us, FlowState: { _refObjectName: 'In-Progress' }, Blocked: false });
+    const preview = await rally.move(marta, { id: 'US1', category: 'doing', flow: 'Need Review', dryRun: true });
+    expect(preview).toMatchObject({ state: 'Need Review', category: 'doing' });
+    expect(preview.comment).toBeUndefined(); // dentro de En curso no se comenta
+    await rally.move(marta, { id: 'US1', category: 'doing', flow: 'need-review' });
+    expect(posts[0].body).toEqual({ HierarchicalRequirement: { FlowState: `${ws}/flowstate/6` } });
+    posts.length = 0;
+    await rally.move(marta, { id: 'US1', category: 'doing', flow: 'In-Progress' }); // ya está ahí
+    expect(posts).toEqual([]);
+  });
+
+  it('lleva un TS a Need Review con Blocked, motivo y comentario a la vez; todo obligatorio', async () => {
+    const owner = { _ref: `${ws}/user/55`, _refObjectName: 'Pepa PO', _refObjectUUID: '2a75bf52-cfd9-4550-97ec-fc6383373083' };
+    const ts = { FormattedID: 'TS9', ObjectID: 999, Name: 'Pruebas login', ScheduleState: 'In-Progress', FlowState: { _refObjectName: 'In-Progress' },
+      Blocked: false, Owner: owner, Project: { _ref: `${ws}/project/7` } };
+    const { rally, marta, posts } = await setup(ts);
+    const analyst = { ref: '/user/77', name: 'Luis QA' };
+    const ok = { id: 'TS9', defectId: 'DE12', text: 'se abre defect https://eu1.rallydev.com/#/detail/defect/5 por errores', analyst, reason: 'Esperando\nal DE12' };
+    for (const bad of [{ id: 'US1' }, { defectId: '' }, { text: ' ' }, { analyst: null }, { reason: '' }]) {
+      await expect(rally.needReview(marta, { ...ok, ...bad })).rejects.toThrow();
+    }
+    expect(posts).toEqual([]);
+    const r = await rally.needReview(marta, ok);
+    expect(posts[0]).toEqual({ path: '/testset/999', body: { TestSet: { FlowState: `${ws}/flowstate/6`, Blocked: true, BlockedReason: 'Esperando al DE12' } } });
+    expect(r.item).toMatchObject({ state: 'Need Review', category: 'doing', blocked: true });
+    const text = (posts[1].body as { ConversationPost: { Text: string } }).ConversationPost.Text;
+    expect(text).toContain('data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> se abre defect <a href="https://eu1.rallydev.com/#/detail/defect/5"');
+    expect(text).toContain('Analista: <span class="mention"');
+    expect(text).not.toContain('Esperando'); // el motivo no va a la discusión
+    expect(r).toMatchObject({ owner: 'Pepa PO', analyst: 'Luis QA' });
+  });
+
+  it('coloca cada tarjeta en su columna de Rally o en la de su grupo', () => {
+    expect(rallyColumnOf('Need Review', 'doing')).toBe('Need Review');
+    expect(rallyColumnOf('In Progress', 'doing')).toBe('In-Progress');
+    expect(rallyColumnOf('Columna rara', 'doing')).toBe('In-Progress');
+    expect(rallyColumnOf(undefined, 'todo')).toBe('New');
+    // To Do y Desarrollo no tienen columna: van a la de su grupo.
+    expect(rallyColumnOf('To Do', 'todo')).toBe('New');
+    expect(rallyColumnOf('Desarrollo', 'doing')).toBe('In-Progress');
+    expect(rallyColumnOf(undefined, 'accepted')).toBe('Accepted');
+  });
+
   it('Ready y Blocked se marcan sin cambiar de columna', async () => {
     const { rally, marta, posts } = await setup({ ...us, FlowState: { _refObjectName: 'In-Progress' }, Blocked: false });
     const ready = await rally.flag(marta, { id: 'US-1', ready: true });
@@ -354,6 +415,10 @@ describe('Rally: mover', () => {
   it('publica un comentario en la discusión', async () => {
     const { rally, marta, posts } = await setup(us);
     expect(commentHtml('  a < b & "c"\nlínea 2 ')).toBe('a &lt; b &amp; &quot;c&quot;<br />línea 2');
+    // Los enlaces se pueden pulsar en Rally (sin coger el punto final ni el paréntesis).
+    expect(commentHtml('Guía: https://x.sharepoint.com/a?b=1&c=2.\n(ver www.rally.com)'))
+      .toBe('Guía: <a href="https://x.sharepoint.com/a?b=1&amp;c=2" target="_blank" rel="noopener noreferrer">https://x.sharepoint.com/a?b=1&amp;c=2</a>.'
+        + '<br />(ver <a href="https://www.rally.com" target="_blank" rel="noopener noreferrer">www.rally.com</a>)');
     const post = await rally.comment(marta, { kind: 'US', objectId: '111', text: 'Hola\nqué tal' });
     expect(posts).toEqual([{ path: '/conversationpost/create', body: { ConversationPost: { Artifact: '/hierarchicalrequirement/111', Text: 'Hola<br />qué tal' } } }]);
     expect(post).toMatchObject({ author: 'Marta', text: 'Hola\nqué tal' });

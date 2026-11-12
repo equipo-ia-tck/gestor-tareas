@@ -98,6 +98,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       console.log(`[Rally] ${user.login}: ${String(body.id)} · Ready ${item.ready ? 'sí' : 'no'} · Blocked ${item.blocked ? 'sí' : 'no'}`);
       return send(res, 200, { item });
     }
+    case 'POST /api/rally/need-review': {
+      const body = await readJson(req);
+      const done = await rally.needReview(user, body);
+      console.log(`[Rally] ${user.login}: ${String(body.id)} → Need Review + Blocked (${String(body.defectId)})${done.commentError ? ` · comentario falló: ${done.commentError}` : ''}`);
+      return send(res, 200, done);
+    }
+    case 'POST /api/rally/message': {
+      const body = await readJson(req);
+      const done = await rally.messagePost(user, body);
+      console.log(`[Rally] ${user.login}: mensaje en ${String(body.id)}${done.mentioned.length ? ` · menciona a ${done.mentioned.join(', ')}` : ''}`);
+      return send(res, 200, done);
+    }
     case 'POST /api/rally/move-comment': {
       const body = await readJson(req);
       const done = await rally.moveCommentPost(user, body);

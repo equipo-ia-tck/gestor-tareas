@@ -52,7 +52,6 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['G  N', 'Notas'],
       ['G  C', 'Calendario'],
       ['G  V', 'Revisión semanal'],
-      ['G  R', 'Releases'],
       ['G  L', 'Registro'],
       ['G  E', 'Personas'],
       ['G  A', 'Copias y ajustes'],

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Ban, Check } from 'lucide-react';
 import type { RallyItem } from '../../domain/rally';
+import type { Task } from '../../domain/types';
 import { askAnalyst } from './AnalystPrompt';
 import { rallyApi } from './rallyApi';
 import { rememberRally } from './rallyStore';
+import { RallyMessage } from './RallyMessage';
 
 const BLOCK_COMMENT = 'Guía bloqueada';
 
@@ -11,12 +13,17 @@ const BLOCK_COMMENT = 'Guía bloqueada';
  * Botones Ready y Blocked de la ficha, como en Rally. No cambian el elemento de columna (ni la tarea de bloque en el
  * gestor). Blocked abre la misma ventana que mover a Bloqueado: comentario con el PO (editable con el lápiz) y analista;
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
+ * Marcar Ready abre después «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready queda marcado
+ * aunque se cierre sin mensaje.
  */
-export function RallyFlags({ item, reason, onChanged }: {
+export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
+  /** Tarea del gestor enlazada a este elemento, si la hay (rellena mejor la plantilla). */
+  task?: Task;
   reason: string | null;
   onChanged: (item: RallyItem) => void;
 }) {
+  const [message, setMessage] = useState<RallyItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -36,7 +43,11 @@ export function RallyFlags({ item, reason, onChanged }: {
     }
   };
 
-  const toggleReady = () => run(() => rallyApi.flag(item.id, { ready: !item.ready }));
+  const toggleReady = () => run(async () => {
+    const updated = await rallyApi.flag(item.id, { ready: !item.ready });
+    if (updated.ready) setMessage(updated);
+    return updated;
+  });
   const toggleBlocked = () => run(async () => {
     if (item.blocked) return rallyApi.flag(item.id, { blocked: false });
     const answer = await askAnalyst({ id: item.id, name: item.name, text: BLOCK_COMMENT, owner: item.owner,
@@ -76,6 +87,10 @@ export function RallyFlags({ item, reason, onChanged }: {
       </div>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
       {note && <p className="mt-1 text-xs text-amber-600">{note}</p>}
+      {message && (
+        <RallyMessage item={message} task={task} onClose={() => setMessage(null)}
+          onPosted={(m) => { setNote(m); onChanged(message); }} />
+      )}
     </div>
   );
 }

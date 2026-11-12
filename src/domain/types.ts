@@ -191,6 +191,15 @@ export interface Settings {
   saved_views: SavedView[];
   /** Grupos de personas, en el orden en que se muestran. */
   groups: PersonGroup[];
+  /** Plantillas propias de «Crear con petición» (Rally), en su orden; null = las de serie. */
+  rally_templates: RequestTemplate[] | null;
+}
+
+/** Plantilla de «Crear con petición»: un nombre y la frase. */
+export interface RequestTemplate {
+  id: string;
+  label: string;
+  text: string;
 }
 
 export type DueFilter = 'any' | 'overdue' | 'today' | 'week' | 'has' | 'none';
@@ -224,6 +233,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ui: { summary_dismissed_on: null, last_review_on: null },
   saved_views: [],
   groups: [],
+  rally_templates: null,
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

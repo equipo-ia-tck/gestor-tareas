@@ -1,4 +1,4 @@
-import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type Task } from './types';
+import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type StateCategory, type Task } from './types';
 import { findType, stateOf } from './workflows';
 
 /**
@@ -38,7 +38,7 @@ export interface RallyFormOptions {
 }
 
 /** Resultado del buscador «Elegir padre» (`GET /api/rally/pick`). */
-export interface RallyPick { id: string; name: string; project: string | null }
+export interface RallyPick { id: string; name: string; project: string | null; url?: string }
 
 /** Lo que se envía al crear (`POST /api/rally/create`). Las referencias son las de `RallyFormOptions`. */
 export interface RallyCreateInput {
@@ -318,4 +318,27 @@ export function groupRally(items: RallyItem[], by: RallyGroupBy): { key: string 
     .map(([key, list]) => ({ key, items: list }))
     .sort((a, b) => by === 'state' ? order(a.items) - order(b.items) || nullsLast(a.key, b.key, compare)
       : nullsLast(a.key, b.key, by === 'iteration' ? (x, y) => compare(y, x) : compare));
+}
+
+/**
+ * Columnas del tablero de Rally, en su orden. Cada una dice a qué grupo del gestor corresponde y en cuál se ponen las
+ * tareas que no están en Rally (o de las que aún no se sabe la columna): la marcada con `home`.
+ */
+export const RALLY_COLUMNS: { name: string; category: RallyCategory; color: string; home?: boolean }[] = [
+  { name: 'New', category: 'todo', color: '#94a3b8', home: true },
+  { name: 'Defined', category: 'todo', color: '#a78bfa' },
+  { name: 'Blocked', category: 'blocked', color: '#ef4444', home: true },
+  { name: 'In-Progress', category: 'doing', color: '#3b82f6', home: true },
+  { name: 'Need Review', category: 'doing', color: '#f59e0b' },
+  { name: 'Completed', category: 'done', color: '#22c55e', home: true },
+  { name: 'Accepted', category: 'accepted', color: '#047857', home: true },
+];
+
+const columnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Columna de Rally de una tarea: la que tiene en Rally si es una de la lista; si no, la de su grupo en el gestor. */
+export function rallyColumnOf(rallyState: string | undefined, category: StateCategory): string {
+  const exact = rallyState && RALLY_COLUMNS.find((c) => columnKey(c.name) === columnKey(rallyState));
+  if (exact) return exact.name;
+  return (RALLY_COLUMNS.find((c) => c.home && c.category === category) ?? RALLY_COLUMNS[0]).name;
 }

@@ -16,10 +16,17 @@ import { isActive, samePerson, sortTasks } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
 import { PROJECT_COLORS, TOPIC_TYPE_ID, type PersonGroup } from '../../domain/types';
 import { createGroup, deleteGroup, GroupPicker, moveGroup, movePersonToGroup, setDraggedPerson, updateGroup, usePersonDrop } from './groups';
-import { newNote } from '../notes/NotesView';
+import { NewMeeting } from '../calendar/NewMeeting';
 import { useRallyOwners } from '../rally/rallyStore';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { ViewHeader } from './ViewHeader';
+
+/** Próxima media hora en punto (hora local, "HH:MM"), para proponer la reunión. */
+function nextSlot(now = new Date()): string {
+  const m = now.getHours() * 60 + now.getMinutes();
+  const next = Math.min(Math.ceil((m + 1) / 30) * 30, 23 * 60 + 30);
+  return `${String(Math.floor(next / 60)).padStart(2, '0')}:${String(next % 60).padStart(2, '0')}`;
+}
 
 export function PeopleView() {
   const { tasks, notes, peopleCards, settings } = useApp();
@@ -139,6 +146,7 @@ export function PersonView({ name }: { name: string }) {
   const [teamsApp] = useTeamsApp();
   const meetings = meetingsWith(name, notes);
   const list = { today, projects: projectMap, onEdit: editTask };
+  const [meeting, setMeeting] = useState(false);
 
   return (
     <>
@@ -158,11 +166,13 @@ export function PersonView({ name }: { name: string }) {
           </a>
         )}
         <RenamePerson name={name} />
-        <button type="button" onClick={() => void newNote('meeting', today, { people: [name], title: `Reunión con ${name}` })}
+        <button type="button" onClick={() => setMeeting(true)} title="Abre en Teams una reunión con esta persona ya rellenada"
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <Users className="size-4" />Nueva reunión
         </button>
       </header>
+      {meeting && <NewMeeting date={today} time={nextSlot()} title={`Reunión con ${name}`} invite={[{ name, email: card?.email }]}
+        onClose={() => setMeeting(false)} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0">

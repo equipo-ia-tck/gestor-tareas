@@ -44,10 +44,10 @@ function answer(a: AnalystAnswer) {
 }
 
 const LAST_KEY = 'gestor-tareas:rally-last-analyst';
-function lastAnalyst(): RallyRef | null {
+export function lastAnalyst(): RallyRef | null {
   try { return JSON.parse(localStorage.getItem(LAST_KEY) ?? 'null') as RallyRef | null; } catch { return null; }
 }
-function rememberAnalyst(u: RallyRef) {
+export function rememberAnalyst(u: RallyRef) {
   try { localStorage.setItem(LAST_KEY, JSON.stringify(u)); } catch { /* sin almacenamiento */ }
 }
 

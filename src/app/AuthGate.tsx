@@ -310,7 +310,7 @@ function UploadQuestion({ counts, onUpload, onEmpty }: {
       <p>
         En este navegador hay <strong>{counts.tasks} tareas</strong> y <strong>{counts.notes} notas</strong> que aún no están en tu cuenta.
       </p>
-      <p className="text-zinc-500">Si las subes, pasan a ser tuyas y privadas. Solo las verá alguien si las pones en un espacio o le mencionas.</p>
+      <p className="text-zinc-500">Si las subes, se suman a lo que ya tenga tu cuenta y pasan a ser tuyas y privadas. Solo las verá alguien si las pones en un espacio o le mencionas.</p>
       <button type="button" disabled={busy} onClick={() => run(onUpload)} className={primary}>{busy ? 'Subiendo…' : 'Subirlas a mi cuenta'}</button>
       <button type="button" disabled={busy} onClick={() => run(onEmpty)} className={secondary}>Empezar vacía</button>
       <p className="text-xs text-zinc-500">Si empiezas vacía, antes se descarga una copia de lo que había en un archivo.</p>

@@ -122,11 +122,6 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'go-review', section: 'Ir a', title: 'Revisión semanal', shortcut: 'G V', keywords: 'repaso semana planificar gtd', run: go({ view: 'review' }) },
     { id: 'go-log', section: 'Ir a', title: 'Ir a Registro', shortcut: 'G L', keywords: 'hecho pospuesto diario historial semana', run: go({ view: 'log' }) },
     { id: 'go-calendar', section: 'Ir a', title: 'Ir a Calendario: mes', shortcut: 'G C', keywords: 'mes fechas', run: go({ view: 'calendar' }) },
-    { id: 'go-releases', section: 'Ir a', title: 'Ir a Releases', shortcut: 'G R', keywords: 'entregas versiones salidas', run: go({ view: 'releases' }) },
-    {
-      id: 'new-release', section: 'Crear', title: 'Nueva release', keywords: 'versión entrega',
-      input: { placeholder: 'Nombre de la release (p. ej. R2.3)', run: async (name) => { if (name.trim()) { await repo.createRelease(name); navigate({ view: 'releases' }); } } },
-    },
     { id: 'go-inbox', section: 'Ir a', title: 'Ir a Bandeja', shortcut: 'G B', keywords: 'entrada', run: go({ view: 'inbox' }) },
     { id: 'go-people', section: 'Ir a', title: 'Ir a Grupos (personas)', shortcut: 'G E', run: go({ view: 'people' }) },
     { id: 'go-settings', section: 'Ir a', title: 'Ir a Copias y ajustes', shortcut: 'G A', keywords: 'backup configuración', run: go({ view: 'settings' }) },

@@ -44,6 +44,11 @@ export function rememberRally(list: RallyItem[]) {
   for (const l of listeners) l();
 }
 
+/** Último estado conocido de un elemento (fuera de React). */
+export function rallyItem(id: string): RallyItem | undefined {
+  return items.get(norm(id));
+}
+
 const subscribe = (l: () => void) => { listeners.add(l); return () => void listeners.delete(l); };
 
 /** Elemento de Rally de una tarea enlazada (undefined si no tiene ID de Rally o aún no se ha consultado). */
@@ -57,4 +62,11 @@ export function useRallyOwners(tasks: Task[]): Map<string, string> {
   const v = useSyncExternalStore(subscribe, () => version);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `v` cambia cuando llegan datos nuevos de Rally
   return useMemo(() => rallyOwners(tasks, (id) => owners.get(id)), [tasks, v]);
+}
+
+/** Para listas (Tablero «Como en Rally»): función que da el elemento de Rally de un ID; cambia cuando llegan datos. */
+export function useRallyLookup(): (externalId: string | null) => RallyItem | undefined {
+  const v = useSyncExternalStore(subscribe, () => version);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `v` cambia cuando llegan datos nuevos de Rally
+  return useMemo(() => (externalId) => (isRallyId(externalId) ? items.get(norm(externalId)) : undefined), [v]);
 }

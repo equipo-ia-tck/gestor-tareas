@@ -79,7 +79,7 @@ export function RallyTaskSection({ task }: { task: Task }) {
         )}
       </header>
       {nested && <p className="px-4 pt-3 text-sm font-semibold">{nested.name}</p>}
-      {shown && <div className="px-4"><RallyFlags item={shown} reason={detail?.blockedReason ?? null} onChanged={flagged} /></div>}
+      {shown && <div className="px-4"><RallyFlags item={shown} task={shown.id === task.external_id ? task : undefined} reason={detail?.blockedReason ?? null} onChanged={flagged} /></div>}
       <div className="pt-3">
         {current
           ? <RallyDetailBody item={current} detail={detail} error={error} onSelect={setNested} />

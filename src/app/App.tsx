@@ -4,13 +4,13 @@ import { WideContext, type WideMode } from './Layout';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { BoardView } from '../features/board/BoardView';
 import { CalendarView } from '../features/calendar/CalendarView';
-import { ReleasesView } from '../features/releases/ReleasesView';
 import { NotesView } from '../features/notes/NotesView';
 import { RallyView } from '../features/rally/RallyView';
 import { ConfluenceView } from '../features/confluence/ConfluenceView';
 import { ListaView } from '../features/mslist/ListaView';
 import { ListaSync } from '../features/mslist/ListaSync';
 import { ChatsView } from '../features/chats/ChatsView';
+import { NeedReviewPrompt } from '../features/rally/NeedReviewPrompt';
 import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
 import { LogView } from '../features/log/LogView';
@@ -37,7 +37,6 @@ function View({ route }: { route: Route }) {
     case 'week': return <CalendarView initial="week" />;
     case 'board': return <BoardView />;
     case 'all': return <BoardView />; // la antigua vista "Todo" ahora es el Tablero
-    case 'releases': return <ReleasesView />;
     case 'notes': return <NotesView id={route.id} />;
     case 'log': return <LogView />;
     case 'review': return <ReviewView />;
@@ -71,6 +70,7 @@ function Main({ route }: { route: Route }) {
         <ReminderCenter />
         <RallySync />
         <AnalystPrompt />
+        <NeedReviewPrompt />
         <ListaSync />
         <WideContext.Provider value={setWide}>
           {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Rocket, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -122,9 +122,9 @@ function ArchivedProjects() {
 }
 
 /** Vistas de uso ocasional, plegadas para no ocupar sitio. */
-function MoreSection({ route, releases }: { route: Route; releases: number }) {
+function MoreSection({ route }: { route: Route }) {
   const [open, setOpen] = usePersistentState('sidebar-more', false);
-  const active = ['log', 'releases', 'review'].includes(route.view);
+  const active = ['log', 'review'].includes(route.view);
   const show = open || active;
   return (
     <>
@@ -135,7 +135,6 @@ function MoreSection({ route, releases }: { route: Route; releases: number }) {
       {show && (
         <>
           <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>
-          <NavItem icon={Rocket} href={routeHref({ view: 'releases' })} active={route.view === 'releases'} count={releases}>Releases</NavItem>
           <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>
         </>
       )}
@@ -144,7 +143,7 @@ function MoreSection({ route, releases }: { route: Route; releases: number }) {
 }
 
 export function Sidebar({ route }: { route: Route }) {
-  const { tasks, projects, today, releases } = useApp();
+  const { tasks, projects, today } = useApp();
   const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
   const { moveIds } = useTaskActions();
@@ -205,7 +204,7 @@ export function Sidebar({ route }: { route: Route }) {
 
       <PeopleGroups route={route} />
 
-      <MoreSection route={route} releases={releases.filter((r) => r.status === 'planned').length} />
+      <MoreSection route={route} />
 
       <div className="mt-auto pt-4">
         <SyncBadge />

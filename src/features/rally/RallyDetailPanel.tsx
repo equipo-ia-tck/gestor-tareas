@@ -120,7 +120,7 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
               )}
             </span>
           </div>
-          <RallyFlags item={current} reason={detail?.blockedReason ?? null} onChanged={flagged} />
+          <RallyFlags item={current} task={task?.external_id === current.id ? task : undefined} reason={detail?.blockedReason ?? null} onChanged={flagged} />
         </div>
 
         <RallyDetailBody item={current} detail={detail} error={error} onSelect={onSelect} />

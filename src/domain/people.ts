@@ -84,3 +84,25 @@ export function groupPeople<T extends { name: string }>(people: T[], cards: Pers
   if (none.length) sections.push({ group: null, people: none });
   return sections;
 }
+
+/** Persona que sale en las tarjetas pendientes de un proyecto, con los ids de esas tareas. */
+export interface BoardPerson { name: string; taskIds: string[] }
+
+/**
+ * Personas de un tablero (proyecto): las de `task.people` y el Owner de Rally de las tareas enlazadas (`ownerOf`, id de
+ * la tarea → nombre), solo de las pendientes. Una vez por persona (por `nameKey`), de más a menos tareas y por nombre.
+ */
+export function boardPeople(tasks: Task[], ownerOf: (taskId: string) => string | undefined): BoardPerson[] {
+  const byKey = new Map<string, BoardPerson>();
+  for (const t of tasks) {
+    if (!isActive(t)) continue;
+    const owner = ownerOf(t.id);
+    for (const name of owner ? [...t.people, owner] : t.people) {
+      const key = nameKey(name);
+      if (!key) continue;
+      const entry = byKey.get(key) ?? byKey.set(key, { name, taskIds: [] }).get(key)!;
+      if (!entry.taskIds.includes(t.id)) entry.taskIds.push(t.id);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => b.taskIds.length - a.taskIds.length || a.name.localeCompare(b.name, 'es'));
+}

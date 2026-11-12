@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupOf, groupPeople, peopleDirectory } from '../src/domain/people';
+import { boardPeople, groupOf, groupPeople, peopleDirectory } from '../src/domain/people';
 import { rallyOwners } from '../src/domain/rally';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
@@ -96,5 +96,19 @@ describe('grupos de personas', () => {
   it('un grupo que ya no existe cuenta como sin grupo', () => {
     expect(groupOf('Ana', cards, groups)).toBeNull();
     expect(groupOf('DIANA', cards, groups)?.name).toBe('Cliente');
+  });
+});
+
+describe('personas del tablero de un proyecto', () => {
+  it('junta personas y Owners de Rally de las pendientes, sin repetir', () => {
+    const a = makeTask({ people: ['Diana', 'Luis'] });
+    const b = makeTask({ people: ['diana'], external_id: 'US-1' });
+    const c = makeTask({ people: ['Ana'], status: 'done' });
+    const owners = new Map([[b.id, 'Pepa PO'], [a.id, 'Diana']]);
+    expect(boardPeople([a, b, c], (id) => owners.get(id))).toEqual([
+      { name: 'Diana', taskIds: [a.id, b.id] },
+      { name: 'Luis', taskIds: [a.id] },
+      { name: 'Pepa PO', taskIds: [b.id] },
+    ]);
   });
 });
