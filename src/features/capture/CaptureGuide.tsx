@@ -6,7 +6,6 @@ const ROWS: { what: string; how: string; example: string }[] = [
   { what: 'Proyecto', how: '#Proyecto, o #Proyecto/Subproyecto (si no existe, se crea)', example: 'crear guía paso 1 #Onboarding/PASO-1' },
   { what: 'Persona', how: '@Nombre-Apellido. Si es una cuenta del equipo (nombre completo o email), se le comparte', example: 'preparar guías con @Diana' },
   { what: 'Prioridad', how: '!1 urgente · !2 alta · !3 media · !4 normal', example: 'reentregar Alta Bizum !1' },
-  { what: 'Tiempo estimado', how: '~30m, ~1h, ~1h30', example: 'revisar columnas ~45m' },
   { what: 'Etiqueta', how: '+etiqueta', example: 'validar etiquetado +bizum' },
   { what: 'ID de Rally o Jira', how: 'US1764574, TS92615, DE125701 o US-1234: guarda el ID y pone el tipo (US, TS…)', example: 'US1764574 Alta Bizum web' },
   { what: 'Release', how: '^nombre', example: 'subir landing ^R3.0' },

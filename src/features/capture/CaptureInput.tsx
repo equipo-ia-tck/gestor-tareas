@@ -194,7 +194,7 @@ export function CaptureInput({ defaults, placeholder, autoFocus, onDone, onCance
           autoFocus={autoFocus}
           value={text}
           spellCheck={false}
-          placeholder={placeholder ?? 'Nueva tarea: mañana llamar a @Diana #proyecto !1 ~30m'}
+          placeholder={placeholder ?? 'Nueva tarea: mañana llamar a @Diana #proyecto !1'}
           aria-label="Capturar tarea"
           onChange={(e) => change(e.target.value, e.target.selectionStart)}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
@@ -327,7 +327,6 @@ const HINTS: { label: string; insert: string; title: string }[] = [
   { label: '#proyecto', insert: '#', title: 'Proyecto (o #proyecto/subproyecto)' },
   { label: '@persona', insert: '@', title: 'Persona' },
   { label: '!1', insert: '!1 ', title: 'Prioridad: !1 urgente … !4 normal' },
-  { label: '~30m', insert: '~30m ', title: 'Estimación: ~30m, ~2h, ~1h30' },
   { label: '+etiqueta', insert: '+', title: 'Etiqueta' },
   { label: 'US-123', insert: 'US-', title: 'ID de Jira: US-123 crea una User Story, TS-55 un Test Scenario' },
   { label: '^release', insert: '^', title: 'Release' },
