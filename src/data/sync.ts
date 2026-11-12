@@ -63,7 +63,7 @@ const PERSONAL_TASK_FIELDS = ['my_day', 'remind_at'] as const;
 function friendly(message: string): string {
   if (/invalid login credentials/i.test(message)) return 'Email o contraseña incorrectos.';
   if (/email not confirmed/i.test(message)) return 'Falta confirmar tu email: abre el correo que te ha llegado y vuelve a entrar.';
-  if (/user already registered/i.test(message)) return 'Ya hay una cuenta con ese email. Entra con ella.';
+  if (/user already registered/i.test(message)) return 'Ya hay una cuenta con ese email y la contraseña no coincide. Entra con ella o usa «¿Olvidaste la contraseña?».';
   if (/password should be at least/i.test(message)) return 'La contraseña tiene que tener al menos 8 caracteres.';
   if (/rate limit/i.test(message)) return 'Demasiados intentos seguidos. Espera unos minutos.';
   if (/failed to fetch|network/i.test(message)) return 'No hay conexión con la base de datos del equipo.';
@@ -141,7 +141,15 @@ export class SyncClient {
       password: input.password,
       options: { emailRedirectTo: location.origin },
     });
-    if (error) throw new Error(friendly(error.message));
+    if (error) {
+      // La cuenta ya existe: puede ser un alta que se quedó a medias (sin nombre ni invitación). Si la contraseña es la
+      // suya, se entra y se termina el alta; si ya tenía perfil, register_profile solo devuelve la cuenta.
+      if (/user already registered/i.test(error.message)) {
+        const login = await this.supabase.auth.signInWithPassword({ email: input.login.trim().toLowerCase(), password: input.password });
+        if (!login.error) return this.completeProfile(input.name, input.code);
+      }
+      throw new Error(friendly(error.message));
+    }
     if (!data.session) {
       // Supabase pide confirmar el email: el nombre y la invitación se piden al volver a entrar.
       return 'confirm';
