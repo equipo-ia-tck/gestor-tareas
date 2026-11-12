@@ -17,7 +17,7 @@ function setup(body = ICS, status = 200, file: string | null = null) {
   const calls: string[] = [];
   const fetcher = (async (url: string) => { calls.push(url); return new Response(body, { status }); }) as unknown as typeof fetch;
   const luis = api.register({ login: 'luis@vml.com', name: 'Luis', password: 'contraseña-larga', code: api.teamCode }).user;
-  return { calendar: new Calendar(db, fetcher, () => file), marta, luis, calls };
+  return { calendar: new Calendar(db, fetcher, () => file), marta, luis, calls, db };
 }
 
 describe('calendario de Outlook (enlace ICS)', () => {
@@ -98,5 +98,20 @@ describe('calendario de Outlook (enlace ICS)', () => {
     await expect(calendar.events(marta)).rejects.toThrow(/JSON/);
     calendar.unlinkFile(marta);
     expect(calendar.status(marta).file.linked).toBe(false);
+  });
+
+  it('tras pasar a Supabase, la misma persona (mismo email) recupera el archivo de su cuenta de antes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cal-'));
+    const path = join(dir, 'calendario.json');
+    writeFileSync(path, JSON.stringify(V3));
+    const { calendar, marta, luis, db } = setup(ICS, 200, path);
+    // La tabla de cuentas que tenía este servidor antes de Supabase.
+    db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, login TEXT NOT NULL)');
+    db.prepare('INSERT OR REPLACE INTO users (id, login) VALUES (?, ?)').run(marta.id, marta.login);
+    calendar.linkFile(marta);
+    const martaSupabase = { id: 'id-de-supabase', login: 'MARTA@vml.com', name: 'Marta' };
+    expect(calendar.linkFile(martaSupabase).file.linked).toBe(true);
+    expect(calendar.status(marta).file.linked).toBe(false);
+    expect(() => calendar.linkFile(luis)).toThrow(/otra cuenta/);
   });
 });

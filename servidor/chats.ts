@@ -1,3 +1,4 @@
+import { isSamePerson } from './previousAccount.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -46,7 +47,9 @@ export class Chats {
     const path = this.findFile();
     if (!path) throw new ApiError(400, 'No encuentro Gestor/chats.json en tu OneDrive. Comprueba que el flujo se ha ejecutado y que OneDrive está sincronizado.');
     const owner = this.db.prepare('SELECT user_id FROM chat_files WHERE path = ?').get(path) as { user_id: string } | undefined;
-    if (owner && owner.user_id !== user.id) throw new ApiError(400, 'Esos chats ya están vinculados a otra cuenta.');
+    if (owner && !isSamePerson(this.db, owner.user_id, user)) throw new ApiError(400, 'Esos chats ya están vinculados a otra cuenta.');
+    // Era de su cuenta de antes de Supabase: pasa a la de ahora.
+    if (owner && owner.user_id !== user.id) this.db.prepare('DELETE FROM chat_files WHERE user_id = ?').run(owner.user_id);
     this.db.prepare(`INSERT INTO chat_files (user_id, path, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET path = excluded.path, updated_at = excluded.updated_at`).run(user.id, path, new Date().toISOString());
     return this.status(user);
