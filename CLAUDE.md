@@ -604,7 +604,9 @@ espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
   administrador ve una vez: el email gratuito de Supabase solo llega a la organización de Supabase y permite pocos envíos.
   "¿Olvidaste la contraseña?" pide un **código** del email (`verifyOtp` tipo `recovery`, plantilla con `{{ .Token }}`) y la
   contraseña nueva en la misma pantalla; el enlace sigue valiendo, y si llega caducado (`#error_description=…`) la app lo
-  explica y pide otro código.
+  explica y pide otro código. **Ojo**: en proyectos gratuitos de Supabase creados desde junio de 2026 la plantilla no se
+  puede editar sin un SMTP propio, así que hasta configurarlo el email solo trae el enlace (que el correo de empresa puede
+  gastar al revisarlo) y lo fiable es la contraseña provisional.
 - **Crear con un espacio elegido** en el filtro de la barra lateral: los proyectos nuevos van a ese espacio y las tareas
   sin proyecto, al proyecto con el nombre del espacio (`repo.defaultSpace`, `spaceProject`; se crea la primera vez con su
   color, en el mismo "Deshacer"). Así no se quedan privadas ni desaparecen de la vista filtrada. No se aplica a la

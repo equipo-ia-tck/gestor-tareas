@@ -249,7 +249,7 @@ function ForgotForm({ initial, expired, onDone, onBack }: { initial: string; exp
           <label className="block space-y-1" htmlFor="auth-code">
             <span className="text-zinc-600 dark:text-zinc-400">Código del email</span>
             <input {...field('code')} required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className={`${input} tracking-widest`} />
-            <span className="block text-xs text-zinc-500">Usa el código del último email (al pedir otro, los anteriores dejan de valer). Mejor no pulses el enlace.</span>
+            <span className="block text-xs text-zinc-500">Usa el código del último email (al pedir otro, los anteriores dejan de valer). Si solo trae un enlace, ábrelo en este navegador nada más llegar; si dice que ya no vale, pide una contraseña provisional a un administrador.</span>
           </label>
           <label className="block space-y-1" htmlFor="auth-password">
             <span className="text-zinc-600 dark:text-zinc-400">Contraseña nueva</span>
